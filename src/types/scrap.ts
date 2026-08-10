@@ -39,6 +39,58 @@ export interface AutoSalvageCategoryRate {
   flatBonusWithBattery: number;
 }
 
+export interface CatalyticConverterCode {
+  id: string;
+  code: string; // e.g. "4R31-5E212-AA", "GM-125642", "TOYOTA-GD3", "HONDA-251"
+  make: string;
+  category: 'Domestic Large' | 'Foreign Small' | 'Exotic / High-Grade' | 'Aftermarket' | 'Diesel DPF Filter';
+  ptGrams: number; // Platinum grams
+  pdGrams: number; // Palladium grams
+  rhGrams: number; // Rhodium grams
+  avgMarketValue: number; // USD
+  notes?: string;
+  photoUrl?: string;
+}
+
+export interface ContainerDrop {
+  id: string;
+  containerNumber: string; // e.g. "BOX-20-88"
+  clientName: string;
+  clientAddress: string;
+  clientPhone: string;
+  dropDate: string;
+  pickupDueDate: string;
+  status: 'ON_SITE' | 'PICKUP_REQUESTED' | 'RETURNED_TO_YARD' | 'PROCESSED';
+  binType: '20-Yard Roll-Off' | '40-Yard High-Side' | 'Lugger Scrap Box' | 'Gaylord Wire Bin';
+  assignedDriver: string;
+  materialCategory: string;
+  estimatedWeightLbs: number;
+  notes?: string;
+}
+
+export interface CashDrawerLog {
+  id: string;
+  timestamp: string;
+  type: 'OPENING_FLOAT' | 'PAYOUT_DISBURSEMENT' | 'VAULT_REPLENISHMENT' | 'CLOSING_AUDIT';
+  amount: number; // Positive for float/replenish, negative for payout
+  ticketId?: string;
+  operatorName: string;
+  balanceAfter: number;
+  notes?: string;
+}
+
+export interface YardBayLocation {
+  id: string;
+  bayName: string;
+  categoryType: 'FERROUS_PILE' | 'NON_FERROUS_BIN' | 'CAR_GRID' | 'PRECIOUS_VAULT' | 'PROCESSING_ZONE';
+  capacityLbs: number;
+  currentLbs: number;
+  estValueUsd: number;
+  status: 'NORMAL' | 'NEAR_CAPACITY' | 'CRITICAL_FULL';
+  gridArea: string; // e.g. "Grid A1"
+  lastUpdated: string;
+}
+
 export interface Customer {
   id: string;
   fullName: string;
@@ -100,6 +152,7 @@ export interface CarIntakeRecord {
   // Checklist & Features
   hasCatalyticConverter: boolean;
   catCondition: 'Original OEM' | 'Aftermarket' | 'Missing / Removed';
+  catCodeSerial?: string;
   hasEngineAndTrans: boolean;
   hasBattery: boolean;
   hasAluminumRims: boolean;
@@ -175,4 +228,5 @@ export interface YardSettings {
   webSocketUrl: string;
   operatorName: string;
   nmvtisReportingId?: string;
+  cashDrawerFloatLimit?: number;
 }

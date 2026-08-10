@@ -13,6 +13,9 @@ import {
   Settings,
   ShieldCheck,
   Activity,
+  Truck,
+  Banknote,
+  Map,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 
@@ -34,6 +37,9 @@ export const Navbar: React.FC = () => {
     { label: 'Compliance & NMVTIS', path: '/compliance', icon: ShieldCheck },
     { label: 'Ticket Ledger', path: '/tickets', icon: Receipt },
     { label: 'Metal & Auto Rates', path: '/pricing', icon: DollarSign },
+    { label: 'Containers', path: '/containers', icon: Truck },
+    { label: 'Cash Drawer', path: '/cash-drawer', icon: Banknote },
+    { label: 'Yard Map', path: '/yard-map', icon: Map },
     { label: 'Customers & VINs', path: '/customers', icon: Users },
     { label: 'Yard Settings', path: '/settings', icon: Settings },
   ];
@@ -59,7 +65,7 @@ export const Navbar: React.FC = () => {
                       LOCAL YARD
                     </Badge>
                   </div>
-                  <p className="text-xs text-slate-400 font-medium truncate max-w-[180px] sm:max-w-[240px]">
+                  <p className="text-xs text-slate-400 font-medium truncate max-w-[150px] sm:max-w-[200px]">
                     {settings.yardName}
                   </p>
                 </div>
@@ -67,7 +73,7 @@ export const Navbar: React.FC = () => {
             </div>
 
             {/* Navigation Tabs */}
-            <nav className="hidden md:flex items-center space-x-1">
+            <nav className="hidden lg:flex items-center space-x-1">
               {navItems.map((item) => {
                 const Icon = item.icon;
                 const isActive = location.pathname === item.path;
@@ -75,13 +81,13 @@ export const Navbar: React.FC = () => {
                   <Link
                     key={item.path}
                     to={item.path}
-                    className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold transition-colors ${
+                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
                       isActive
                         ? 'bg-slate-800 text-emerald-400 border border-slate-700/80 shadow-sm'
                         : 'text-slate-300 hover:bg-slate-800/60 hover:text-white'
                     }`}
                   >
-                    <Icon className={`w-4 h-4 ${isActive ? 'text-emerald-400' : 'text-slate-400'}`} />
+                    <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-emerald-400' : 'text-slate-400'}`} />
                     <span>{item.label}</span>
                   </Link>
                 );
@@ -92,17 +98,17 @@ export const Navbar: React.FC = () => {
             <div className="flex items-center space-x-3">
               <button
                 onClick={() => setConfigOpen(true)}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-800/90 border border-slate-700/80 hover:border-emerald-500/50 hover:bg-slate-800 transition-all text-left group"
+                className="flex items-center gap-2 px-2.5 py-1 rounded-lg bg-slate-800/90 border border-slate-700/80 hover:border-emerald-500/50 hover:bg-slate-800 transition-all text-left group"
               >
                 <div className="relative flex items-center justify-center">
-                  <Activity className={`w-4 h-4 ${scaleStatus.connected ? 'text-emerald-400 animate-pulse' : 'text-amber-400'}`} />
+                  <Activity className={`w-3.5 h-3.5 ${scaleStatus.connected ? 'text-emerald-400 animate-pulse' : 'text-amber-400'}`} />
                 </div>
 
                 <div className="text-xs">
-                  <div className="flex items-center gap-1.5 font-semibold font-mono text-slate-100">
+                  <div className="flex items-center gap-1 font-semibold font-mono text-slate-100 text-[11px]">
                     <span>{scaleStatus.weight.toLocaleString()} {scaleStatus.unit}</span>
                     <span
-                      className={`text-[10px] px-1 rounded uppercase tracking-wider font-bold ${
+                      className={`text-[9px] px-1 rounded uppercase tracking-wider font-bold ${
                         scaleStatus.isStable
                           ? 'bg-emerald-500/20 text-emerald-300'
                           : 'bg-amber-500/20 text-amber-300'
@@ -111,16 +117,16 @@ export const Navbar: React.FC = () => {
                       {scaleStatus.isStable ? 'STABLE' : 'MOTION'}
                     </span>
                   </div>
-                  <div className="text-[10px] text-slate-400 flex items-center gap-1">
-                    <span className="truncate max-w-[90px]">
+                  <div className="text-[9px] text-slate-400 flex items-center gap-1">
+                    <span className="truncate max-w-[70px]">
                       {scaleStatus.mode === 'SIMULATOR'
                         ? 'SIMULATOR'
                         : scaleStatus.mode === 'WEB_SERIAL'
                         ? 'USB SERIAL'
                         : 'NETWORK SCALE'}
                     </span>
-                    <span className="text-emerald-400 text-[10px] underline group-hover:text-emerald-300">
-                      Configure
+                    <span className="text-emerald-400 underline group-hover:text-emerald-300">
+                      Config
                     </span>
                   </div>
                 </div>
@@ -128,7 +134,7 @@ export const Navbar: React.FC = () => {
 
               <Badge
                 variant="secondary"
-                className="hidden lg:inline-flex bg-slate-800 text-slate-300 border-slate-700 text-xs font-normal"
+                className="hidden xl:inline-flex bg-slate-800 text-slate-300 border-slate-700 text-xs font-normal"
               >
                 Op: {settings.operatorName}
               </Badge>
@@ -138,7 +144,7 @@ export const Navbar: React.FC = () => {
         </div>
 
         {/* Mobile Navigation bar */}
-        <div className="md:hidden flex items-center justify-around bg-slate-950 border-t border-slate-800/80 py-2 px-2 text-xs">
+        <div className="lg:hidden flex items-center justify-around bg-slate-950 border-t border-slate-800/80 py-2 px-1 text-xs overflow-x-auto">
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = location.pathname === item.path;
@@ -146,12 +152,12 @@ export const Navbar: React.FC = () => {
               <Link
                 key={item.path}
                 to={item.path}
-                className={`flex flex-col items-center gap-1 px-2 py-1 rounded ${
+                className={`flex flex-col items-center gap-0.5 px-2 py-1 rounded shrink-0 ${
                   isActive ? 'text-emerald-400 font-semibold' : 'text-slate-400'
                 }`}
               >
                 <Icon className="w-4 h-4" />
-                <span className="text-[10px]">{item.label.split(' ')[0]}</span>
+                <span className="text-[9px]">{item.label.split(' ')[0]}</span>
               </Link>
             );
           })}

@@ -1,4 +1,16 @@
-import { Customer, MetalGrade, AutoSalvageCategoryRate, Ticket, YardSettings, ComplianceCaptures, NMVTISReportLog } from "@/types/scrap";
+import {
+  Customer,
+  MetalGrade,
+  AutoSalvageCategoryRate,
+  Ticket,
+  YardSettings,
+  ComplianceCaptures,
+  NMVTISReportLog,
+  CatalyticConverterCode,
+  ContainerDrop,
+  CashDrawerLog,
+  YardBayLocation,
+} from "@/types/scrap";
 import { generateSamplePhoto, generateSampleThumbprint } from "@/utils/complianceUtils";
 
 const STORAGE_KEYS = {
@@ -8,7 +20,231 @@ const STORAGE_KEYS = {
   TICKETS: 'scrapflow_tickets',
   SETTINGS: 'scrapflow_settings',
   NMVTIS_LOGS: 'scrapflow_nmvtis_logs',
+  CATALYTIC_CODES: 'scrapflow_cat_codes',
+  CONTAINER_DROPS: 'scrapflow_container_drops',
+  CASH_DRAWER: 'scrapflow_cash_drawer',
+  YARD_BAYS: 'scrapflow_yard_bays',
 };
+
+// Seed Catalytic Converter Codes
+export const INITIAL_CAT_CODES: CatalyticConverterCode[] = [
+  {
+    id: 'cat-101',
+    code: '4R31-5E212-AA',
+    make: 'Ford / Lincoln',
+    category: 'Domestic Large',
+    ptGrams: 2.8,
+    pdGrams: 1.9,
+    rhGrams: 0.35,
+    avgMarketValue: 185.00,
+    notes: 'Common on 2004-2010 Ford F-150 / Expedition 5.4L V8',
+  },
+  {
+    id: 'cat-102',
+    code: 'GM-12564299',
+    make: 'General Motors',
+    category: 'Domestic Large',
+    ptGrams: 3.1,
+    pdGrams: 2.2,
+    rhGrams: 0.42,
+    avgMarketValue: 210.00,
+    notes: 'Chevrolet Silverado / Tahoe 5.3L V8 catalytic manifold',
+  },
+  {
+    id: 'cat-103',
+    code: 'TOYOTA-GD3',
+    make: 'Toyota / Lexus',
+    category: 'Foreign Small',
+    ptGrams: 4.2,
+    pdGrams: 3.8,
+    rhGrams: 0.65,
+    avgMarketValue: 340.00,
+    notes: 'High precious metal yield on Prius & Camry hybrids',
+  },
+  {
+    id: 'cat-104',
+    code: 'HONDA-251',
+    make: 'Honda / Acura',
+    category: 'Foreign Small',
+    ptGrams: 2.4,
+    pdGrams: 2.1,
+    rhGrams: 0.38,
+    avgMarketValue: 165.00,
+    notes: 'Honda Civic & Accord 2.4L i-VTEC OEM manifold converter',
+  },
+  {
+    id: 'cat-105',
+    code: 'DPF-CUMMINS-67',
+    make: 'Dodge / RAM / Cummins',
+    category: 'Diesel DPF Filter',
+    ptGrams: 6.8,
+    pdGrams: 0.5,
+    rhGrams: 0.1,
+    avgMarketValue: 420.00,
+    notes: 'Heavy duty diesel particulate filter assembly',
+  },
+  {
+    id: 'cat-106',
+    code: 'UNIVERSAL-AFTERMARKET',
+    make: 'Generic Aftermarket',
+    category: 'Aftermarket',
+    ptGrams: 0.5,
+    pdGrams: 0.3,
+    rhGrams: 0.05,
+    avgMarketValue: 35.00,
+    notes: 'Low loading aftermarket replacement converter shell',
+  },
+];
+
+// Seed Container Drops
+export const INITIAL_CONTAINER_DROPS: ContainerDrop[] = [
+  {
+    id: 'drop-1001',
+    containerNumber: 'BOX-20-104',
+    clientName: 'Apex Precision CNC Machine Shop',
+    clientAddress: '1900 Manufacturing Pkwy, Atlanta, GA',
+    clientPhone: '(404) 555-1029',
+    dropDate: new Date(Date.now() - 1000 * 60 * 60 * 24 * 5).toISOString(),
+    pickupDueDate: new Date(Date.now() + 1000 * 60 * 60 * 24 * 2).toISOString(),
+    status: 'PICKUP_REQUESTED',
+    binType: '20-Yard Roll-Off',
+    assignedDriver: 'Driver #2 (Dave Miller)',
+    materialCategory: 'Aluminum Turnings & Stainless Chips',
+    estimatedWeightLbs: 8400,
+    notes: 'Client reported bin is 90% full of clean 6061 aluminum chips.',
+  },
+  {
+    id: 'drop-1002',
+    containerNumber: 'BOX-40-209',
+    clientName: 'Tri-City Demolition & Salvage',
+    clientAddress: '88 Construction Hwy, Marietta, GA',
+    clientPhone: '(770) 555-9981',
+    dropDate: new Date(Date.now() - 1000 * 60 * 60 * 24 * 12).toISOString(),
+    pickupDueDate: new Date(Date.now() + 1000 * 60 * 60 * 24 * 1).toISOString(),
+    status: 'ON_SITE',
+    binType: '40-Yard High-Side',
+    assignedDriver: 'Driver #1 (Sam Taylor)',
+    materialCategory: 'Heavy Structural Steel (HMS #1)',
+    estimatedWeightLbs: 22500,
+    notes: 'Commercial I-beam cut-offs from warehouse strip-out.',
+  },
+  {
+    id: 'drop-1003',
+    containerNumber: 'LUGGER-04',
+    clientName: 'Atlanta Auto Stamping Plant',
+    clientAddress: '400 Industrial Blvd, Decatur, GA',
+    clientPhone: '(404) 555-3300',
+    dropDate: new Date(Date.now() - 1000 * 60 * 60 * 24 * 2).toISOString(),
+    pickupDueDate: new Date(Date.now() + 1000 * 60 * 60 * 24 * 7).toISOString(),
+    status: 'ON_SITE',
+    binType: 'Lugger Scrap Box',
+    assignedDriver: 'Driver #3 (Alex Vance)',
+    materialCategory: '#1 Busheling & New Bare Sheet Stamping Clips',
+    estimatedWeightLbs: 14000,
+    notes: 'High priority prime steel scrap drop.',
+  },
+];
+
+// Seed Cash Drawer Logs
+export const INITIAL_CASH_DRAWER: CashDrawerLog[] = [
+  {
+    id: 'cd-101',
+    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 8).toISOString(),
+    type: 'OPENING_FLOAT',
+    amount: 5000.00,
+    operatorName: 'Scale Tech Station 1',
+    balanceAfter: 5000.00,
+    notes: 'Morning shift opening cash drawer float verified by supervisor.',
+  },
+  {
+    id: 'cd-102',
+    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 5).toISOString(),
+    type: 'PAYOUT_DISBURSEMENT',
+    amount: -535.50,
+    ticketId: 'T-2025-1001',
+    operatorName: 'Scale Tech Station 1',
+    balanceAfter: 4464.50,
+    notes: 'Cash voucher payout for Car Salvage Ticket #T-2025-1001.',
+  },
+  {
+    id: 'cd-103',
+    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(),
+    type: 'PAYOUT_DISBURSEMENT',
+    amount: -670.93,
+    ticketId: 'T-2025-1002',
+    operatorName: 'Scale Tech Station 1',
+    balanceAfter: 3793.57,
+    notes: 'Cash voucher payout for Scrap Metal Ticket #T-2025-1002.',
+  },
+  {
+    id: 'cd-104',
+    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 1).toISOString(),
+    type: 'VAULT_REPLENISHMENT',
+    amount: 3000.00,
+    operatorName: 'Yard Supervisor',
+    balanceAfter: 6793.57,
+    notes: 'Armored vault cash replenishment addition.',
+  },
+];
+
+// Seed Yard Storage Bays
+export const INITIAL_YARD_BAYS: YardBayLocation[] = [
+  {
+    id: 'bay-1',
+    bayName: 'HMS Heavy Steel Pile #1',
+    categoryType: 'FERROUS_PILE',
+    capacityLbs: 100000,
+    currentLbs: 64200,
+    estValueUsd: 7704.00,
+    status: 'NORMAL',
+    gridArea: 'Grid A1-A3',
+    lastUpdated: new Date().toISOString(),
+  },
+  {
+    id: 'bay-2',
+    bayName: '#1 Bare Bright Copper Safe Bin',
+    categoryType: 'PRECIOUS_VAULT',
+    capacityLbs: 15000,
+    currentLbs: 12800,
+    estValueUsd: 49280.00,
+    status: 'NEAR_CAPACITY',
+    gridArea: 'Vault Room B',
+    lastUpdated: new Date().toISOString(),
+  },
+  {
+    id: 'bay-3',
+    bayName: 'Clean Aluminum Siding & UBC Shred',
+    categoryType: 'NON_FERROUS_BIN',
+    capacityLbs: 40000,
+    currentLbs: 21500,
+    estValueUsd: 13975.00,
+    status: 'NORMAL',
+    gridArea: 'Grid C2',
+    lastUpdated: new Date().toISOString(),
+  },
+  {
+    id: 'bay-4',
+    bayName: 'Junk Car Staging & Pull Grid A',
+    categoryType: 'CAR_GRID',
+    capacityLbs: 120000,
+    currentLbs: 114000,
+    estValueUsd: 12540.00,
+    status: 'CRITICAL_FULL',
+    gridArea: 'South Yard Grid A',
+    lastUpdated: new Date().toISOString(),
+  },
+  {
+    id: 'bay-5',
+    bayName: 'Catalytic Converter High-Security Safe',
+    categoryType: 'PRECIOUS_VAULT',
+    capacityLbs: 5000,
+    currentLbs: 1450,
+    estValueUsd: 38200.00,
+    status: 'NORMAL',
+    gridArea: 'Locked Vault 1',
+    lastUpdated: new Date().toISOString(),
+  },
+];
 
 // Seed Metals Data
 export const INITIAL_METALS: MetalGrade[] = [
@@ -229,6 +465,7 @@ export const INITIAL_SETTINGS: YardSettings = {
   serialBaudRate: 9600,
   webSocketUrl: 'ws://localhost:8080/scale',
   operatorName: 'Scale Tech Station 1',
+  cashDrawerFloatLimit: 10000,
 };
 
 // Seed Sample Compliance Captures
@@ -275,6 +512,7 @@ export const INITIAL_TICKETS: Ticket[] = [
       titleNumber: 'GA-TL-99120',
       hasCatalyticConverter: true,
       catCondition: 'Original OEM',
+      catCodeSerial: '4R31-5E212-AA',
       hasEngineAndTrans: true,
       hasBattery: true,
       hasAluminumRims: true,
@@ -423,6 +661,87 @@ export const storageService = {
     localStorage.setItem(STORAGE_KEYS.CAR_RATES, JSON.stringify(rates));
   },
 
+  getCatCodes(): CatalyticConverterCode[] {
+    const data = localStorage.getItem(STORAGE_KEYS.CATALYTIC_CODES);
+    if (!data) {
+      localStorage.setItem(STORAGE_KEYS.CATALYTIC_CODES, JSON.stringify(INITIAL_CAT_CODES));
+      return INITIAL_CAT_CODES;
+    }
+    return JSON.parse(data);
+  },
+
+  saveCatCode(codeObj: CatalyticConverterCode): void {
+    const codes = this.getCatCodes();
+    const existingIndex = codes.findIndex((c) => c.id === codeObj.id);
+    if (existingIndex >= 0) {
+      codes[existingIndex] = codeObj;
+    } else {
+      codes.unshift(codeObj);
+    }
+    localStorage.setItem(STORAGE_KEYS.CATALYTIC_CODES, JSON.stringify(codes));
+  },
+
+  getContainerDrops(): ContainerDrop[] {
+    const data = localStorage.getItem(STORAGE_KEYS.CONTAINER_DROPS);
+    if (!data) {
+      localStorage.setItem(STORAGE_KEYS.CONTAINER_DROPS, JSON.stringify(INITIAL_CONTAINER_DROPS));
+      return INITIAL_CONTAINER_DROPS;
+    }
+    return JSON.parse(data);
+  },
+
+  saveContainerDrop(drop: ContainerDrop): ContainerDrop {
+    const drops = this.getContainerDrops();
+    const idx = drops.findIndex((d) => d.id === drop.id);
+    if (idx >= 0) {
+      drops[idx] = drop;
+    } else {
+      drops.unshift(drop);
+    }
+    localStorage.setItem(STORAGE_KEYS.CONTAINER_DROPS, JSON.stringify(drops));
+    return drop;
+  },
+
+  getCashDrawerLogs(): CashDrawerLog[] {
+    const data = localStorage.getItem(STORAGE_KEYS.CASH_DRAWER);
+    if (!data) {
+      localStorage.setItem(STORAGE_KEYS.CASH_DRAWER, JSON.stringify(INITIAL_CASH_DRAWER));
+      return INITIAL_CASH_DRAWER;
+    }
+    return JSON.parse(data);
+  },
+
+  addCashDrawerEntry(entry: Omit<CashDrawerLog, 'id' | 'timestamp' | 'balanceAfter'>): CashDrawerLog {
+    const logs = this.getCashDrawerLogs();
+    const lastLog = logs[0];
+    const currentBalance = lastLog ? lastLog.balanceAfter : 0;
+    const newBalance = currentBalance + entry.amount;
+
+    const newLog: CashDrawerLog = {
+      id: `cd-${Date.now()}`,
+      timestamp: new Date().toISOString(),
+      balanceAfter: Math.round(newBalance * 100) / 100,
+      ...entry,
+    };
+
+    logs.unshift(newLog);
+    localStorage.setItem(STORAGE_KEYS.CASH_DRAWER, JSON.stringify(logs));
+    return newLog;
+  },
+
+  getYardBays(): YardBayLocation[] {
+    const data = localStorage.getItem(STORAGE_KEYS.YARD_BAYS);
+    if (!data) {
+      localStorage.setItem(STORAGE_KEYS.YARD_BAYS, JSON.stringify(INITIAL_YARD_BAYS));
+      return INITIAL_YARD_BAYS;
+    }
+    return JSON.parse(data);
+  },
+
+  saveYardBays(bays: YardBayLocation[]): void {
+    localStorage.setItem(STORAGE_KEYS.YARD_BAYS, JSON.stringify(bays));
+  },
+
   getCustomers(): Customer[] {
     const data = localStorage.getItem(STORAGE_KEYS.CUSTOMERS);
     if (!data) {
@@ -462,6 +781,17 @@ export const storageService = {
       tickets.unshift(ticket);
     }
     localStorage.setItem(STORAGE_KEYS.TICKETS, JSON.stringify(tickets));
+
+    // Deduct cash from Paymaster Cash Drawer if payoutMethod === 'Cash'
+    if (ticket.payoutMethod === 'Cash') {
+      this.addCashDrawerEntry({
+        type: 'PAYOUT_DISBURSEMENT',
+        amount: -Math.abs(ticket.finalPayout),
+        ticketId: ticket.id,
+        operatorName: ticket.operatorName,
+        notes: `Cash voucher payout for ticket #${ticket.id}`,
+      });
+    }
 
     // Update customer stats if customerId matches
     if (ticket.customerId) {
@@ -559,6 +889,10 @@ export const storageService = {
     localStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(INITIAL_CUSTOMERS));
     localStorage.setItem(STORAGE_KEYS.TICKETS, JSON.stringify(INITIAL_TICKETS));
     localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(INITIAL_SETTINGS));
+    localStorage.setItem(STORAGE_KEYS.CATALYTIC_CODES, JSON.stringify(INITIAL_CAT_CODES));
+    localStorage.setItem(STORAGE_KEYS.CONTAINER_DROPS, JSON.stringify(INITIAL_CONTAINER_DROPS));
+    localStorage.setItem(STORAGE_KEYS.CASH_DRAWER, JSON.stringify(INITIAL_CASH_DRAWER));
+    localStorage.setItem(STORAGE_KEYS.YARD_BAYS, JSON.stringify(INITIAL_YARD_BAYS));
     localStorage.removeItem(STORAGE_KEYS.NMVTIS_LOGS);
   },
 };
