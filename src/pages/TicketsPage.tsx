@@ -3,12 +3,20 @@ import { Ticket } from '@/types/scrap';
 import { storageService } from '@/services/storageService';
 import { Navbar } from '@/components/layout/Navbar';
 import { ReceiptModal } from '@/components/receipts/ReceiptModal';
+import { calculateComplianceScore } from '@/utils/complianceUtils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from '@/components/ui/dialog';
 import {
   Receipt,
   Search,
@@ -20,6 +28,9 @@ import {
   Filter,
   DollarSign,
   Ban,
+  ShieldCheck,
+  Camera,
+  Fingerprint,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -28,6 +39,7 @@ export default function TicketsPage() {
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<'ALL' | 'CAR_SALVAGE' | 'SCRAP_METAL'>('ALL');
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
+  const [inspectionTicket, setInspectionTicket] = useState<Ticket | null>(null);
   const [receiptOpen, setReceiptOpen] = useState(false);
 
   const handlePrint = (ticket: Ticket) => {
@@ -44,16 +56,20 @@ export default function TicketsPage() {
 
   const handleExportCSV = () => {
     if (tickets.length === 0) return;
-    const headers = ['Ticket ID', 'Type', 'Date', 'Customer', 'Plate / VIN', 'Payout Method', 'Final Payout ($)'];
-    const rows = tickets.map((t) => [
-      t.id,
-      t.ticketType,
-      new Date(t.createdAt).toLocaleString(),
-      `"${t.customerName}"`,
-      `"${t.vehicleLicensePlate || t.carRecord?.vin || 'N/A'}"`,
-      t.payoutMethod,
-      t.finalPayout.toFixed(2),
-    ]);
+    const headers = ['Ticket ID', 'Type', 'Date', 'Customer', 'Plate / VIN', 'Compliance Score', 'Payout Method', 'Final Payout ($)'];
+    const rows = tickets.map((t) => {
+      const stats = calculateComplianceScore(t.complianceCaptures);
+      return [
+        t.id,
+        t.ticketType,
+        new Date(t.createdAt).toLocaleString(),
+        `"${t.customerName}"`,
+        `"${t.vehicleLicensePlate || t.carRecord?.vin || 'N/A'}"`,
+        `"${stats.score}%"`,
+        t.payoutMethod,
+        t.finalPayout.toFixed(2),
+      ];
+    });
 
     const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -96,7 +112,7 @@ export default function TicketsPage() {
               </h1>
             </div>
             <p className="text-xs text-slate-400 mt-1">
-              Historical records for Pull-A-Part car salvage and scrap metal scale transactions
+              Historical records for Pull-A-Part car salvage and scrap metal scale transactions with photo audit proof
             </p>
           </div>
 
@@ -170,6 +186,7 @@ export default function TicketsPage() {
                     <TableHead className="text-slate-400">Date & Time</TableHead>
                     <TableHead className="text-slate-400">Customer / Seller</TableHead>
                     <TableHead className="text-slate-400">Details / VIN</TableHead>
+                    <TableHead className="text-slate-400">Compliance Audit</TableHead>
                     <TableHead className="text-slate-400 text-right">Method</TableHead>
                     <TableHead className="text-slate-400 text-right">Payout Total</TableHead>
                     <TableHead className="text-slate-400 text-center">Status</TableHead>
@@ -178,94 +195,119 @@ export default function TicketsPage() {
                 </TableHeader>
 
                 <TableBody>
-                  {filteredTickets.map((t) => (
-                    <TableRow key={t.id} className="border-slate-800 hover:bg-slate-800/50 text-xs">
-                      
-                      <TableCell className="font-mono font-bold text-amber-400">
-                        {t.id}
-                      </TableCell>
+                  {filteredTickets.map((t) => {
+                    const caps = t.complianceCaptures || t.carRecord?.complianceCaptures;
+                    const stats = calculateComplianceScore(caps);
 
-                      <TableCell>
-                        {t.ticketType === 'CAR_SALVAGE' ? (
-                          <Badge className="bg-amber-950 text-amber-300 border-amber-800 text-[10px]">
-                            <Car className="w-3 h-3 mr-1" /> Auto Salvage
+                    return (
+                      <TableRow key={t.id} className="border-slate-800 hover:bg-slate-800/50 text-xs">
+                        
+                        <TableCell className="font-mono font-bold text-amber-400">
+                          {t.id}
+                        </TableCell>
+
+                        <TableCell>
+                          {t.ticketType === 'CAR_SALVAGE' ? (
+                            <Badge className="bg-amber-950 text-amber-300 border-amber-800 text-[10px]">
+                              <Car className="w-3 h-3 mr-1" /> Auto Salvage
+                            </Badge>
+                          ) : (
+                            <Badge className="bg-emerald-950 text-emerald-300 border-emerald-800 text-[10px]">
+                              <Scale className="w-3 h-3 mr-1" /> Scrap Metal
+                            </Badge>
+                          )}
+                        </TableCell>
+
+                        <TableCell className="text-slate-300">
+                          {new Date(t.createdAt).toLocaleDateString()} {new Date(t.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </TableCell>
+
+                        <TableCell className="font-semibold text-white">
+                          {t.customerName}
+                          <span className="block text-[10px] text-slate-400 font-mono">{t.customerIdNumber || 'ID Verified'}</span>
+                        </TableCell>
+
+                        <TableCell className="text-slate-300">
+                          {t.ticketType === 'CAR_SALVAGE' && t.carRecord ? (
+                            <div>
+                              <span className="font-semibold">{t.carRecord.year} {t.carRecord.make} {t.carRecord.model}</span>
+                              <span className="block text-[10px] text-slate-400 font-mono">VIN: {t.carRecord.vin}</span>
+                            </div>
+                          ) : (
+                            <div>
+                              <span>{t.scrapLines?.length || 0} Scrap Item(s)</span>
+                              <span className="block text-[10px] text-slate-400 font-mono">
+                                {t.scrapLines?.reduce((acc, l) => acc + l.billableWeight, 0)} lbs total
+                              </span>
+                            </div>
+                          )}
+                        </TableCell>
+
+                        <TableCell>
+                          <Badge
+                            onClick={() => setInspectionTicket(t)}
+                            className="cursor-pointer hover:opacity-80 text-[10px] gap-1"
+                            variant="outline"
+                          >
+                            <ShieldCheck className="w-3 h-3 text-blue-400" />
+                            {stats.score}% Studio Audit
                           </Badge>
-                        ) : (
-                          <Badge className="bg-emerald-950 text-emerald-300 border-emerald-800 text-[10px]">
-                            <Scale className="w-3 h-3 mr-1" /> Scrap Metal
-                          </Badge>
-                        )}
-                      </TableCell>
+                        </TableCell>
 
-                      <TableCell className="text-slate-300">
-                        {new Date(t.createdAt).toLocaleDateString()} {new Date(t.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </TableCell>
+                        <TableCell className="text-right text-slate-300 font-mono">
+                          {t.payoutMethod}
+                        </TableCell>
 
-                      <TableCell className="font-semibold text-white">
-                        {t.customerName}
-                        <span className="block text-[10px] text-slate-400 font-mono">{t.customerIdNumber || 'ID Verified'}</span>
-                      </TableCell>
+                        <TableCell className="text-right font-mono font-extrabold text-emerald-400 text-sm">
+                          ${t.finalPayout.toFixed(2)}
+                        </TableCell>
 
-                      <TableCell className="text-slate-300">
-                        {t.ticketType === 'CAR_SALVAGE' && t.carRecord ? (
-                          <div>
-                            <span className="font-semibold">{t.carRecord.year} {t.carRecord.make} {t.carRecord.model}</span>
-                            <span className="block text-[10px] text-slate-400 font-mono">VIN: {t.carRecord.vin}</span>
-                          </div>
-                        ) : (
-                          <div>
-                            <span>{t.scrapLines?.length || 0} Scrap Item(s)</span>
-                            <span className="block text-[10px] text-slate-400 font-mono">
-                              {t.scrapLines?.reduce((acc, l) => acc + l.billableWeight, 0)} lbs total
-                            </span>
-                          </div>
-                        )}
-                      </TableCell>
+                        <TableCell className="text-center">
+                          {t.status === 'COMPLETED' ? (
+                            <Badge variant="outline" className="border-emerald-500/40 text-emerald-400 text-[10px]">
+                              PAID
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className="border-red-500/40 text-red-400 text-[10px]">
+                              VOIDED
+                            </Badge>
+                          )}
+                        </TableCell>
 
-                      <TableCell className="text-right text-slate-300 font-mono">
-                        {t.payoutMethod}
-                      </TableCell>
-
-                      <TableCell className="text-right font-mono font-extrabold text-emerald-400 text-sm">
-                        ${t.finalPayout.toFixed(2)}
-                      </TableCell>
-
-                      <TableCell className="text-center">
-                        {t.status === 'COMPLETED' ? (
-                          <Badge variant="outline" className="border-emerald-500/40 text-emerald-400 text-[10px]">
-                            PAID
-                          </Badge>
-                        ) : (
-                          <Badge variant="outline" className="border-red-500/40 text-red-400 text-[10px]">
-                            VOIDED
-                          </Badge>
-                        )}
-                      </TableCell>
-
-                      <TableCell className="text-right space-x-1">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handlePrint(t)}
-                          className="h-7 px-2 text-slate-300 hover:text-white hover:bg-slate-800 text-xs"
-                        >
-                          <Printer className="w-3.5 h-3.5 mr-1 text-emerald-400" /> Receipt
-                        </Button>
-
-                        {t.status === 'COMPLETED' && (
+                        <TableCell className="text-right space-x-1">
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => handleVoidTicket(t.id)}
-                            className="h-7 px-2 text-slate-500 hover:text-red-400 hover:bg-slate-800 text-xs"
+                            onClick={() => setInspectionTicket(t)}
+                            className="h-7 px-2 text-slate-400 hover:text-white hover:bg-slate-800 text-xs"
                           >
-                            <Ban className="w-3.5 h-3.5" />
+                            <Eye className="w-3.5 h-3.5" />
                           </Button>
-                        )}
-                      </TableCell>
 
-                    </TableRow>
-                  ))}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handlePrint(t)}
+                            className="h-7 px-2 text-slate-300 hover:text-white hover:bg-slate-800 text-xs"
+                          >
+                            <Printer className="w-3.5 h-3.5 mr-1 text-emerald-400" /> Receipt
+                          </Button>
+
+                          {t.status === 'COMPLETED' && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleVoidTicket(t.id)}
+                              className="h-7 px-2 text-slate-500 hover:text-red-400 hover:bg-slate-800 text-xs"
+                            >
+                              <Ban className="w-3.5 h-3.5" />
+                            </Button>
+                          )}
+                        </TableCell>
+
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             )}
@@ -274,11 +316,60 @@ export default function TicketsPage() {
 
       </main>
 
+      {/* Ticket Printable Receipt Modal */}
       <ReceiptModal
         ticket={selectedTicket}
         open={receiptOpen}
         onOpenChange={setReceiptOpen}
       />
+
+      {/* Compliance Inspection Modal */}
+      {inspectionTicket && (
+        <Dialog open={!!inspectionTicket} onOpenChange={() => setInspectionTicket(null)}>
+          <DialogContent className="max-w-2xl bg-slate-950 text-slate-100 border-slate-800 p-6">
+            <DialogHeader className="border-b border-slate-800 pb-3">
+              <DialogTitle className="text-lg font-bold text-white flex items-center gap-2">
+                <ShieldCheck className="w-5 h-5 text-blue-400" />
+                Compliance Photo Proof Audit - Ticket #{inspectionTicket.id}
+              </DialogTitle>
+              <DialogDescription className="text-xs text-slate-400">
+                Customer ID, Face Shot, License Plate & Biometric Thumbprint
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4 pt-2">
+              <div className="grid grid-cols-2 gap-3 bg-slate-900 p-3 rounded-lg border border-slate-800 text-xs font-mono">
+                <div>Customer: <strong className="text-white">{inspectionTicket.customerName}</strong></div>
+                <div>DL #: <strong className="text-amber-300">{inspectionTicket.customerIdNumber || 'N/A'}</strong></div>
+                <div>Plate: <strong className="text-sky-300">{inspectionTicket.vehicleLicensePlate || 'N/A'}</strong></div>
+                <div>Payout: <strong className="text-emerald-400">${inspectionTicket.finalPayout.toFixed(2)}</strong></div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { label: "DL Scan", url: inspectionTicket.complianceCaptures?.idPhotoUrl },
+                  { label: "Seller Face", url: inspectionTicket.complianceCaptures?.personPhotoUrl },
+                  { label: "Vehicle", url: inspectionTicket.complianceCaptures?.vehiclePhotoUrl },
+                  { label: "License Plate", url: inspectionTicket.complianceCaptures?.licensePlatePhotoUrl },
+                  { label: "Cargo Load", url: inspectionTicket.complianceCaptures?.loadPhotoUrl },
+                  { label: "Thumbprint", url: inspectionTicket.complianceCaptures?.thumbprintDataUrl },
+                ].map((item, idx) => (
+                  <div key={idx} className="bg-slate-900 p-2 rounded-lg border border-slate-800 text-center">
+                    <div className="aspect-video bg-slate-950 rounded overflow-hidden mb-1 flex items-center justify-center">
+                      {item.url ? (
+                        <img src={item.url} alt={item.label} className="w-full h-full object-cover" />
+                      ) : (
+                        <span className="text-[9px] text-slate-600">No Photo</span>
+                      )}
+                    </div>
+                    <span className="text-[10px] text-slate-300 font-medium">{item.label}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }

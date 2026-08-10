@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { CarIntakeRecord, Customer, Ticket, WeightUnit } from '@/types/scrap';
+import { CarIntakeRecord, Customer, Ticket, WeightUnit, ComplianceCaptures } from '@/types/scrap';
 import { storageService } from '@/services/storageService';
 import { scaleService } from '@/services/scaleService';
 import { LiveScaleGauge } from '../scale/LiveScaleGauge';
+import { ComplianceCaptureModal } from '../compliance/ComplianceCaptureModal';
+import { calculateComplianceScore, generateSamplePhoto, generateSampleThumbprint, DLScanResult } from '@/utils/complianceUtils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -24,6 +26,13 @@ import {
   FileCheck,
   ShieldAlert,
   Scale,
+  Camera,
+  CreditCard,
+  Scan,
+  Package,
+  Fingerprint,
+  ShieldCheck,
+  UserCheck,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -42,6 +51,18 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
   const [customerName, setCustomerName] = useState<string>('');
   const [customerIdNumber, setCustomerIdNumber] = useState<string>('');
   const [vehicleLicensePlate, setVehicleLicensePlate] = useState<string>('');
+
+  // Compliance Captures state
+  const [complianceCaptures, setComplianceCaptures] = useState<ComplianceCaptures>({
+    personPhotoUrl: generateSamplePhoto('person'),
+    idPhotoUrl: generateSamplePhoto('id'),
+    vehiclePhotoUrl: generateSamplePhoto('vehicle'),
+    licensePlatePhotoUrl: generateSamplePhoto('plate'),
+    loadPhotoUrl: generateSamplePhoto('load'),
+    thumbprintCaptured: true,
+    thumbprintDataUrl: generateSampleThumbprint(),
+  });
+  const [isComplianceModalOpen, setIsComplianceModalOpen] = useState(false);
 
   // Car Record State
   const [vin, setVin] = useState<string>('');
@@ -71,6 +92,8 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
   const [payoutMethod, setPayoutMethod] = useState<'Cash' | 'Check' | 'ACH Direct Transfer'>('Cash');
   const [notes, setNotes] = useState<string>('');
 
+  const complianceStats = calculateComplianceScore(complianceCaptures);
+
   // Sync selected customer details
   const handleCustomerSelect = (custId: string) => {
     setSelectedCustomerId(custId);
@@ -79,6 +102,26 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
       setCustomerName(cust.fullName);
       setCustomerIdNumber(cust.idNumber);
       if (cust.vehicleLicensePlate) setVehicleLicensePlate(cust.vehicleLicensePlate);
+      if (cust.idPhotoUrl || cust.thumbprintData) {
+        setComplianceCaptures((prev) => ({
+          ...prev,
+          idPhotoUrl: cust.idPhotoUrl || prev.idPhotoUrl,
+          thumbprintDataUrl: cust.thumbprintData || prev.thumbprintDataUrl,
+          thumbprintCaptured: !!cust.thumbprintData || prev.thumbprintCaptured,
+        }));
+      }
+    }
+  };
+
+  // Callback from ComplianceCaptureModal
+  const handleApplyComplianceCaptures = (captures: ComplianceCaptures, scannedProfile?: DLScanResult) => {
+    setComplianceCaptures(captures);
+    if (scannedProfile) {
+      setCustomerName(scannedProfile.fullName);
+      setCustomerIdNumber(scannedProfile.idNumber);
+      if (scannedProfile.vehicleLicensePlate) {
+        setVehicleLicensePlate(scannedProfile.vehicleLicensePlate);
+      }
     }
   };
 
@@ -99,7 +142,6 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
     const clean = vin.toUpperCase().trim();
     setVin(clean);
     
-    // Quick heuristic mock decoder based on VIN string
     if (clean.startsWith('1G')) {
       setMake('Chevrolet');
       setModel('Impala');
@@ -182,6 +224,7 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
       batteryBonus,
       deductions: manualDeductions,
       totalPayout: Math.round(finalPayout * 100) / 100,
+      complianceCaptures,
     };
 
     const newTicket: Ticket = {
@@ -194,6 +237,7 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
       customerIdNumber,
       vehicleLicensePlate,
       carRecord,
+      complianceCaptures,
       grossTotal: grossCalculatedPayout,
       totalDeductions: manualDeductions,
       finalPayout: Math.round(finalPayout * 100) / 100,
@@ -203,7 +247,7 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
     };
 
     storageService.saveTicket(newTicket);
-    toast.success(`Car Intake Ticket #${newTicket.id} Completed!`);
+    toast.success(`Car Salvage Ticket #${newTicket.id} Saved with Legal Compliance Photo Records!`);
     onTicketCreated(newTicket);
   };
 
@@ -231,7 +275,7 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
               </Badge>
             </div>
             <p className="text-xs text-slate-400">
-              Capture vehicle spec, VIN title compliance, and component payout calculation
+              Capture vehicle spec, VIN title compliance, NMVTIS audit, and 4-point photo identification
             </p>
           </div>
         </div>
@@ -247,6 +291,77 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
         
         {/* Left Column: Form Controls */}
         <div className="lg:col-span-2 space-y-6">
+
+          {/* CARD 0: LEGAL COMPLIANCE & PHOTO CAPTURE STUDIO */}
+          <Card className="bg-slate-900 border-blue-500/40 text-white shadow-xl overflow-hidden">
+            <CardHeader className="py-3 px-4 bg-gradient-to-r from-blue-950/80 to-slate-950 border-b border-blue-500/30 flex flex-row items-center justify-between">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="w-5 h-5 text-blue-400" />
+                <CardTitle className="text-sm font-bold tracking-wide uppercase text-white">
+                  State Legal Compliance & Photo Studio
+                </CardTitle>
+              </div>
+
+              <Badge
+                className={`text-xs ${
+                  complianceStats.score === 100
+                    ? "bg-emerald-950 text-emerald-400 border-emerald-500/40"
+                    : "bg-amber-950 text-amber-400 border-amber-500/40"
+                }`}
+              >
+                {complianceStats.score}% Studio Audit Verified
+              </Badge>
+            </CardHeader>
+
+            <CardContent className="p-4 space-y-4">
+              {/* Photo Live Thumbnails Grid */}
+              <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                {[
+                  { title: "DL Scan", icon: CreditCard, val: complianceCaptures.idPhotoUrl },
+                  { title: "Seller Face", icon: UserCheck, val: complianceCaptures.personPhotoUrl },
+                  { title: "Vehicle 45°", icon: Car, val: complianceCaptures.vehiclePhotoUrl },
+                  { title: "License Plate", icon: Scan, val: complianceCaptures.licensePlatePhotoUrl },
+                  { title: "Cargo Load", icon: Package, val: complianceCaptures.loadPhotoUrl },
+                  { title: "Thumbprint", icon: Fingerprint, val: complianceCaptures.thumbprintCaptured ? (complianceCaptures.thumbprintDataUrl || generateSampleThumbprint()) : undefined },
+                ].map((item, idx) => {
+                  const Icon = item.icon;
+                  return (
+                    <div
+                      key={idx}
+                      onClick={() => setIsComplianceModalOpen(true)}
+                      className="group cursor-pointer p-1.5 rounded-lg bg-slate-950 border border-slate-800 hover:border-blue-500 transition-all text-center"
+                    >
+                      <div className="aspect-video bg-slate-900 rounded overflow-hidden relative flex items-center justify-center mb-1">
+                        {item.val ? (
+                          <img src={item.val} alt={item.title} className="w-full h-full object-cover" />
+                        ) : (
+                          <Icon className="w-4 h-4 text-slate-500" />
+                        )}
+                        {item.val && (
+                          <span className="absolute top-0.5 right-0.5 bg-emerald-500 text-slate-950 p-0.5 rounded-full">
+                            <CheckCircle2 className="w-2.5 h-2.5 stroke-[3]" />
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-[10px] text-slate-300 font-medium truncate block">{item.title}</span>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 border-t border-slate-800">
+                <p className="text-xs text-slate-400">
+                  4-angle high-resolution photo verification, ID OCR scan & digital thumbprint sealed.
+                </p>
+                <Button
+                  onClick={() => setIsComplianceModalOpen(true)}
+                  className="bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs gap-2"
+                >
+                  <Camera className="w-4 h-4" /> Launch Compliance Studio & ID Scan
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
           
           {/* Card 1: Customer & Seller Info */}
           <Card className="bg-slate-900 border-slate-800 text-white shadow-lg">
@@ -661,6 +776,15 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
         </div>
 
       </div>
+
+      {/* Compliance Studio Modal */}
+      <ComplianceCaptureModal
+        isOpen={isComplianceModalOpen}
+        onClose={() => setIsComplianceModalOpen(false)}
+        initialCaptures={complianceCaptures}
+        onSaveCaptures={handleApplyComplianceCaptures}
+        intakeType="CAR_SALVAGE"
+      />
     </div>
   );
 };

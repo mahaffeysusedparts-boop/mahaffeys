@@ -11,13 +11,10 @@ import {
   DollarSign,
   Users,
   Settings,
-  Wifi,
-  WifiOff,
-  Zap,
+  ShieldCheck,
   Activity,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 
 export const Navbar: React.FC = () => {
   const location = useLocation();
@@ -34,6 +31,7 @@ export const Navbar: React.FC = () => {
 
   const navItems = [
     { label: 'Intake Station', path: '/', icon: Scale },
+    { label: 'Compliance & NMVTIS', path: '/compliance', icon: ShieldCheck },
     { label: 'Ticket Ledger', path: '/tickets', icon: Receipt },
     { label: 'Metal & Auto Rates', path: '/pricing', icon: DollarSign },
     { label: 'Customers & VINs', path: '/customers', icon: Users },
@@ -77,7 +75,7 @@ export const Navbar: React.FC = () => {
                   <Link
                     key={item.path}
                     to={item.path}
-                    className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold transition-colors ${
                       isActive
                         ? 'bg-slate-800 text-emerald-400 border border-slate-700/80 shadow-sm'
                         : 'text-slate-300 hover:bg-slate-800/60 hover:text-white'

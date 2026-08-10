@@ -53,6 +53,23 @@ export interface Customer {
   createdAt: string;
   totalPayouts: number;
   totalWeightLbs: number;
+  // Enhanced Compliance Fields
+  idPhotoUrl?: string;
+  thumbprintData?: string;
+  capturedPlates?: string[];
+}
+
+export interface ComplianceCaptures {
+  personPhotoUrl?: string;
+  idPhotoUrl?: string;
+  vehiclePhotoUrl?: string;
+  licensePlatePhotoUrl?: string;
+  loadPhotoUrl?: string;
+  thumbprintCaptured?: boolean;
+  thumbprintDataUrl?: string;
+  nmvtisReported?: boolean;
+  nmvtisReportedAt?: string;
+  nmvtisBatchId?: string;
 }
 
 export interface ScrapTicketLine {
@@ -98,6 +115,9 @@ export interface CarIntakeRecord {
   batteryBonus: number;
   deductions: number;
   totalPayout: number;
+
+  // Compliance
+  complianceCaptures?: ComplianceCaptures;
 }
 
 export interface Ticket {
@@ -117,6 +137,9 @@ export interface Ticket {
   // Car salvage specific
   carRecord?: CarIntakeRecord;
   
+  // Compliance attachment
+  complianceCaptures?: ComplianceCaptures;
+
   // Financial
   grossTotal: number;
   totalDeductions: number;
@@ -125,6 +148,17 @@ export interface Ticket {
   checkNumber?: string;
   notes?: string;
   operatorName: string;
+}
+
+export interface NMVTISReportLog {
+  id: string;
+  batchId: string;
+  exportedAt: string;
+  ticketCount: number;
+  ticketIds: string[];
+  status: 'PENDING' | 'EXPORTED' | 'DISCREPANCY';
+  exportedBy: string;
+  downloadUrl?: string;
 }
 
 export interface YardSettings {
@@ -140,4 +174,5 @@ export interface YardSettings {
   serialBaudRate: number;
   webSocketUrl: string;
   operatorName: string;
+  nmvtisReportingId?: string;
 }

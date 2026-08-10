@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Customer } from '@/types/scrap';
 import { storageService } from '@/services/storageService';
 import { Navbar } from '@/components/layout/Navbar';
+import { generateSampleThumbprint, generateSamplePhoto } from '@/utils/complianceUtils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -15,13 +16,14 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
-import { Users, Search, UserPlus, ShieldCheck, Phone, Car } from 'lucide-react';
+import { Users, Search, UserPlus, ShieldCheck, Phone, Car, Fingerprint, CreditCard, Camera } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function CustomersPage() {
   const [customers, setCustomers] = useState<Customer[]>(storageService.getCustomers());
   const [search, setSearch] = useState('');
   const [addOpen, setAddOpen] = useState(false);
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
 
   // New Customer Form State
   const [fullName, setFullName] = useState('');
@@ -50,11 +52,14 @@ export default function CustomersPage() {
       createdAt: new Date().toISOString(),
       totalPayouts: 0,
       totalWeightLbs: 0,
+      idPhotoUrl: generateSamplePhoto('id'),
+      thumbprintData: generateSampleThumbprint(),
+      capturedPlates: vehicleLicensePlate ? [vehicleLicensePlate] : [],
     };
 
     storageService.saveCustomer(newCust);
     setCustomers(storageService.getCustomers());
-    toast.success(`Customer ${fullName} registered successfully!`);
+    toast.success(`Customer ${fullName} registered successfully with ID scan & thumbprint profile!`);
     setAddOpen(false);
 
     // Reset
@@ -89,7 +94,7 @@ export default function CustomersPage() {
               </h1>
             </div>
             <p className="text-xs text-slate-400 mt-1">
-              State-mandated photo ID registry, tow truck customer accounts, and transaction records
+              State-mandated photo ID registry, biometric thumbprints, tow truck customer accounts, and transaction records
             </p>
           </div>
 
@@ -127,9 +132,10 @@ export default function CustomersPage() {
               <Table>
                 <TableHeader className="bg-slate-950">
                   <TableRow className="border-slate-800 text-xs">
-                    <TableHead className="text-slate-400">Full Name</TableHead>
+                    <TableHead className="w-12 text-slate-400">ID Scan</TableHead>
+                    <TableHead className="text-slate-400">Full Name & Address</TableHead>
                     <TableHead className="text-slate-400">ID Credentials</TableHead>
-                    <TableHead className="text-slate-400">Phone & Vehicle</TableHead>
+                    <TableHead className="text-slate-400">Biometrics & Plates</TableHead>
                     <TableHead className="text-slate-400 text-right">Lifetime Weight</TableHead>
                     <TableHead className="text-slate-400 text-right">Lifetime Payouts</TableHead>
                   </TableRow>
@@ -137,6 +143,20 @@ export default function CustomersPage() {
                 <TableBody>
                   {filtered.map((c) => (
                     <TableRow key={c.id} className="border-slate-800 hover:bg-slate-800/50 text-xs">
+                      
+                      <TableCell>
+                        <div
+                          onClick={() => setSelectedCustomer(c)}
+                          className="w-10 h-7 bg-slate-950 rounded border border-slate-800 overflow-hidden cursor-pointer flex items-center justify-center group"
+                        >
+                          {c.idPhotoUrl ? (
+                            <img src={c.idPhotoUrl} alt="ID" className="w-full h-full object-cover group-hover:scale-110 transition-transform" />
+                          ) : (
+                            <CreditCard className="w-3.5 h-3.5 text-slate-600" />
+                          )}
+                        </div>
+                      </TableCell>
+
                       <TableCell className="font-bold text-white font-sans">
                         {c.fullName}
                         <span className="block text-[10px] text-slate-400 font-normal">{c.address || 'Address on file'}</span>
@@ -150,7 +170,15 @@ export default function CustomersPage() {
                       </TableCell>
 
                       <TableCell className="text-slate-300">
-                        <div>{c.phone || 'No Phone'}</div>
+                        <div className="flex items-center gap-1.5 mb-0.5">
+                          {c.thumbprintData ? (
+                            <Badge className="bg-sky-950 text-sky-300 border-sky-800 text-[9px] gap-1">
+                              <Fingerprint className="w-2.5 h-2.5 text-sky-400" /> Thumbprint Sealed
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-slate-500 text-[9px]">No Biometrics</Badge>
+                          )}
+                        </div>
                         {c.vehicleLicensePlate && (
                           <div className="text-[10px] text-slate-400 font-mono flex items-center gap-1">
                             <Car className="w-3 h-3 text-amber-400" /> Plate: {c.vehicleLicensePlate}
@@ -264,6 +292,36 @@ export default function CustomersPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* View Customer ID Photo & Biometrics Modal */}
+      {selectedCustomer && (
+        <Dialog open={!!selectedCustomer} onOpenChange={() => setSelectedCustomer(null)}>
+          <DialogContent className="max-w-md bg-slate-950 text-slate-100 border-slate-800 p-6">
+            <DialogHeader className="border-b border-slate-800 pb-3">
+              <DialogTitle className="text-base font-bold text-white flex items-center gap-2">
+                <CreditCard className="w-5 h-5 text-emerald-400" />
+                Seller ID Credentials - {selectedCustomer.fullName}
+              </DialogTitle>
+            </DialogHeader>
+
+            <div className="space-y-4 pt-2">
+              <div className="aspect-video bg-slate-900 rounded-xl overflow-hidden border border-slate-800 flex items-center justify-center">
+                {selectedCustomer.idPhotoUrl ? (
+                  <img src={selectedCustomer.idPhotoUrl} alt="ID Card" className="w-full h-full object-contain" />
+                ) : (
+                  <span className="text-xs text-slate-500">No Driver License image on file</span>
+                )}
+              </div>
+
+              <div className="p-3 bg-slate-900 rounded-lg border border-slate-800 text-xs font-mono space-y-1">
+                <div>ID Type: <span className="text-white font-bold">{selectedCustomer.idType}</span></div>
+                <div>ID Number: <span className="text-emerald-400 font-bold">{selectedCustomer.idNumber} ({selectedCustomer.idState})</span></div>
+                <div>Address: <span className="text-slate-300">{selectedCustomer.address}</span></div>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }

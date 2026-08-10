@@ -1,4 +1,5 @@
-import { Customer, MetalGrade, AutoSalvageCategoryRate, Ticket, YardSettings } from "@/types/scrap";
+import { Customer, MetalGrade, AutoSalvageCategoryRate, Ticket, YardSettings, ComplianceCaptures, NMVTISReportLog } from "@/types/scrap";
+import { generateSamplePhoto, generateSampleThumbprint } from "@/utils/complianceUtils";
 
 const STORAGE_KEYS = {
   METALS: 'scrapflow_metals',
@@ -6,6 +7,7 @@ const STORAGE_KEYS = {
   CUSTOMERS: 'scrapflow_customers',
   TICKETS: 'scrapflow_tickets',
   SETTINGS: 'scrapflow_settings',
+  NMVTIS_LOGS: 'scrapflow_nmvtis_logs',
 };
 
 // Seed Metals Data
@@ -172,6 +174,9 @@ export const INITIAL_CUSTOMERS: Customer[] = [
     createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 30).toISOString(),
     totalPayouts: 1450.80,
     totalWeightLbs: 3820,
+    idPhotoUrl: generateSamplePhoto('id'),
+    thumbprintData: generateSampleThumbprint(),
+    capturedPlates: ['7ABC89'],
   },
   {
     id: 'cust-102',
@@ -186,6 +191,9 @@ export const INITIAL_CUSTOMERS: Customer[] = [
     createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 60).toISOString(),
     totalPayouts: 8940.00,
     totalWeightLbs: 34200,
+    idPhotoUrl: generateSamplePhoto('id'),
+    thumbprintData: generateSampleThumbprint(),
+    capturedPlates: ['TOW-912'],
   },
   {
     id: 'cust-103',
@@ -200,6 +208,9 @@ export const INITIAL_CUSTOMERS: Customer[] = [
     createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 10).toISOString(),
     totalPayouts: 340.25,
     totalWeightLbs: 890,
+    idPhotoUrl: generateSamplePhoto('id'),
+    thumbprintData: generateSampleThumbprint(),
+    capturedPlates: ['BKN-402'],
   },
 ];
 
@@ -211,12 +222,35 @@ export const INITIAL_SETTINGS: YardSettings = {
   phone: '(404) 555-SCRAP',
   email: 'intake@apexrecycling.local',
   licenseNumber: 'SCRAP-GA-2025-901A',
+  nmvtisReportingId: 'NMVTIS-ENTITY-881902',
   receiptHeader: 'THANK YOU FOR RECYCLING WITH APEX! STATE COMPLIANCE ID VERIFIED.',
-  receiptFooter: 'All scrap transactions final. Photo ID on record. Valid payout voucher.',
+  receiptFooter: 'All scrap transactions final. Photo ID & Thumbprint on record. NMVTIS Auto Salvage Verified.',
   defaultWeightUnit: 'LBS',
   serialBaudRate: 9600,
   webSocketUrl: 'ws://localhost:8080/scale',
   operatorName: 'Scale Tech Station 1',
+};
+
+// Seed Sample Compliance Captures
+const sampleCarCaptures: ComplianceCaptures = {
+  personPhotoUrl: generateSamplePhoto('person'),
+  idPhotoUrl: generateSamplePhoto('id'),
+  vehiclePhotoUrl: generateSamplePhoto('vehicle'),
+  licensePlatePhotoUrl: generateSamplePhoto('plate'),
+  loadPhotoUrl: generateSamplePhoto('load'),
+  thumbprintCaptured: true,
+  thumbprintDataUrl: generateSampleThumbprint(),
+  nmvtisReported: false,
+};
+
+const sampleScrapCaptures: ComplianceCaptures = {
+  personPhotoUrl: generateSamplePhoto('person'),
+  idPhotoUrl: generateSamplePhoto('id'),
+  vehiclePhotoUrl: generateSamplePhoto('vehicle'),
+  licensePlatePhotoUrl: generateSamplePhoto('plate'),
+  loadPhotoUrl: generateSamplePhoto('load'),
+  thumbprintCaptured: true,
+  thumbprintDataUrl: generateSampleThumbprint(),
 };
 
 // Seed Sample Tickets
@@ -254,13 +288,15 @@ export const INITIAL_TICKETS: Ticket[] = [
       batteryBonus: 15,
       deductions: 0,
       totalPayout: 535.50,
+      complianceCaptures: sampleCarCaptures,
     },
+    complianceCaptures: sampleCarCaptures,
     grossTotal: 535.50,
     totalDeductions: 0,
     finalPayout: 535.50,
     payoutMethod: 'Cash',
     operatorName: 'Scale Tech Station 1',
-    notes: 'Clean title provided with tow voucher.',
+    notes: 'Clean title provided with tow voucher. NMVTIS inspection clear.',
   },
   {
     id: 'T-2025-1002',
@@ -271,6 +307,7 @@ export const INITIAL_TICKETS: Ticket[] = [
     customerName: 'Robert Henderson',
     customerIdNumber: 'DL-9823145-GA',
     vehicleLicensePlate: '7ABC89',
+    complianceCaptures: sampleScrapCaptures,
     scrapLines: [
       {
         id: 'line-1',
@@ -307,6 +344,56 @@ export const INITIAL_TICKETS: Ticket[] = [
     payoutMethod: 'Cash',
     operatorName: 'Scale Tech Station 1',
   },
+  {
+    id: 'T-2025-1003',
+    ticketType: 'CAR_SALVAGE',
+    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 26).toISOString(),
+    status: 'COMPLETED',
+    customerId: 'cust-103',
+    customerName: 'Sarah Jenkins',
+    customerIdNumber: 'ID-881920-GA',
+    vehicleLicensePlate: 'BKN-402',
+    carRecord: {
+      vin: '1N4AL21E38C209182',
+      year: 2008,
+      make: 'Nissan',
+      model: 'Altima 2.5S',
+      color: 'Black',
+      mileage: 210000,
+      titleStatus: 'Missing Title (Affidavit)',
+      titleNumber: 'AFF-2025-091',
+      hasCatalyticConverter: false,
+      catCondition: 'Missing / Removed',
+      hasEngineAndTrans: true,
+      hasBattery: true,
+      hasAluminumRims: false,
+      fluidsDrained: true,
+      pricingMode: 'TONNAGE',
+      vehicleWeightLbs: 3100,
+      ratePerTon: 220,
+      flatRate: 0,
+      catBonus: 0,
+      engineBonus: 50,
+      batteryBonus: 15,
+      deductions: 0,
+      totalPayout: 406.00,
+      complianceCaptures: {
+        ...sampleCarCaptures,
+        nmvtisReported: false,
+      },
+    },
+    complianceCaptures: {
+      ...sampleCarCaptures,
+      nmvtisReported: false,
+    },
+    grossTotal: 406.00,
+    totalDeductions: 0,
+    finalPayout: 406.00,
+    payoutMethod: 'Check',
+    checkNumber: 'CHK-9021',
+    operatorName: 'Scale Tech Station 1',
+    notes: 'Missing title state affidavit filed on record.',
+  }
 ];
 
 export const storageService = {
@@ -368,7 +455,12 @@ export const storageService = {
 
   saveTicket(ticket: Ticket): Ticket {
     const tickets = this.getTickets();
-    tickets.unshift(ticket);
+    const existingIndex = tickets.findIndex((t) => t.id === ticket.id);
+    if (existingIndex >= 0) {
+      tickets[existingIndex] = ticket;
+    } else {
+      tickets.unshift(ticket);
+    }
     localStorage.setItem(STORAGE_KEYS.TICKETS, JSON.stringify(tickets));
 
     // Update customer stats if customerId matches
@@ -384,11 +476,68 @@ export const storageService = {
           totalLbs = ticket.scrapLines.reduce((acc, l) => acc + l.billableWeight, 0);
         }
         cust.totalWeightLbs += totalLbs;
+        if (ticket.complianceCaptures?.idPhotoUrl) {
+          cust.idPhotoUrl = ticket.complianceCaptures.idPhotoUrl;
+        }
+        if (ticket.complianceCaptures?.thumbprintDataUrl) {
+          cust.thumbprintData = ticket.complianceCaptures.thumbprintDataUrl;
+        }
+        if (ticket.vehicleLicensePlate && (!cust.capturedPlates || !cust.capturedPlates.includes(ticket.vehicleLicensePlate))) {
+          cust.capturedPlates = [...(cust.capturedPlates || []), ticket.vehicleLicensePlate];
+        }
         this.saveCustomer(cust);
       }
     }
 
     return ticket;
+  },
+
+  getNMVTISLogs(): NMVTISReportLog[] {
+    const data = localStorage.getItem(STORAGE_KEYS.NMVTIS_LOGS);
+    if (!data) {
+      return [
+        {
+          id: 'log-101',
+          batchId: 'NMVTIS-BATCH-20250104-01',
+          exportedAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 3).toISOString(),
+          ticketCount: 1,
+          ticketIds: ['T-2025-1001'],
+          status: 'EXPORTED',
+          exportedBy: 'Scale Tech Station 1',
+        }
+      ];
+    }
+    return JSON.parse(data);
+  },
+
+  saveNMVTISLog(log: NMVTISReportLog): void {
+    const logs = this.getNMVTISLogs();
+    logs.unshift(log);
+    localStorage.setItem(STORAGE_KEYS.NMVTIS_LOGS, JSON.stringify(logs));
+  },
+
+  markTicketsAsNMVTISReported(ticketIds: string[], batchId: string): void {
+    const tickets = this.getTickets();
+    const now = new Date().toISOString();
+    tickets.forEach((t) => {
+      if (ticketIds.includes(t.id)) {
+        if (!t.complianceCaptures) {
+          t.complianceCaptures = {};
+        }
+        t.complianceCaptures.nmvtisReported = true;
+        t.complianceCaptures.nmvtisReportedAt = now;
+        t.complianceCaptures.nmvtisBatchId = batchId;
+        if (t.carRecord) {
+          if (!t.carRecord.complianceCaptures) {
+            t.carRecord.complianceCaptures = {};
+          }
+          t.carRecord.complianceCaptures.nmvtisReported = true;
+          t.carRecord.complianceCaptures.nmvtisReportedAt = now;
+          t.carRecord.complianceCaptures.nmvtisBatchId = batchId;
+        }
+      }
+    });
+    localStorage.setItem(STORAGE_KEYS.TICKETS, JSON.stringify(tickets));
   },
 
   getSettings(): YardSettings {
@@ -410,5 +559,6 @@ export const storageService = {
     localStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(INITIAL_CUSTOMERS));
     localStorage.setItem(STORAGE_KEYS.TICKETS, JSON.stringify(INITIAL_TICKETS));
     localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(INITIAL_SETTINGS));
+    localStorage.removeItem(STORAGE_KEYS.NMVTIS_LOGS);
   },
 };

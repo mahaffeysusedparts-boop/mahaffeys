@@ -8,6 +8,7 @@ import TicketsPage from "./pages/TicketsPage";
 import PricingPage from "./pages/PricingPage";
 import CustomersPage from "./pages/CustomersPage";
 import SettingsPage from "./pages/SettingsPage";
+import { CompliancePage } from "./pages/CompliancePage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -20,6 +21,7 @@ const App = () => (
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Index />} />
+          <Route path="/compliance" element={<CompliancePage />} />
           <Route path="/tickets" element={<TicketsPage />} />
           <Route path="/pricing" element={<PricingPage />} />
           <Route path="/customers" element={<CustomersPage />} />

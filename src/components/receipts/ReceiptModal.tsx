@@ -9,7 +9,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Printer, Scale, Car, CheckCircle2, QrCode } from 'lucide-react';
+import { Printer, ShieldCheck, CheckCircle2, QrCode, Fingerprint } from 'lucide-react';
 
 interface ReceiptModalProps {
   ticket: Ticket | null;
@@ -21,6 +21,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ ticket, open, onOpen
   if (!ticket) return null;
 
   const settings: YardSettings = storageService.getSettings();
+  const caps = ticket.complianceCaptures || ticket.carRecord?.complianceCaptures;
 
   const handlePrint = () => {
     window.print();
@@ -28,13 +29,13 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ ticket, open, onOpen
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[650px] bg-slate-900 border-slate-800 text-slate-100 max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-[680px] bg-slate-900 border-slate-800 text-slate-100 max-h-[90vh] overflow-y-auto">
         <DialogHeader className="border-b border-slate-800 pb-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Printer className="w-5 h-5 text-emerald-400" />
               <DialogTitle className="text-lg font-bold text-white font-mono">
-                Intake Ticket & Cash Payout Voucher
+                Intake Ticket & Legal Payout Voucher
               </DialogTitle>
             </div>
             <Button
@@ -57,9 +58,12 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ ticket, open, onOpen
             </h2>
             <p className="text-[11px] text-slate-700">{settings.address}, {settings.cityStateZip}</p>
             <p className="text-[11px] text-slate-700">Phone: {settings.phone} | Lic #: {settings.licenseNumber}</p>
-            <div className="pt-2">
+            <div className="pt-2 flex items-center justify-center gap-2">
               <span className="inline-block px-2 py-0.5 bg-slate-900 text-white font-bold text-xs uppercase tracking-widest rounded">
                 {ticket.ticketType === 'CAR_SALVAGE' ? 'AUTO SALVAGE INTAKE VOUCHER' : 'SCRAP METAL PAYOUT VOUCHER'}
+              </span>
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-950 border border-emerald-400 font-bold text-[10px] uppercase rounded">
+                <ShieldCheck className="w-3 h-3 text-emerald-700 inline" /> COMPLIANCE VERIFIED
               </span>
             </div>
           </div>
@@ -135,6 +139,40 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ ticket, open, onOpen
             </div>
           )}
 
+          {/* ATTACHED COMPLIANCE PHOTO & THUMBPRINT STAMP GALLERY */}
+          {caps && (
+            <div className="border border-slate-300 rounded p-3 bg-slate-50 space-y-2">
+              <div className="flex items-center justify-between border-b border-slate-300 pb-1">
+                <p className="font-bold text-[10px] uppercase text-slate-800 flex items-center gap-1">
+                  <ShieldCheck className="w-3.5 h-3.5 text-blue-600 inline" /> ATTACHED COMPLIANCE MEDIA & BIOMETRIC RECORD
+                </p>
+                <span className="text-[9px] font-bold text-emerald-800">STATE ANTI-THEFT AUDIT SEAL</span>
+              </div>
+              
+              <div className="grid grid-cols-4 sm:grid-cols-6 gap-2 text-center">
+                {[
+                  { label: "ID SCAN", url: caps.idPhotoUrl },
+                  { label: "SELLER FACE", url: caps.personPhotoUrl },
+                  { label: "VEHICLE", url: caps.vehiclePhotoUrl },
+                  { label: "PLATE OCR", url: caps.licensePlatePhotoUrl },
+                  { label: "CARGO LOAD", url: caps.loadPhotoUrl },
+                  { label: "THUMBPRINT", url: caps.thumbprintDataUrl },
+                ].map((item, idx) => (
+                  <div key={idx} className="bg-white p-1 border border-slate-300 rounded">
+                    <div className="aspect-square bg-slate-200 rounded overflow-hidden flex items-center justify-center">
+                      {item.url ? (
+                        <img src={item.url} alt={item.label} className="w-full h-full object-cover" />
+                      ) : (
+                        <span className="text-[8px] text-slate-500">N/A</span>
+                      )}
+                    </div>
+                    <span className="text-[8px] font-bold text-slate-700 block mt-0.5 truncate">{item.label}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Financial Summary Box */}
           <div className="border-t-2 border-slate-900 pt-3 space-y-1 font-mono">
             <div className="flex justify-between text-[11px]">
@@ -161,8 +199,8 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ ticket, open, onOpen
             </p>
           </div>
 
-          {/* Customer Signature Line */}
-          <div className="pt-6 grid grid-cols-2 gap-8 items-end">
+          {/* Customer Signature Line & Biometric Stamp */}
+          <div className="pt-4 grid grid-cols-2 gap-8 items-end">
             <div>
               <div className="border-b border-slate-900 mb-1 h-8" />
               <p className="text-[10px] font-bold">SELLER / CUSTOMER SIGNATURE</p>
