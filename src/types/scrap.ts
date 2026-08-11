@@ -4,6 +4,30 @@ export type ScaleConnectionMode = 'WEB_SERIAL' | 'WEBSOCKET';
 
 export type WeightUnit = 'LBS' | 'KG';
 
+export type UserRole = 'admin' | 'yard_manager' | 'scale_operator';
+
+export type AccountStatus = 'pending' | 'approved' | 'rejected' | 'disabled';
+
+export interface UserAccount {
+  id: string;
+  fullName: string;
+  username: string;
+  email?: string;
+  passwordHash: string;
+  role: UserRole;
+  status: AccountStatus;
+  createdAt: string;
+  updatedAt?: string;
+  approvedBy?: string;
+  approvedAt?: string;
+}
+
+export interface AuthSession {
+  userId: string;
+  token: string;
+  loginTime: string;
+}
+
 export interface ScaleStatus {
   weight: number; // in current weight unit (default LBS)
   unit: WeightUnit;

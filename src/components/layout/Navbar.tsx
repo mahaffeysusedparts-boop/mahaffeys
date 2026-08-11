@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { ScaleStatus, YardSettings } from '@/types/scrap';
 import { scaleService } from '@/services/scaleService';
 import { storageService } from '@/services/storageService';
+import { useAuth } from '@/context/AuthContext';
 import { ScaleConfigModal } from '../scale/ScaleConfigModal';
 import {
   Sheet,
@@ -11,6 +12,14 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -30,10 +39,16 @@ import {
   Menu,
   ChevronRight,
   LayoutDashboard,
+  LogOut,
+  UserCheck,
+  Bell,
+  Lock,
 } from 'lucide-react';
 
 export const Navbar: React.FC = () => {
   const location = useLocation();
+  const navigate = useNavigate();
+  const { user, isAdmin, pendingUsersCount, logout } = useAuth();
   const [scaleStatus, setScaleStatus] = useState<ScaleStatus>(scaleService.getStatus());
   const [settings] = useState<YardSettings>(storageService.getSettings());
   const [configOpen, setConfigOpen] = useState(false);
@@ -45,6 +60,11 @@ export const Navbar: React.FC = () => {
     });
     return () => unsubscribe();
   }, []);
+
+  const handleSignOut = () => {
+    logout();
+    navigate('/login');
+  };
 
   const navItems = [
     { label: 'Dashboard', path: '/', icon: LayoutDashboard },
@@ -61,6 +81,12 @@ export const Navbar: React.FC = () => {
     { label: 'System Status', path: '/system-status', icon: Server },
     { label: 'Settings', path: '/settings', icon: Settings },
   ];
+
+  const roleBadgeLabels: Record<string, string> = {
+    admin: 'Admin',
+    yard_manager: 'Yard Mgr',
+    scale_operator: 'Scale Tech',
+  };
 
   return (
     <>
@@ -130,15 +156,12 @@ export const Navbar: React.FC = () => {
                   {/* Drawer Footer */}
                   <div className="p-4 border-t border-slate-800 bg-slate-900 text-xs text-slate-400 space-y-2">
                     <div className="flex justify-between items-center">
-                      <span>Scale Driver:</span>
-                      <Badge variant="outline" className="text-emerald-400 border-emerald-500/40 text-[10px]">
-                        {scaleStatus.mode}
-                      </Badge>
+                      <span>Logged User:</span>
+                      <span className="text-white font-bold">{user?.fullName || "Operator"}</span>
                     </div>
-                    <div className="flex justify-between items-center">
-                      <span>Operator:</span>
-                      <span className="text-white font-bold">{settings.operatorName}</span>
-                    </div>
+                    <Button onClick={handleSignOut} size="sm" variant="outline" className="w-full h-8 text-xs border-slate-700 text-red-400">
+                      <LogOut className="w-3.5 h-3.5 mr-1" /> Sign Out
+                    </Button>
                   </div>
                 </SheetContent>
               </Sheet>
@@ -186,8 +209,10 @@ export const Navbar: React.FC = () => {
               })}
             </nav>
 
-            {/* Right: Scale Live Status & Quick Toggle */}
+            {/* Right: Scale Live Status & User Profile Dropdown */}
             <div className="flex items-center space-x-2">
+              
+              {/* Scale Indicator */}
               <button
                 onClick={() => setConfigOpen(true)}
                 className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-slate-800/90 border border-slate-700/80 hover:border-emerald-500/50 hover:bg-slate-800 transition-all text-left active:scale-95"
@@ -207,27 +232,69 @@ export const Navbar: React.FC = () => {
                       {scaleStatus.isStable ? 'STABLE' : 'MOTION'}
                     </span>
                   </div>
-                  <div className="text-[9px] text-slate-400 hidden sm:flex items-center gap-1">
-                    <span className="truncate max-w-[70px]">
-                      {scaleStatus.mode === 'SIMULATOR'
-                        ? 'SIMULATOR'
-                        : scaleStatus.mode === 'WEB_SERIAL'
-                        ? 'USB SERIAL'
-                        : 'NETWORK'}
-                    </span>
-                    <span className="text-emerald-400 underline">
-                      Config
-                    </span>
-                  </div>
                 </div>
               </button>
 
-              <Badge
-                variant="secondary"
-                className="hidden xl:inline-flex bg-slate-800 text-slate-300 border-slate-700 text-xs font-normal"
-              >
-                Op: {settings.operatorName}
-              </Badge>
+              {/* Admin Pending Requests Notification Badge */}
+              {isAdmin && pendingUsersCount > 0 && (
+                <Link to="/settings" title="Pending User Requests">
+                  <Button size="icon" variant="outline" className="h-9 w-9 bg-amber-950/60 border-amber-500/50 text-amber-400 relative">
+                    <Bell className="w-4 h-4 animate-bounce" />
+                    <span className="absolute -top-1 -right-1 bg-amber-500 text-slate-950 font-bold text-[10px] w-4 h-4 rounded-full flex items-center justify-center">
+                      {pendingUsersCount}
+                    </span>
+                  </Button>
+                </Link>
+              )}
+
+              {/* User Dropdown */}
+              {user ? (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" className="h-9 px-2 gap-2 text-slate-200 hover:text-white hover:bg-slate-800">
+                      <div className="w-7 h-7 rounded-lg bg-emerald-600/20 border border-emerald-500/30 text-emerald-400 flex items-center justify-center font-bold text-xs">
+                        {user.fullName ? user.fullName[0].toUpperCase() : 'U'}
+                      </div>
+                      <div className="hidden sm:block text-left">
+                        <div className="text-xs font-bold leading-none">{user.fullName}</div>
+                        <div className="text-[10px] text-slate-400 font-mono mt-0.5">
+                          {roleBadgeLabels[user.role] || user.role}
+                        </div>
+                      </div>
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="bg-slate-900 border-slate-800 text-slate-100 text-xs w-48">
+                    <DropdownMenuLabel className="text-slate-400 font-mono text-[10px] uppercase">
+                      User Account
+                    </DropdownMenuLabel>
+                    <div className="px-2 py-1 space-y-0.5">
+                      <p className="font-bold text-white">{user.fullName}</p>
+                      <p className="text-[10px] text-slate-400 font-mono">@{user.username}</p>
+                      <Badge className="bg-emerald-950 text-emerald-400 border-emerald-500/40 text-[9px] mt-1">
+                        {roleBadgeLabels[user.role] || user.role}
+                      </Badge>
+                    </div>
+                    <DropdownMenuSeparator className="bg-slate-800" />
+                    {isAdmin && (
+                      <DropdownMenuItem onClick={() => navigate("/settings")} className="cursor-pointer text-xs">
+                        <Users className="w-3.5 h-3.5 mr-2 text-emerald-400" /> User Access Management
+                      </DropdownMenuItem>
+                    )}
+                    <DropdownMenuItem onClick={() => navigate("/settings")} className="cursor-pointer text-xs">
+                      <Settings className="w-3.5 h-3.5 mr-2 text-slate-400" /> System Settings
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator className="bg-slate-800" />
+                    <DropdownMenuItem onClick={handleSignOut} className="cursor-pointer text-xs text-red-400 focus:text-red-400">
+                      <LogOut className="w-3.5 h-3.5 mr-2" /> Sign Out
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              ) : (
+                <Button size="sm" onClick={() => navigate("/login")} className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs">
+                  Sign In
+                </Button>
+              )}
+
             </div>
 
           </div>
@@ -258,3 +325,305 @@ export const Navbar: React.FC = () => {
     </>
   );
 };
+</dyad-file>
+
+Now let's update `src/pages/SettingsPage.tsx` to include the `UserManagementTab` for Admins.
+
+<dyad-write path="src/pages/SettingsPage.tsx" description="Update SettingsPage to include User Access Management tab for Admins">
+import React, { useState } from 'react';
+import { YardSettings } from '@/types/scrap';
+import { storageService } from '@/services/storageService';
+import { useAuth } from '@/context/AuthContext';
+import { Navbar } from '@/components/layout/Navbar';
+import { UserManagementTab } from '@/components/settings/UserManagementTab';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Badge } from '@/components/ui/badge';
+import { Settings, Save, Scale, FileText, Database, RotateCcw, Download, Users, ShieldCheck } from 'lucide-react';
+import { toast } from 'sonner';
+
+export default function SettingsPage() {
+  const { isAdmin, pendingUsersCount } = useAuth();
+  const [settings, setSettings] = useState<YardSettings>(storageService.getSettings());
+
+  const handleChange = (field: keyof YardSettings, value: any) => {
+    setSettings((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleSave = () => {
+    storageService.saveSettings(settings);
+    toast.success('Yard settings updated successfully!');
+  };
+
+  const handleExportBackup = () => {
+    const data = {
+      metals: storageService.getMetals(),
+      carRates: storageService.getCarRates(),
+      customers: storageService.getCustomers(),
+      tickets: storageService.getTickets(),
+      settings: storageService.getSettings(),
+    };
+
+    const json = JSON.stringify(data, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `ScrapFlow_LocalBackup_${new Date().toISOString().slice(0, 10)}.json`;
+    link.click();
+    toast.success('Local network database backup file downloaded');
+  };
+
+  const handleResetData = () => {
+    if (confirm('Are you sure you want to reset all yard data back to defaults?')) {
+      storageService.resetToDefaults();
+      setSettings(storageService.getSettings());
+      toast.info('Yard data reset to factory defaults');
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
+      <Navbar />
+
+      <main className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+        
+        {/* Header Bar */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-900 p-5 rounded-2xl border border-slate-800 shadow-xl">
+          <div>
+            <div className="flex items-center gap-2">
+              <Settings className="w-6 h-6 text-emerald-400" />
+              <h1 className="text-2xl font-bold text-white tracking-tight">
+                Yard & Hardware System Settings
+              </h1>
+            </div>
+            <p className="text-xs text-slate-400 mt-1">
+              Configure business profile, receipt headers, scale communication drivers, user permissions, and database backups
+            </p>
+          </div>
+
+          <Button
+            onClick={handleSave}
+            className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs"
+          >
+            <Save className="w-4 h-4 mr-1.5" /> Save Yard Settings
+          </Button>
+        </div>
+
+        <Tabs defaultValue={isAdmin ? "users" : "business"} className="space-y-6">
+          <TabsList className="bg-slate-900 border border-slate-800 p-1">
+            {isAdmin && (
+              <TabsTrigger value="users" className="text-xs font-bold flex items-center gap-1.5 relative">
+                <Users className="w-4 h-4 text-emerald-400" /> User Access Management
+                {pendingUsersCount > 0 && (
+                  <Badge className="bg-amber-500 text-slate-950 font-extrabold text-[10px] px-1.5 py-0 rounded-full ml-1">
+                    {pendingUsersCount}
+                  </Badge>
+                )}
+              </TabsTrigger>
+            )}
+            <TabsTrigger value="business" className="text-xs font-bold flex items-center gap-1.5">
+              <FileText className="w-4 h-4 text-blue-400" /> Business Profile & Receipts
+            </TabsTrigger>
+            <TabsTrigger value="hardware" className="text-xs font-bold flex items-center gap-1.5">
+              <Scale className="w-4 h-4 text-purple-400" /> Scale Hardware Communication
+            </TabsTrigger>
+            <TabsTrigger value="database" className="text-xs font-bold flex items-center gap-1.5">
+              <Database className="w-4 h-4 text-amber-400" /> Database & Backups
+            </TabsTrigger>
+          </TabsList>
+
+          {/* TAB 1: USER ACCESS MANAGEMENT (ADMIN ONLY) */}
+          {isAdmin && (
+            <TabsContent value="users" className="space-y-6">
+              <UserManagementTab />
+            </TabsContent>
+          )}
+
+          {/* TAB 2: BUSINESS PROFILE */}
+          <TabsContent value="business" className="space-y-6">
+            <Card className="bg-slate-900 border-slate-800 text-white shadow-lg">
+              <CardHeader className="py-3 px-4 bg-slate-950/60 border-b border-slate-800">
+                <CardTitle className="text-sm font-bold tracking-wide uppercase text-slate-300 flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-emerald-400" /> Yard Business Information
+                </CardTitle>
+              </CardHeader>
+
+              <CardContent className="p-4 space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <Label className="text-xs text-slate-300">Recycling Yard Business Name</Label>
+                    <Input
+                      value={settings.yardName}
+                      onChange={(e) => handleChange('yardName', e.target.value)}
+                      className="bg-slate-950 border-slate-800 text-white text-xs mt-1"
+                    />
+                  </div>
+
+                  <div>
+                    <Label className="text-xs text-slate-300">State Recycler License #</Label>
+                    <Input
+                      value={settings.licenseNumber}
+                      onChange={(e) => handleChange('licenseNumber', e.target.value)}
+                      className="bg-slate-950 border-slate-800 text-white text-xs mt-1"
+                    />
+                  </div>
+
+                  <div>
+                    <Label className="text-xs text-slate-300">Physical Address</Label>
+                    <Input
+                      value={settings.address}
+                      onChange={(e) => handleChange('address', e.target.value)}
+                      className="bg-slate-950 border-slate-800 text-white text-xs mt-1"
+                    />
+                  </div>
+
+                  <div>
+                    <Label className="text-xs text-slate-300">City, State Zip</Label>
+                    <Input
+                      value={settings.cityStateZip}
+                      onChange={(e) => handleChange('cityStateZip', e.target.value)}
+                      className="bg-slate-950 border-slate-800 text-white text-xs mt-1"
+                    />
+                  </div>
+
+                  <div>
+                    <Label className="text-xs text-slate-300">Scale Desk Phone</Label>
+                    <Input
+                      value={settings.phone}
+                      onChange={(e) => handleChange('phone', e.target.value)}
+                      className="bg-slate-950 border-slate-800 text-white text-xs mt-1"
+                    />
+                  </div>
+
+                  <div>
+                    <Label className="text-xs text-slate-300">Operator Station ID</Label>
+                    <Input
+                      value={settings.operatorName}
+                      onChange={(e) => handleChange('operatorName', e.target.value)}
+                      className="bg-slate-950 border-slate-800 text-white text-xs mt-1"
+                    />
+                  </div>
+                </div>
+
+                {/* Receipt text */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-slate-800">
+                  <div>
+                    <Label className="text-xs text-slate-300">Printed Voucher Top Header Notice</Label>
+                    <Textarea
+                      value={settings.receiptHeader}
+                      onChange={(e) => handleChange('receiptHeader', e.target.value)}
+                      rows={2}
+                      className="bg-slate-950 border-slate-800 text-white text-xs mt-1"
+                    />
+                  </div>
+
+                  <div>
+                    <Label className="text-xs text-slate-300">Printed Voucher Bottom Footer Notice</Label>
+                    <Textarea
+                      value={settings.receiptFooter}
+                      onChange={(e) => handleChange('receiptFooter', e.target.value)}
+                      rows={2}
+                      className="bg-slate-950 border-slate-800 text-white text-xs mt-1"
+                    />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* TAB 3: SCALE HARDWARE COMMUNICATION */}
+          <TabsContent value="hardware" className="space-y-6">
+            <Card className="bg-slate-900 border-slate-800 text-white shadow-lg">
+              <CardHeader className="py-3 px-4 bg-slate-950/60 border-b border-slate-800">
+                <CardTitle className="text-sm font-bold tracking-wide uppercase text-slate-300 flex items-center gap-2">
+                  <Scale className="w-4 h-4 text-emerald-400" /> Scale Hardware Communication
+                </CardTitle>
+              </CardHeader>
+
+              <CardContent className="p-4 space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div>
+                    <Label className="text-xs text-slate-300">Default Weight Unit</Label>
+                    <Select
+                      value={settings.defaultWeightUnit}
+                      onValueChange={(val) => handleChange('defaultWeightUnit', val)}
+                    >
+                      <SelectTrigger className="bg-slate-950 border-slate-800 text-white text-xs mt-1">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="bg-slate-900 border-slate-800 text-white text-xs">
+                        <SelectItem value="LBS">Pounds (LBS)</SelectItem>
+                        <SelectItem value="KG">Kilograms (KG)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div>
+                    <Label className="text-xs text-slate-300">Serial COM Baud Rate</Label>
+                    <Input
+                      type="number"
+                      value={settings.serialBaudRate}
+                      onChange={(e) => handleChange('serialBaudRate', parseInt(e.target.value) || 9600)}
+                      className="bg-slate-950 border-slate-800 text-white text-xs mt-1"
+                    />
+                  </div>
+
+                  <div>
+                    <Label className="text-xs text-slate-300">WebSocket Network Feed URL</Label>
+                    <Input
+                      value={settings.webSocketUrl}
+                      onChange={(e) => handleChange('webSocketUrl', e.target.value)}
+                      className="bg-slate-950 border-slate-800 text-white text-xs mt-1"
+                    />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* TAB 4: DATABASE & BACKUPS */}
+          <TabsContent value="database" className="space-y-6">
+            <Card className="bg-slate-900 border-slate-800 text-white shadow-lg">
+              <CardHeader className="py-3 px-4 bg-slate-950/60 border-b border-slate-800">
+                <CardTitle className="text-sm font-bold tracking-wide uppercase text-slate-300 flex items-center gap-2">
+                  <Database className="w-4 h-4 text-emerald-400" /> Local Network Database Management
+                </CardTitle>
+              </CardHeader>
+
+              <CardContent className="p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+                <div className="text-xs text-slate-400">
+                  Export a complete JSON backup of tickets, customer profiles, metal prices, and yard settings for offline archival.
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <Button
+                    onClick={handleExportBackup}
+                    variant="outline"
+                    className="bg-slate-800 border-slate-700 hover:bg-slate-700 text-emerald-400 text-xs font-semibold"
+                  >
+                    <Download className="w-3.5 h-3.5 mr-1.5" /> Download JSON Backup
+                  </Button>
+
+                  <Button
+                    onClick={handleResetData}
+                    variant="outline"
+                    className="bg-slate-800 border-slate-700 hover:bg-red-900/50 text-red-400 text-xs"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5 mr-1" /> Factory Reset
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
+
+      </main>
+    </div>
+  );
+}
