@@ -48,9 +48,9 @@ export const Navbar: React.FC = () => {
 
   const navItems = [
     { label: 'Dashboard', path: '/', icon: LayoutDashboard },
-    { label: 'Intake Station', path: '/intake', icon: Scale },
-    { label: 'Public Inventory', path: '/inventory', icon: Car },
-    { label: 'Pull-A-Part Suite', path: '/pull-a-part', icon: Wrench },
+    { label: 'Scrap Metal Scale', path: '/intake', icon: Scale },
+    { label: 'Junk Yard Cars', path: '/pull-a-part', icon: Car },
+    { label: 'Public Inventory', path: '/inventory', icon: Wrench },
     { label: 'Compliance & NMVTIS', path: '/compliance', icon: ShieldCheck },
     { label: 'Ticket Ledger', path: '/tickets', icon: Receipt },
     { label: 'Metal Rates', path: '/pricing', icon: DollarSign },

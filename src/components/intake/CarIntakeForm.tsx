@@ -1,8 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { CarIntakeRecord, Customer, Ticket, WeightUnit, ComplianceCaptures } from '@/types/scrap';
+import { CarIntakeRecord, Customer, Ticket, ComplianceCaptures } from '@/types/scrap';
 import { storageService } from '@/services/storageService';
-import { scaleService } from '@/services/scaleService';
-import { LiveScaleGauge } from '../scale/LiveScaleGauge';
 import { ComplianceCaptureModal } from '../compliance/ComplianceCaptureModal';
 import { calculateComplianceScore, generateSamplePhoto, DLScanResult } from '@/utils/complianceUtils';
 import { Button } from '@/components/ui/button';
@@ -12,7 +10,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
-import { Textarea } from '@/components/ui/textarea';
 import {
   Car,
   CheckCircle2,
@@ -27,6 +24,9 @@ import {
   Package,
   UserCheck,
   MapPin,
+  Ban,
+  Wrench,
+  Sparkles,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -54,6 +54,7 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
   });
   const [isComplianceModalOpen, setIsComplianceModalOpen] = useState(false);
 
+  // Vehicle Details
   const [vin, setVin] = useState<string>('');
   const [year, setYear] = useState<number>(2012);
   const [make, setMake] = useState<string>('Ford');
@@ -64,9 +65,11 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
   const [titleStatus, setTitleStatus] = useState<CarIntakeRecord['titleStatus']>('Clean Title');
   const [titleNumber, setTitleNumber] = useState<string>('');
 
+  // Row Staging
   const [assignedRow, setAssignedRow] = useState<string>('Row 104');
   const [assignedSpace, setAssignedSpace] = useState<string>('Space 15');
 
+  // Component Checklist
   const [hasCatalyticConverter, setHasCatalyticConverter] = useState<boolean>(true);
   const [catCondition, setCatCondition] = useState<CarIntakeRecord['catCondition']>('Original OEM');
   const [hasEngineAndTrans, setHasEngineAndTrans] = useState<boolean>(true);
@@ -74,10 +77,8 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
   const [hasAluminumRims, setHasAluminumRims] = useState<boolean>(true);
   const [fluidsDrained, setFluidsDrained] = useState<boolean>(true);
 
-  const [pricingMode, setPricingMode] = useState<'TONNAGE' | 'FLAT_RATE'>('TONNAGE');
-  const [vehicleWeightLbs, setVehicleWeightLbs] = useState<number>(3650);
-  const [ratePerTon, setRatePerTon] = useState<number>(220);
-  const [flatRate, setFlatRate] = useState<number>(300);
+  // Flat Rate Payout Pricing (No scale weighing)
+  const [flatRate, setFlatRate] = useState<number>(350);
   const [manualDeductions, setManualDeductions] = useState<number>(0);
   const [payoutMethod, setPayoutMethod] = useState<'Cash' | 'Check' | 'ACH Direct Transfer'>('Cash');
   const [notes, setNotes] = useState<string>('');
@@ -111,10 +112,19 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
     }
   };
 
+  // Update base flat rate when vehicle category changes
   useEffect(() => {
     const rateObj = carRates.find((r) => r.id === selectedCategoryId);
     if (rateObj) {
-      setRatePerTon(rateObj.ratePerTon);
+      if (rateObj.categoryName.includes('Truck') || rateObj.categoryName.includes('SUV')) {
+        setFlatRate(450);
+      } else if (rateObj.categoryName.includes('Stripped')) {
+        setFlatRate(150);
+      } else if (rateObj.categoryName.includes('Commercial')) {
+        setFlatRate(600);
+      } else {
+        setFlatRate(350);
+      }
     }
   }, [selectedCategoryId, carRates]);
 
@@ -153,20 +163,8 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
   const engineBonus = hasEngineAndTrans ? 50 : 0;
   const batteryBonus = hasBattery ? 15 : 0;
 
-  const weightTons = vehicleWeightLbs / 2000;
-  const baseTonnagePayout = Math.round(weightTons * ratePerTon * 100) / 100;
-  const grossCalculatedPayout =
-    pricingMode === 'TONNAGE'
-      ? baseTonnagePayout + catBonus + engineBonus + batteryBonus
-      : flatRate + catBonus + engineBonus + batteryBonus;
-
+  const grossCalculatedPayout = flatRate + catBonus + engineBonus + batteryBonus;
   const finalPayout = Math.max(0, grossCalculatedPayout - manualDeductions);
-
-  const handleHoldWeightFromScale = (weight: number, unit: WeightUnit) => {
-    const lbs = unit === 'KG' ? Math.round(weight * 2.20462) : Math.round(weight);
-    setVehicleWeightLbs(lbs);
-    toast.success(`Vehicle weight set to ${lbs.toLocaleString()} LBS`);
-  };
 
   const handleSubmitTicket = () => {
     if (!customerName.trim()) {
@@ -197,9 +195,9 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
       hasBattery,
       hasAluminumRims,
       fluidsDrained,
-      pricingMode,
-      vehicleWeightLbs,
-      ratePerTon,
+      pricingMode: 'FLAT_RATE',
+      vehicleWeightLbs: 3500, // Estimated standard weight without scale
+      ratePerTon: 0,
       flatRate,
       catBonus,
       engineBonus,
@@ -229,13 +227,14 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
     };
 
     storageService.saveTicket(newTicket);
-    toast.success(`Car Salvage Ticket #${newTicket.id} Staged to Pull-A-Part ${assignedRow}!`);
+    toast.success(`Junk Yard Car Ticket #${newTicket.id} Created & Staged to ${assignedRow}!`);
     onTicketCreated(newTicket);
   };
 
   return (
     <div className="max-w-6xl mx-auto space-y-6 pb-12">
       
+      {/* Top Header Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-900 p-4 rounded-xl border border-slate-800">
         <div className="flex items-center gap-3">
           <Button
@@ -249,30 +248,31 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-xl font-bold text-white font-mono">
-                Car Salvage & Pull-a-Part Intake
+                Junk Yard Vehicle Intake (Pull-A-Part)
               </h1>
               <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/40 text-xs">
-                VEHICLE STATION
+                AUTO SALVAGE STATION
               </Badge>
             </div>
             <p className="text-xs text-slate-400">
-              Capture vehicle spec, VIN title compliance, NMVTIS audit, 5-point photo identification & Pull-A-Part row staging
+              Flat-rate car acquisition, VIN title verification & Pull-A-Part row staging (no scale required)
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
-          <Badge variant="outline" className="border-slate-700 text-slate-300 text-xs font-mono">
-            {vehicleWeightLbs.toLocaleString()} LBS Vehicle Weight
+          <Badge variant="outline" className="border-emerald-500/40 text-emerald-400 text-xs font-mono gap-1">
+            <Ban className="w-3.5 h-3.5 text-amber-400" /> FLAT RATE — NO SCALE NEEDED
           </Badge>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
+        {/* Left Column: Compliance & Vehicle Registration */}
         <div className="lg:col-span-2 space-y-6">
 
-          {/* CARD 0: LEGAL COMPLIANCE & PHOTO CAPTURE STUDIO */}
+          {/* COMPLIANCE & PHOTO CAPTURE STUDIO */}
           <Card className="bg-slate-900 border-blue-500/40 text-white shadow-xl overflow-hidden">
             <CardHeader className="py-3 px-4 bg-gradient-to-r from-blue-950/80 to-slate-950 border-b border-blue-500/30 flex flex-row items-center justify-between">
               <div className="flex items-center gap-2">
@@ -341,6 +341,7 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
             </CardContent>
           </Card>
           
+          {/* CUSTOMER / SELLER */}
           <Card className="bg-slate-900 border-slate-800 text-white shadow-lg">
             <CardHeader className="py-3 px-4 bg-slate-950/60 border-b border-slate-800 flex flex-row items-center justify-between">
               <CardTitle className="text-sm font-bold tracking-wide uppercase text-slate-300 flex items-center gap-2">
@@ -399,6 +400,7 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
             </CardContent>
           </Card>
 
+          {/* VEHICLE IDENTIFICATION & TITLE */}
           <Card className="bg-slate-900 border-slate-800 text-white shadow-lg">
             <CardHeader className="py-3 px-4 bg-slate-950/60 border-b border-slate-800 flex flex-row items-center justify-between">
               <CardTitle className="text-sm font-bold tracking-wide uppercase text-slate-300 flex items-center gap-2">
@@ -498,6 +500,7 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
                 </div>
               </div>
 
+              {/* ROW STAGING */}
               <div className="grid grid-cols-2 gap-3 bg-amber-950/20 p-3 rounded-lg border border-amber-500/30">
                 <div>
                   <Label className="text-xs text-amber-300 flex items-center gap-1">
@@ -522,6 +525,7 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
                 </div>
               </div>
 
+              {/* COMPONENT CHECKLIST */}
               <div className="pt-3 border-t border-slate-800/80 space-y-3">
                 <Label className="text-xs font-bold text-amber-400 uppercase tracking-wider block">
                   Component Checklist & Environmental Compliance
@@ -594,20 +598,20 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
 
         </div>
 
+        {/* Right Column: Flat Rate Payout Summary */}
         <div className="space-y-6">
-          <LiveScaleGauge onHoldWeight={handleHoldWeightFromScale} compact />
-
+          
           <Card className="bg-slate-900 border-slate-800 text-white shadow-xl">
             <CardHeader className="py-3 px-4 bg-slate-950/60 border-b border-slate-800">
               <CardTitle className="text-sm font-bold tracking-wide uppercase text-slate-300 flex items-center gap-2">
-                <DollarSign className="w-4 h-4 text-emerald-400" /> Payout Calculation
+                <DollarSign className="w-4 h-4 text-emerald-400" /> Flat-Rate Payout Summary
               </CardTitle>
             </CardHeader>
 
             <CardContent className="p-4 space-y-4">
               
               <div>
-                <Label className="text-xs text-slate-300">Vehicle Category Rate</Label>
+                <Label className="text-xs text-slate-300">Vehicle Category Rate Sheet</Label>
                 <Select value={selectedCategoryId} onValueChange={setSelectedCategoryId}>
                   <SelectTrigger className="bg-slate-950 border-slate-800 text-white text-xs mt-1">
                     <SelectValue />
@@ -615,71 +619,25 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
                   <SelectContent className="bg-slate-900 border-slate-800 text-white text-xs">
                     {carRates.map((r) => (
                       <SelectItem key={r.id} value={r.id}>
-                        {r.categoryName} (${r.ratePerTon}/ton)
+                        {r.categoryName}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
 
-              <div className="grid grid-cols-2 gap-2 p-1 bg-slate-950 rounded-lg border border-slate-800 text-xs">
-                <Button
-                  type="button"
-                  variant={pricingMode === 'TONNAGE' ? 'default' : 'ghost'}
-                  onClick={() => setPricingMode('TONNAGE')}
-                  className={`h-8 font-semibold text-xs ${
-                    pricingMode === 'TONNAGE' ? 'bg-amber-600 hover:bg-amber-500 text-white' : 'text-slate-400'
-                  }`}
-                >
-                  Tonnage Weight
-                </Button>
-                <Button
-                  type="button"
-                  variant={pricingMode === 'FLAT_RATE' ? 'default' : 'ghost'}
-                  onClick={() => setPricingMode('FLAT_RATE')}
-                  className={`h-8 font-semibold text-xs ${
-                    pricingMode === 'FLAT_RATE' ? 'bg-amber-600 hover:bg-amber-500 text-white' : 'text-slate-400'
-                  }`}
-                >
-                  Flat Car Rate
-                </Button>
+              <div>
+                <Label className="text-[11px] text-slate-400">Base Flat Rate Payout ($)</Label>
+                <Input
+                  type="number"
+                  value={flatRate}
+                  onChange={(e) => setFlatRate(parseFloat(e.target.value) || 0)}
+                  className="bg-slate-950 border-slate-800 text-amber-300 font-mono font-bold text-sm mt-1"
+                />
               </div>
 
-              {pricingMode === 'TONNAGE' ? (
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <Label className="text-[11px] text-slate-400">Scale Weight (LBS)</Label>
-                    <Input
-                      type="number"
-                      value={vehicleWeightLbs}
-                      onChange={(e) => setVehicleWeightLbs(parseFloat(e.target.value) || 0)}
-                      className="bg-slate-950 border-slate-800 text-amber-300 font-mono font-bold text-xs mt-1"
-                    />
-                  </div>
-                  <div>
-                    <Label className="text-[11px] text-slate-400">Rate ($ / Ton)</Label>
-                    <Input
-                      type="number"
-                      value={ratePerTon}
-                      onChange={(e) => setRatePerTon(parseFloat(e.target.value) || 0)}
-                      className="bg-slate-950 border-slate-800 text-emerald-400 font-mono font-bold text-xs mt-1"
-                    />
-                  </div>
-                </div>
-              ) : (
-                <div>
-                  <Label className="text-[11px] text-slate-400">Agreed Flat Vehicle Rate ($)</Label>
-                  <Input
-                    type="number"
-                    value={flatRate}
-                    onChange={(e) => setFlatRate(parseFloat(e.target.value) || 0)}
-                    className="bg-slate-950 border-slate-800 text-amber-300 font-mono font-bold text-sm mt-1"
-                  />
-                </div>
-              )}
-
               <div>
-                <Label className="text-[11px] text-slate-400">Deductions / Missing Parts ($)</Label>
+                <Label className="text-[11px] text-slate-400">Deductions / Missing Body Parts ($)</Label>
                 <Input
                   type="number"
                   value={manualDeductions}
@@ -689,10 +647,10 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
                 />
               </div>
 
-              <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 space-y-1.5 font-mono text-xs text-slate-300">
+              <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-2 font-mono text-xs text-slate-300">
                 <div className="flex justify-between">
-                  <span className="text-slate-400">Base {pricingMode === 'TONNAGE' ? `(${weightTons.toFixed(2)} tons)` : 'Flat'}:</span>
-                  <span>${pricingMode === 'TONNAGE' ? baseTonnagePayout.toFixed(2) : flatRate.toFixed(2)}</span>
+                  <span className="text-slate-400">Base Flat Rate:</span>
+                  <span className="font-bold text-white">${flatRate.toFixed(2)}</span>
                 </div>
                 {catBonus > 0 && (
                   <div className="flex justify-between text-amber-400">
@@ -720,15 +678,15 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
                 )}
 
                 <div className="pt-2 border-t border-slate-800 flex justify-between items-baseline text-white">
-                  <span className="font-sans font-bold text-sm text-amber-400">TOTAL PAYOUT:</span>
-                  <span className="text-2xl font-black text-emerald-400 font-mono">
+                  <span className="font-sans font-bold text-sm text-amber-400">TOTAL CASH PAYOUT:</span>
+                  <span className="text-3xl font-black text-emerald-400 font-mono">
                     ${finalPayout.toFixed(2)}
                   </span>
                 </div>
               </div>
 
               <div>
-                <Label className="text-xs text-slate-300">Payout Method</Label>
+                <Label className="text-xs text-slate-300">Payout Disbursement Method</Label>
                 <Select value={payoutMethod} onValueChange={(v) => setPayoutMethod(v as any)}>
                   <SelectTrigger className="bg-slate-950 border-slate-800 text-white text-xs mt-1">
                     <SelectValue />
@@ -745,7 +703,7 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
                 onClick={handleSubmitTicket}
                 className="w-full h-11 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-extrabold shadow-lg shadow-amber-950 text-sm tracking-wide"
               >
-                <CheckCircle2 className="w-5 h-5 mr-2" /> Complete Ticket & Stage Vehicle
+                <CheckCircle2 className="w-5 h-5 mr-2" /> Issue Voucher & Stage Car to Row
               </Button>
 
             </CardContent>
