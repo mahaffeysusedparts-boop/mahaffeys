@@ -11,21 +11,16 @@ class ScaleService {
     tareWeight: 0,
     grossWeight: 0,
     netWeight: 0,
-    mode: 'SIMULATOR',
-    connected: true,
+    mode: 'WEB_SERIAL',
+    connected: false,
   };
 
   private listeners: Set<ScaleListener> = new Set();
-  private simulatorInterval: number | null = null;
   private serialPort: any = null;
   private serialReader: any = null;
   private ws: WebSocket | null = null;
-  private targetSimulatedWeight: number = 0;
-  private simFluctuation: boolean = true;
 
-  constructor() {
-    this.startSimulator();
-  }
+  constructor() {}
 
   public getStatus(): ScaleStatus {
     return { ...this.status };
@@ -47,7 +42,6 @@ class ScaleService {
   // --- Scale Commands ---
   public setZero() {
     this.status.grossWeight = 0;
-    this.targetSimulatedWeight = 0;
     this.status.tareWeight = 0;
     this.updateWeights(0);
   }
@@ -75,46 +69,6 @@ class ScaleService {
     this.updateWeights(this.status.grossWeight);
   }
 
-  // --- Simulator Controls ---
-  public setSimulatedWeight(targetGross: number) {
-    this.targetSimulatedWeight = Math.max(0, targetGross);
-    this.status.isStable = false;
-  }
-
-  public toggleSimFluctuation(enabled: boolean) {
-    this.simFluctuation = enabled;
-  }
-
-  private startSimulator() {
-    if (this.simulatorInterval) clearInterval(this.simulatorInterval);
-    
-    this.simulatorInterval = window.setInterval(() => {
-      if (this.status.mode !== 'SIMULATOR') return;
-
-      // Smooth transition to target weight
-      const diff = this.targetSimulatedWeight - this.status.grossWeight;
-      let newGross = this.status.grossWeight;
-
-      if (Math.abs(diff) > 0.5) {
-        newGross += Math.sign(diff) * Math.min(Math.abs(diff), Math.max(1, Math.abs(diff) * 0.25));
-        this.status.isStable = false;
-      } else {
-        newGross = this.targetSimulatedWeight;
-        this.status.isStable = true;
-      }
-
-      // Add realistic minor industrial scale jitter if fluctuation enabled
-      if (this.simFluctuation && newGross > 0) {
-        const jitter = (Math.random() - 0.5) * (newGross > 1000 ? 2 : 0.4);
-        newGross = Math.max(0, Math.round((newGross + jitter) * 10) / 10);
-      } else {
-        newGross = Math.round(newGross * 10) / 10;
-      }
-
-      this.updateWeights(newGross);
-    }, 150);
-  }
-
   private updateWeights(gross: number) {
     this.status.grossWeight = gross;
     this.status.netWeight = Math.max(0, this.status.grossWeight - this.status.tareWeight);
@@ -126,7 +80,7 @@ class ScaleService {
   // --- Web Serial API Driver ---
   public async connectWebSerial(baudRate = 9600): Promise<boolean> {
     if (!('serial' in navigator)) {
-      this.status.errorMessage = 'Web Serial API is not supported in this browser. Use Chrome/Edge or Simulator.';
+      this.status.errorMessage = 'Web Serial API is not supported in this browser. Use Chrome or Edge with USB scale.';
       this.notify();
       return false;
     }
@@ -216,10 +170,6 @@ class ScaleService {
 
   public setMode(mode: ScaleConnectionMode) {
     this.status.mode = mode;
-    if (mode === 'SIMULATOR') {
-      this.status.connected = true;
-      this.status.errorMessage = undefined;
-    }
     this.notify();
   }
 

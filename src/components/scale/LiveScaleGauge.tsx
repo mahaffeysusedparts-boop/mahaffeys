@@ -4,18 +4,13 @@ import { scaleService } from '@/services/scaleService';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Slider } from '@/components/ui/slider';
 import {
   Scale,
   RotateCcw,
-  Sliders,
   CheckCircle2,
   AlertCircle,
-  Zap,
   Lock,
   ArrowDownUp,
-  Truck,
-  Box,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -71,13 +66,6 @@ export const LiveScaleGauge: React.FC<LiveScaleGaugeProps> = ({
     }
   };
 
-  // Quick load presets for simulator testing
-  const loadPreset = (lbs: number) => {
-    scaleService.setMode('SIMULATOR');
-    scaleService.setSimulatedWeight(lbs);
-    setIsHeld(false);
-  };
-
   return (
     <Card className={`bg-slate-900 border-slate-800 text-white shadow-xl overflow-hidden ${className}`}>
       <CardHeader className="py-3 px-3 sm:px-4 bg-slate-950/80 border-b border-slate-800 flex flex-row items-center justify-between">
@@ -109,7 +97,7 @@ export const LiveScaleGauge: React.FC<LiveScaleGaugeProps> = ({
           </Badge>
 
           <Badge variant="secondary" className="bg-slate-800 text-slate-300 font-mono text-[10px] sm:text-xs hidden sm:inline-flex">
-            {scale.mode}
+            {scale.mode === 'WEB_SERIAL' ? 'USB SERIAL' : 'NETWORK'}
           </Badge>
         </div>
       </CardHeader>
@@ -204,64 +192,6 @@ export const LiveScaleGauge: React.FC<LiveScaleGaugeProps> = ({
             <Lock className="w-3.5 h-3.5 mr-1" /> HOLD WEIGHT
           </Button>
         </div>
-
-        {/* Scale Simulator Presets (if simulator mode active) */}
-        {scale.mode === 'SIMULATOR' && !compact && (
-          <div className="pt-2 border-t border-slate-800/80">
-            <div className="flex items-center justify-between text-xs text-slate-400 mb-2">
-              <span className="font-semibold text-slate-300 flex items-center gap-1">
-                <Zap className="w-3.5 h-3.5 text-amber-400" /> Live Simulator Quick Loads
-              </span>
-              <span className="hidden sm:inline">Slide or tap to test:</span>
-            </div>
-
-            <div className="space-y-3">
-              <Slider
-                value={[scale.grossWeight]}
-                min={0}
-                max={6000}
-                step={5}
-                onValueChange={(vals) => loadPreset(vals[0])}
-                className="cursor-pointer"
-              />
-
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-[11px]">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => loadPreset(0)}
-                  className="h-8 bg-slate-800/40 hover:bg-slate-800 text-slate-300 text-[11px]"
-                >
-                  Empty (0)
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => loadPreset(45)}
-                  className="h-8 bg-slate-800/40 hover:bg-slate-800 text-slate-300 text-[11px]"
-                >
-                  <Box className="w-3 h-3 mr-1 text-amber-400" /> 45 lbs (Box)
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => loadPreset(350)}
-                  className="h-8 bg-slate-800/40 hover:bg-slate-800 text-slate-300 text-[11px]"
-                >
-                  350 lbs (Pallet)
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => loadPreset(3650)}
-                  className="h-8 bg-slate-800/40 hover:bg-slate-800 text-slate-300 text-[11px]"
-                >
-                  <Truck className="w-3 h-3 mr-1 text-emerald-400" /> 3,650 lbs (Car)
-                </Button>
-              </div>
-            </div>
-          </div>
-        )}
       </CardContent>
     </Card>
   );

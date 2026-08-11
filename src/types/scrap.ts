@@ -1,6 +1,6 @@
 export type IntakeType = 'CAR_SALVAGE' | 'SCRAP_METAL';
 
-export type ScaleConnectionMode = 'SIMULATOR' | 'WEB_SERIAL' | 'WEBSOCKET';
+export type ScaleConnectionMode = 'WEB_SERIAL' | 'WEBSOCKET';
 
 export type WeightUnit = 'LBS' | 'KG';
 

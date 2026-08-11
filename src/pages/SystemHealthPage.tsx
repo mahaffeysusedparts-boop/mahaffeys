@@ -23,11 +23,8 @@ import {
   Activity,
   Wifi,
   Zap,
-  RefreshCw,
   Trash2,
   CheckCircle2,
-  AlertTriangle,
-  Clock,
   Database,
   Terminal,
   Gauge,
@@ -266,7 +263,7 @@ export default function SystemHealthPage() {
                 <div className="flex items-baseline justify-between">
                   <span className="text-3xl font-black text-amber-300 font-mono">{networkLatency} ms</span>
                   <span className="text-xs text-slate-400 font-mono">
-                    {scaleStatus.mode === "SIMULATOR" ? "Simulator Scale" : "USB / Serial Scale"}
+                    {scaleStatus.mode === "WEB_SERIAL" ? "USB / Serial Scale" : "Network Scale Feed"}
                   </span>
                 </div>
                 <div className="flex items-center gap-1.5 mt-2 text-[11px] text-emerald-400 font-semibold">

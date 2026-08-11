@@ -15,7 +15,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Badge } from '@/components/ui/badge';
-import { Scale, Cpu, Wifi, Sliders, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { Scale, Cpu, Wifi, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface ScaleConfigModalProps {
@@ -27,7 +27,7 @@ export const ScaleConfigModal: React.FC<ScaleConfigModalProps> = ({ open, onOpen
   const currentStatus = scaleService.getStatus();
   const settings = storageService.getSettings();
 
-  const [mode, setMode] = useState<ScaleConnectionMode>(currentStatus.mode);
+  const [mode, setMode] = useState<ScaleConnectionMode>(currentStatus.mode || 'WEB_SERIAL');
   const [baudRate, setBaudRate] = useState<number>(settings.serialBaudRate || 9600);
   const [wsUrl, setWsUrl] = useState<string>(settings.webSocketUrl || 'ws://localhost:8080/scale');
   const [loading, setLoading] = useState(false);
@@ -35,21 +35,16 @@ export const ScaleConfigModal: React.FC<ScaleConfigModalProps> = ({ open, onOpen
   const handleApply = async () => {
     setLoading(true);
 
-    if (mode === 'SIMULATOR') {
-      scaleService.setMode('SIMULATOR');
-      toast.success('Switched to Interactive Scale Simulator');
-      onOpenChange(false);
-    } else if (mode === 'WEB_SERIAL') {
+    if (mode === 'WEB_SERIAL') {
       const success = await scaleService.connectWebSerial(baudRate);
       if (success) {
         toast.success('Connected to Web Serial Scale Port');
-        // Save baud rate setting
         const updated = storageService.getSettings();
         updated.serialBaudRate = baudRate;
         storageService.saveSettings(updated);
         onOpenChange(false);
       } else {
-        toast.error('Could not connect serial scale. Check connection or use Simulator.');
+        toast.error('Could not connect serial scale. Check connection or USB port.');
       }
     } else if (mode === 'WEBSOCKET') {
       const success = scaleService.connectWebSocket(wsUrl);
@@ -78,7 +73,7 @@ export const ScaleConfigModal: React.FC<ScaleConfigModalProps> = ({ open, onOpen
             </DialogTitle>
           </div>
           <DialogDescription className="text-slate-400 text-xs">
-            Connect an industrial RS-232 / USB scale indicator via Web Serial, a network scale server stream, or use the local simulator.
+            Connect an industrial RS-232 / USB scale indicator via Web Serial or a network scale server stream.
           </DialogDescription>
         </DialogHeader>
 
@@ -86,32 +81,7 @@ export const ScaleConfigModal: React.FC<ScaleConfigModalProps> = ({ open, onOpen
           {/* Mode Selection */}
           <RadioGroup value={mode} onValueChange={(val) => setMode(val as ScaleConnectionMode)} className="space-y-3">
             
-            {/* Option 1: Built-in Simulator */}
-            <div
-              className={`flex items-start space-x-3 p-3 rounded-lg border transition-colors cursor-pointer ${
-                mode === 'SIMULATOR'
-                  ? 'bg-emerald-950/40 border-emerald-500/60 text-white'
-                  : 'bg-slate-800/40 border-slate-800 hover:bg-slate-800/80 text-slate-300'
-              }`}
-              onClick={() => setMode('SIMULATOR')}
-            >
-              <RadioGroupItem value="SIMULATOR" id="mode-sim" className="mt-1" />
-              <div className="flex-1">
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="mode-sim" className="font-semibold text-sm cursor-pointer flex items-center gap-1.5">
-                    <Sliders className="w-4 h-4 text-emerald-400" /> Scale Simulator (Interactive)
-                  </Label>
-                  <Badge variant="outline" className="border-emerald-500/40 text-emerald-400 text-[10px]">
-                    READY
-                  </Badge>
-                </div>
-                <p className="text-xs text-slate-400 mt-1">
-                  Generates realistic live weights with stability jitter and quick load controls. Ideal for offline work & testing.
-                </p>
-              </div>
-            </div>
-
-            {/* Option 2: Web Serial API */}
+            {/* Option 1: Web Serial API */}
             <div
               className={`flex items-start space-x-3 p-3 rounded-lg border transition-colors cursor-pointer ${
                 mode === 'WEB_SERIAL'
@@ -150,7 +120,7 @@ export const ScaleConfigModal: React.FC<ScaleConfigModalProps> = ({ open, onOpen
               </div>
             </div>
 
-            {/* Option 3: WebSocket Feed */}
+            {/* Option 2: WebSocket Feed */}
             <div
               className={`flex items-start space-x-3 p-3 rounded-lg border transition-colors cursor-pointer ${
                 mode === 'WEBSOCKET'
