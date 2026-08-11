@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { YardSettings } from '@/types/scrap';
 import { storageService } from '@/services/storageService';
+import { authService } from '@/services/authService';
 import { Navbar } from '@/components/layout/Navbar';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -13,6 +14,7 @@ import { toast } from 'sonner';
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<YardSettings>(storageService.getSettings());
+  const importFileInputRef = useRef<HTMLInputElement>(null);
 
   const handleChange = (field: keyof YardSettings, value: any) => {
     setSettings((prev) => ({ ...prev, [field]: value }));
@@ -30,6 +32,15 @@ export default function SettingsPage() {
       customers: storageService.getCustomers(),
       tickets: storageService.getTickets(),
       settings: storageService.getSettings(),
+      users: authService.getUsers(),
+      catCodes: storageService.getCatCodes(),
+      containerDrops: storageService.getContainerDrops(),
+      cashDrawer: storageService.getCashDrawerLogs(),
+      yardBays: storageService.getYardBays(),
+      pullParts: storageService.getPullParts(),
+      pullVehicles: storageService.getPullYardVehicles(),
+      coreReturns: storageService.getCoreReturns(),
+      admissionPasses: storageService.getAdmissionPasses(),
     };
 
     const json = JSON.stringify(data, null, 2);
@@ -40,6 +51,38 @@ export default function SettingsPage() {
     link.download = `ScrapFlow_LocalBackup_${new Date().toISOString().slice(0, 10)}.json`;
     link.click();
     toast.success('Local network database backup file downloaded');
+  };
+
+  const handleImportBackup = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const data = JSON.parse(evt.target?.result as string);
+        if (data.metals) localStorage.setItem('scrapflow_metals', JSON.stringify(data.metals));
+        if (data.carRates) localStorage.setItem('scrapflow_car_rates', JSON.stringify(data.carRates));
+        if (data.customers) localStorage.setItem('scrapflow_customers', JSON.stringify(data.customers));
+        if (data.tickets) localStorage.setItem('scrapflow_tickets', JSON.stringify(data.tickets));
+        if (data.settings) localStorage.setItem('scrapflow_settings', JSON.stringify(data.settings));
+        if (data.users) localStorage.setItem('scrapflow_users', JSON.stringify(data.users));
+        if (data.catCodes) localStorage.setItem('scrapflow_cat_codes', JSON.stringify(data.catCodes));
+        if (data.containerDrops) localStorage.setItem('scrapflow_container_drops', JSON.stringify(data.containerDrops));
+        if (data.cashDrawer) localStorage.setItem('scrapflow_cash_drawer', JSON.stringify(data.cashDrawer));
+        if (data.yardBays) localStorage.setItem('scrapflow_yard_bays', JSON.stringify(data.yardBays));
+        if (data.pullParts) localStorage.setItem('scrapflow_pull_parts', JSON.stringify(data.pullParts));
+        if (data.pullVehicles) localStorage.setItem('scrapflow_pull_yard_vehicles', JSON.stringify(data.pullVehicles));
+        if (data.coreReturns) localStorage.setItem('scrapflow_core_returns', JSON.stringify(data.coreReturns));
+        if (data.admissionPasses) localStorage.setItem('scrapflow_admission_passes', JSON.stringify(data.admissionPasses));
+
+        toast.success("Database and Admin account restored successfully!");
+        setTimeout(() => window.location.reload(), 1000);
+      } catch {
+        toast.error("Failed to parse backup file. Please select a valid JSON backup.");
+      }
+    };
+    reader.readAsText(file);
   };
 
   const handleResetData = () => {
@@ -56,6 +99,15 @@ export default function SettingsPage() {
 
       <main className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
         
+        {/* Hidden File Input for Importing Backup */}
+        <input
+          type="file"
+          ref={importFileInputRef}
+          onChange={handleImportBackup}
+          accept="application/json,.json"
+          className="hidden"
+        />
+
         {/* Header Bar */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-900 p-5 rounded-2xl border border-slate-800 shadow-xl">
           <div>
@@ -226,7 +278,7 @@ export default function SettingsPage() {
 
           <CardContent className="p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="text-xs text-slate-400">
-              Export a complete JSON backup of tickets, customer profiles, metal prices, and yard settings for offline archival.
+              Export or import a complete JSON backup of user accounts, tickets, customer profiles, metal prices, and yard settings.
             </div>
 
             <div className="flex items-center gap-2 shrink-0">
@@ -236,6 +288,14 @@ export default function SettingsPage() {
                 className="bg-slate-800 border-slate-700 hover:bg-slate-700 text-emerald-400 text-xs font-semibold"
               >
                 <Download className="w-3.5 h-3.5 mr-1.5" /> Download JSON Backup
+              </Button>
+
+              <Button
+                onClick={() => importFileInputRef.current?.click()}
+                variant="outline"
+                className="bg-slate-800 border-slate-700 hover:bg-slate-700 text-sky-400 text-xs font-semibold"
+              >
+                <Upload className="w-3.5 h-3.5 mr-1.5" /> Import JSON Backup
               </Button>
 
               <Button
