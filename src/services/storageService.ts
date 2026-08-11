@@ -10,6 +10,10 @@ import {
   ContainerDrop,
   CashDrawerLog,
   YardBayLocation,
+  PullPartItem,
+  PullYardVehicle,
+  CoreReturnLog,
+  AdmissionPass,
 } from "@/types/scrap";
 import { generateSamplePhoto, generateSampleThumbprint } from "@/utils/complianceUtils";
 
@@ -24,7 +28,216 @@ const STORAGE_KEYS = {
   CONTAINER_DROPS: 'scrapflow_container_drops',
   CASH_DRAWER: 'scrapflow_cash_drawer',
   YARD_BAYS: 'scrapflow_yard_bays',
+  PULL_PARTS: 'scrapflow_pull_parts',
+  PULL_YARD_VEHICLES: 'scrapflow_pull_yard_vehicles',
+  CORE_RETURNS: 'scrapflow_core_returns',
+  ADMISSION_PASSES: 'scrapflow_admission_passes',
 };
+
+// Seed Pull-A-Part Flat Part Price Catalog
+export const INITIAL_PULL_PARTS: PullPartItem[] = [
+  {
+    id: 'part-1',
+    partName: 'Complete Engine Assembly (Short/Long Block)',
+    category: 'Engine & Driveline',
+    price: 245.00,
+    coreDeposit: 45.00,
+    warrantyFee: 15.00,
+    interchangeNotes: 'Includes intake manifold, oil pan, and heads.',
+    isPopular: true,
+  },
+  {
+    id: 'part-2',
+    partName: 'Automatic / Manual Transmission Assembly',
+    category: 'Engine & Driveline',
+    price: 175.00,
+    coreDeposit: 35.00,
+    warrantyFee: 12.00,
+    interchangeNotes: 'Torque converter included if attached.',
+    isPopular: true,
+  },
+  {
+    id: 'part-3',
+    partName: 'Alternator / Generator',
+    category: 'Electrical & Lights',
+    price: 38.00,
+    coreDeposit: 10.00,
+    warrantyFee: 5.00,
+    interchangeNotes: 'Standard 12V OEM alternator.',
+    isPopular: true,
+  },
+  {
+    id: 'part-4',
+    partName: 'Starter Motor Assembly',
+    category: 'Electrical & Lights',
+    price: 32.00,
+    coreDeposit: 10.00,
+    warrantyFee: 5.00,
+    interchangeNotes: 'Bench tested at counter.',
+    isPopular: true,
+  },
+  {
+    id: 'part-5',
+    partName: 'Door Assembly (Bare Shell or Loaded)',
+    category: 'Body & Panels',
+    price: 75.00,
+    coreDeposit: 0.00,
+    warrantyFee: 5.00,
+    interchangeNotes: 'Includes door glass and regulator if intact.',
+    isPopular: true,
+  },
+  {
+    id: 'part-6',
+    partName: 'Front / Rear Fender Panel',
+    category: 'Body & Panels',
+    price: 48.00,
+    coreDeposit: 0.00,
+    warrantyFee: 3.00,
+    interchangeNotes: 'Steel or aluminum OEM body fender.',
+  },
+  {
+    id: 'part-7',
+    partName: '12V Lead Auto Battery',
+    category: 'Electrical & Lights',
+    price: 28.00,
+    coreDeposit: 12.00,
+    warrantyFee: 5.00,
+    interchangeNotes: 'Charged and battery tester verified.',
+    isPopular: true,
+  },
+  {
+    id: 'part-8',
+    partName: 'Headlight / Tail Light Assembly',
+    category: 'Electrical & Lights',
+    price: 35.00,
+    coreDeposit: 0.00,
+    warrantyFee: 3.00,
+    interchangeNotes: 'Clean OEM lens assembly.',
+  },
+  {
+    id: 'part-9',
+    partName: 'Aluminum Rim / Alloy Wheel',
+    category: 'Wheels & Tires',
+    price: 42.00,
+    coreDeposit: 0.00,
+    warrantyFee: 0.00,
+    interchangeNotes: 'Straight alloy wheel (tire separate).',
+    isPopular: true,
+  },
+  {
+    id: 'part-10',
+    partName: 'Radiator & Cooling Fan Shroud',
+    category: 'Exhaust & Fuel',
+    price: 45.00,
+    coreDeposit: 8.00,
+    warrantyFee: 5.00,
+    interchangeNotes: 'Pressure checked for core leaks.',
+  },
+];
+
+// Seed Pull-A-Part Yard Row Vehicles
+export const INITIAL_PULL_VEHICLES: PullYardVehicle[] = [
+  {
+    id: 'veh-101',
+    rowNumber: 'Row 104',
+    spaceNumber: 'Space 12',
+    section: 'Domestic Trucks & SUVs',
+    year: 2008,
+    make: 'Ford',
+    model: 'F-150 SuperCrew 5.4L',
+    color: 'Oxford White',
+    vin: '1FTRF12W88KA10291',
+    dateSetInYard: new Date(Date.now() - 1000 * 60 * 60 * 24 * 3).toISOString(),
+    status: 'FRESH_SET',
+    partsRemaining: ['Transmission 4R75E', 'Doors (4x)', 'Rear Axle Assembly', 'Interior Seats', 'Fenders', 'Hood'],
+  },
+  {
+    id: 'veh-102',
+    rowNumber: 'Row 202',
+    spaceNumber: 'Space 05',
+    section: 'GM & Chevrolet',
+    year: 2008,
+    make: 'Chevrolet',
+    model: 'Impala LT 3.5L V6',
+    color: 'Silver Metallic',
+    vin: '1G1JC524317109281',
+    dateSetInYard: new Date(Date.now() - 1000 * 60 * 60 * 24 * 10).toISOString(),
+    status: 'POPULAR',
+    partsRemaining: ['Engine 3.5L V6', 'Headlights', 'Bumper Assembly', 'Front Struts'],
+  },
+  {
+    id: 'veh-103',
+    rowNumber: 'Row 308',
+    spaceNumber: 'Space 22',
+    section: 'Asian Imports',
+    year: 2008,
+    make: 'Nissan',
+    model: 'Altima 2.5S Sedan',
+    color: 'Super Black',
+    vin: '1N4AL21E38C209182',
+    dateSetInYard: new Date(Date.now() - 1000 * 60 * 60 * 24 * 22).toISOString(),
+    status: 'STRIPPED_SHELL',
+    partsRemaining: ['Bare Body Shell', 'Subframe', 'Rear Suspension Beam'],
+  },
+  {
+    id: 'veh-104',
+    rowNumber: 'Row 310',
+    spaceNumber: 'Space 01',
+    section: 'Asian Imports',
+    year: 2011,
+    make: 'Toyota',
+    model: 'Camry LE 2.5L',
+    color: 'Classic Silver',
+    vin: '4T1BF1FK1BU209182',
+    dateSetInYard: new Date(Date.now() - 1000 * 60 * 60 * 24 * 1).toISOString(),
+    status: 'FRESH_SET',
+    partsRemaining: ['2AR-FE Engine', '6-Speed Auto Transmission', 'Alloy Wheels (4x)', 'Doors', 'Front End Assembly'],
+  },
+];
+
+// Seed Core Returns
+export const INITIAL_CORE_RETURNS: CoreReturnLog[] = [
+  {
+    id: 'core-1',
+    customerName: 'Robert Henderson',
+    customerIdNumber: 'DL-9823145-GA',
+    partName: 'Alternator / Generator Core',
+    coreDepositRefunded: 10.00,
+    returnedAt: new Date(Date.now() - 1000 * 60 * 60 * 4).toISOString(),
+    operatorName: 'Scale Tech Station 1',
+  },
+  {
+    id: 'core-2',
+    customerName: 'Marcus Vance',
+    customerIdNumber: 'DL-4481029-GA',
+    partName: '4R75E Transmission Core',
+    coreDepositRefunded: 35.00,
+    returnedAt: new Date(Date.now() - 1000 * 60 * 60 * 18).toISOString(),
+    operatorName: 'Scale Tech Station 1',
+  },
+];
+
+// Seed Admission Passes
+export const INITIAL_ADMISSION_PASSES: AdmissionPass[] = [
+  {
+    id: 'pass-1001',
+    customerName: 'Robert Henderson',
+    customerIdNumber: 'DL-9823145-GA',
+    passDate: new Date().toISOString(),
+    feePaid: 2.00,
+    waiverSigned: true,
+    operatorName: 'Scale Tech Station 1',
+  },
+  {
+    id: 'pass-1002',
+    customerName: 'Sarah Jenkins',
+    customerIdNumber: 'ID-881920-GA',
+    passDate: new Date().toISOString(),
+    feePaid: 2.00,
+    waiverSigned: true,
+    operatorName: 'Scale Tech Station 1',
+  },
+];
 
 // Seed Catalytic Converter Codes
 export const INITIAL_CAT_CODES: CatalyticConverterCode[] = [
@@ -466,6 +679,7 @@ export const INITIAL_SETTINGS: YardSettings = {
   webSocketUrl: 'ws://localhost:8080/scale',
   operatorName: 'Scale Tech Station 1',
   cashDrawerFloatLimit: 10000,
+  admissionFeeUsd: 2.00,
 };
 
 // Seed Sample Compliance Captures
@@ -513,6 +727,8 @@ export const INITIAL_TICKETS: Ticket[] = [
       hasCatalyticConverter: true,
       catCondition: 'Original OEM',
       catCodeSerial: '4R31-5E212-AA',
+      assignedRow: 'Row 202',
+      assignedSpace: 'Space 05',
       hasEngineAndTrans: true,
       hasBattery: true,
       hasAluminumRims: true,
@@ -602,6 +818,8 @@ export const INITIAL_TICKETS: Ticket[] = [
       titleNumber: 'AFF-2025-091',
       hasCatalyticConverter: false,
       catCondition: 'Missing / Removed',
+      assignedRow: 'Row 308',
+      assignedSpace: 'Space 22',
       hasEngineAndTrans: true,
       hasBattery: true,
       hasAluminumRims: false,
@@ -659,6 +877,90 @@ export const storageService = {
 
   saveCarRates(rates: AutoSalvageCategoryRate[]): void {
     localStorage.setItem(STORAGE_KEYS.CAR_RATES, JSON.stringify(rates));
+  },
+
+  getPullParts(): PullPartItem[] {
+    const data = localStorage.getItem(STORAGE_KEYS.PULL_PARTS);
+    if (!data) {
+      localStorage.setItem(STORAGE_KEYS.PULL_PARTS, JSON.stringify(INITIAL_PULL_PARTS));
+      return INITIAL_PULL_PARTS;
+    }
+    return JSON.parse(data);
+  },
+
+  savePullParts(parts: PullPartItem[]): void {
+    localStorage.setItem(STORAGE_KEYS.PULL_PARTS, JSON.stringify(parts));
+  },
+
+  getPullYardVehicles(): PullYardVehicle[] {
+    const data = localStorage.getItem(STORAGE_KEYS.PULL_YARD_VEHICLES);
+    if (!data) {
+      localStorage.setItem(STORAGE_KEYS.PULL_YARD_VEHICLES, JSON.stringify(INITIAL_PULL_VEHICLES));
+      return INITIAL_PULL_VEHICLES;
+    }
+    return JSON.parse(data);
+  },
+
+  savePullYardVehicle(veh: PullYardVehicle): PullYardVehicle {
+    const vehicles = this.getPullYardVehicles();
+    const idx = vehicles.findIndex((v) => v.id === veh.id);
+    if (idx >= 0) {
+      vehicles[idx] = veh;
+    } else {
+      vehicles.unshift(veh);
+    }
+    localStorage.setItem(STORAGE_KEYS.PULL_YARD_VEHICLES, JSON.stringify(vehicles));
+    return veh;
+  },
+
+  getCoreReturns(): CoreReturnLog[] {
+    const data = localStorage.getItem(STORAGE_KEYS.CORE_RETURNS);
+    if (!data) {
+      localStorage.setItem(STORAGE_KEYS.CORE_RETURNS, JSON.stringify(INITIAL_CORE_RETURNS));
+      return INITIAL_CORE_RETURNS;
+    }
+    return JSON.parse(data);
+  },
+
+  saveCoreReturn(log: CoreReturnLog): CoreReturnLog {
+    const logs = this.getCoreReturns();
+    logs.unshift(log);
+    localStorage.setItem(STORAGE_KEYS.CORE_RETURNS, JSON.stringify(logs));
+
+    // Deduct cash from Paymaster Cash Drawer as a payout disbursement
+    this.addCashDrawerEntry({
+      type: 'PAYOUT_DISBURSEMENT',
+      amount: -Math.abs(log.coreDepositRefunded),
+      operatorName: log.operatorName,
+      notes: `Core deposit refund for ${log.partName} - ${log.customerName}`,
+    });
+
+    return log;
+  },
+
+  getAdmissionPasses(): AdmissionPass[] {
+    const data = localStorage.getItem(STORAGE_KEYS.ADMISSION_PASSES);
+    if (!data) {
+      localStorage.setItem(STORAGE_KEYS.ADMISSION_PASSES, JSON.stringify(INITIAL_ADMISSION_PASSES));
+      return INITIAL_ADMISSION_PASSES;
+    }
+    return JSON.parse(data);
+  },
+
+  saveAdmissionPass(pass: AdmissionPass): AdmissionPass {
+    const passes = this.getAdmissionPasses();
+    passes.unshift(pass);
+    localStorage.setItem(STORAGE_KEYS.ADMISSION_PASSES, JSON.stringify(passes));
+
+    // Add admission fee cash income to cash drawer balance
+    this.addCashDrawerEntry({
+      type: 'VAULT_REPLENISHMENT',
+      amount: Math.abs(pass.feePaid),
+      operatorName: pass.operatorName,
+      notes: `$${pass.feePaid.toFixed(2)} Yard Gate Admission Fee Pass - ${pass.customerName}`,
+    });
+
+    return pass;
   },
 
   getCatCodes(): CatalyticConverterCode[] {
@@ -782,6 +1084,31 @@ export const storageService = {
     }
     localStorage.setItem(STORAGE_KEYS.TICKETS, JSON.stringify(tickets));
 
+    // Also auto-add car salvage intake vehicle into PullYardVehicle list if assignedRow is present
+    if (ticket.ticketType === 'CAR_SALVAGE' && ticket.carRecord && ticket.carRecord.assignedRow) {
+      const c = ticket.carRecord;
+      this.savePullYardVehicle({
+        id: `veh-${Date.now()}`,
+        rowNumber: c.assignedRow,
+        spaceNumber: c.assignedSpace || 'Space 01',
+        section: c.make.includes('Ford')
+          ? 'Ford & Lincoln'
+          : c.make.includes('Chevy') || c.make.includes('Chevrolet') || c.make.includes('GMC')
+          ? 'GM & Chevrolet'
+          : c.make.includes('Toyota') || c.make.includes('Nissan') || c.make.includes('Honda')
+          ? 'Asian Imports'
+          : 'Domestic Trucks & SUVs',
+        year: c.year,
+        make: c.make,
+        model: c.model,
+        color: c.color,
+        vin: c.vin,
+        dateSetInYard: new Date().toISOString(),
+        status: 'FRESH_SET',
+        partsRemaining: ['Engine Assembly', 'Transmission', 'Doors', 'Wheels', 'Headlights', 'Fenders'],
+      });
+    }
+
     // Deduct cash from Paymaster Cash Drawer if payoutMethod === 'Cash'
     if (ticket.payoutMethod === 'Cash') {
       this.addCashDrawerEntry({
@@ -893,6 +1220,10 @@ export const storageService = {
     localStorage.setItem(STORAGE_KEYS.CONTAINER_DROPS, JSON.stringify(INITIAL_CONTAINER_DROPS));
     localStorage.setItem(STORAGE_KEYS.CASH_DRAWER, JSON.stringify(INITIAL_CASH_DRAWER));
     localStorage.setItem(STORAGE_KEYS.YARD_BAYS, JSON.stringify(INITIAL_YARD_BAYS));
+    localStorage.setItem(STORAGE_KEYS.PULL_PARTS, JSON.stringify(INITIAL_PULL_PARTS));
+    localStorage.setItem(STORAGE_KEYS.PULL_YARD_VEHICLES, JSON.stringify(INITIAL_PULL_VEHICLES));
+    localStorage.setItem(STORAGE_KEYS.CORE_RETURNS, JSON.stringify(INITIAL_CORE_RETURNS));
+    localStorage.setItem(STORAGE_KEYS.ADMISSION_PASSES, JSON.stringify(INITIAL_ADMISSION_PASSES));
     localStorage.removeItem(STORAGE_KEYS.NMVTIS_LOGS);
   },
 };

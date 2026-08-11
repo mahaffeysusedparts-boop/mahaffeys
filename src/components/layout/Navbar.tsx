@@ -16,6 +16,7 @@ import {
   Truck,
   Banknote,
   Map,
+  Wrench,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 
@@ -34,6 +35,7 @@ export const Navbar: React.FC = () => {
 
   const navItems = [
     { label: 'Intake Station', path: '/', icon: Scale },
+    { label: 'Pull-A-Part Suite', path: '/pull-a-part', icon: Wrench },
     { label: 'Compliance & NMVTIS', path: '/compliance', icon: ShieldCheck },
     { label: 'Ticket Ledger', path: '/tickets', icon: Receipt },
     { label: 'Metal & Auto Rates', path: '/pricing', icon: DollarSign },
@@ -65,7 +67,7 @@ export const Navbar: React.FC = () => {
                       LOCAL YARD
                     </Badge>
                   </div>
-                  <p className="text-xs text-slate-400 font-medium truncate max-w-[150px] sm:max-w-[200px]">
+                  <p className="text-xs text-slate-400 font-medium truncate max-w-[130px] sm:max-w-[180px]">
                     {settings.yardName}
                   </p>
                 </div>
@@ -73,7 +75,7 @@ export const Navbar: React.FC = () => {
             </div>
 
             {/* Navigation Tabs */}
-            <nav className="hidden lg:flex items-center space-x-1">
+            <nav className="hidden lg:flex items-center space-x-1 overflow-x-auto py-1">
               {navItems.map((item) => {
                 const Icon = item.icon;
                 const isActive = location.pathname === item.path;
@@ -81,13 +83,13 @@ export const Navbar: React.FC = () => {
                   <Link
                     key={item.path}
                     to={item.path}
-                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                    className={`flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-semibold transition-colors shrink-0 ${
                       isActive
-                        ? 'bg-slate-800 text-emerald-400 border border-slate-700/80 shadow-sm'
+                        ? 'bg-slate-800 text-amber-400 border border-slate-700/80 shadow-sm'
                         : 'text-slate-300 hover:bg-slate-800/60 hover:text-white'
                     }`}
                   >
-                    <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-emerald-400' : 'text-slate-400'}`} />
+                    <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-amber-400' : 'text-slate-400'}`} />
                     <span>{item.label}</span>
                   </Link>
                 );
@@ -95,10 +97,10 @@ export const Navbar: React.FC = () => {
             </nav>
 
             {/* Scale Hardware Connectivity Badge / Quick Toggle */}
-            <div className="flex items-center space-x-3">
+            <div className="flex items-center space-x-2">
               <button
                 onClick={() => setConfigOpen(true)}
-                className="flex items-center gap-2 px-2.5 py-1 rounded-lg bg-slate-800/90 border border-slate-700/80 hover:border-emerald-500/50 hover:bg-slate-800 transition-all text-left group"
+                className="flex items-center gap-2 px-2 py-1 rounded-lg bg-slate-800/90 border border-slate-700/80 hover:border-emerald-500/50 hover:bg-slate-800 transition-all text-left group"
               >
                 <div className="relative flex items-center justify-center">
                   <Activity className={`w-3.5 h-3.5 ${scaleStatus.connected ? 'text-emerald-400 animate-pulse' : 'text-amber-400'}`} />
@@ -118,7 +120,7 @@ export const Navbar: React.FC = () => {
                     </span>
                   </div>
                   <div className="text-[9px] text-slate-400 flex items-center gap-1">
-                    <span className="truncate max-w-[70px]">
+                    <span className="truncate max-w-[65px]">
                       {scaleStatus.mode === 'SIMULATOR'
                         ? 'SIMULATOR'
                         : scaleStatus.mode === 'WEB_SERIAL'
@@ -153,7 +155,7 @@ export const Navbar: React.FC = () => {
                 key={item.path}
                 to={item.path}
                 className={`flex flex-col items-center gap-0.5 px-2 py-1 rounded shrink-0 ${
-                  isActive ? 'text-emerald-400 font-semibold' : 'text-slate-400'
+                  isActive ? 'text-amber-400 font-semibold' : 'text-slate-400'
                 }`}
               >
                 <Icon className="w-4 h-4" />

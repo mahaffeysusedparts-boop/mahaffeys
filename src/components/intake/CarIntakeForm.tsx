@@ -33,6 +33,7 @@ import {
   Fingerprint,
   ShieldCheck,
   UserCheck,
+  MapPin,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -74,6 +75,10 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
   
   const [titleStatus, setTitleStatus] = useState<CarIntakeRecord['titleStatus']>('Clean Title');
   const [titleNumber, setTitleNumber] = useState<string>('');
+
+  // Pull-A-Part Row Staging
+  const [assignedRow, setAssignedRow] = useState<string>('Row 104');
+  const [assignedSpace, setAssignedSpace] = useState<string>('Space 15');
 
   // Features Checklist
   const [hasCatalyticConverter, setHasCatalyticConverter] = useState<boolean>(true);
@@ -209,6 +214,8 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
       mileage,
       titleStatus,
       titleNumber,
+      assignedRow,
+      assignedSpace,
       hasCatalyticConverter,
       catCondition,
       hasEngineAndTrans,
@@ -247,7 +254,7 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
     };
 
     storageService.saveTicket(newTicket);
-    toast.success(`Car Salvage Ticket #${newTicket.id} Saved with Legal Compliance Photo Records!`);
+    toast.success(`Car Salvage Ticket #${newTicket.id} Staged to Pull-A-Part ${assignedRow}!`);
     onTicketCreated(newTicket);
   };
 
@@ -275,7 +282,7 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
               </Badge>
             </div>
             <p className="text-xs text-slate-400">
-              Capture vehicle spec, VIN title compliance, NMVTIS audit, and 4-point photo identification
+              Capture vehicle spec, VIN title compliance, NMVTIS audit, 4-point photo identification & Pull-A-Part row staging
             </p>
           </div>
         </div>
@@ -496,7 +503,7 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
                 </div>
               </div>
 
-              {/* Title Ownership Status */}
+              {/* Title Ownership Status & Pull-A-Part Row Staging */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-800/80">
                 <div>
                   <Label className="text-xs text-slate-300">Title / Ownership Document Status</Label>
@@ -524,6 +531,31 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
                     onChange={(e) => setTitleNumber(e.target.value)}
                     placeholder="e.g. GA-TL-99120"
                     className="bg-slate-950 border-slate-800 text-white text-xs mt-1"
+                  />
+                </div>
+              </div>
+
+              {/* Pull-A-Part Yard Row Staging Assignment */}
+              <div className="grid grid-cols-2 gap-3 bg-amber-950/20 p-3 rounded-lg border border-amber-500/30">
+                <div>
+                  <Label className="text-xs text-amber-300 flex items-center gap-1">
+                    <MapPin className="w-3.5 h-3.5" /> Pull-A-Part Yard Row Assignment
+                  </Label>
+                  <Input
+                    value={assignedRow}
+                    onChange={(e) => setAssignedRow(e.target.value)}
+                    placeholder="e.g. Row 104"
+                    className="bg-slate-950 border-amber-500/40 text-amber-300 font-mono font-bold text-xs mt-1"
+                  />
+                </div>
+
+                <div>
+                  <Label className="text-xs text-amber-300">Space Number</Label>
+                  <Input
+                    value={assignedSpace}
+                    onChange={(e) => setAssignedSpace(e.target.value)}
+                    placeholder="e.g. Space 15"
+                    className="bg-slate-950 border-amber-500/40 text-amber-300 font-mono font-bold text-xs mt-1"
                   />
                 </div>
               </div>
@@ -767,7 +799,7 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
                 onClick={handleSubmitTicket}
                 className="w-full h-11 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-extrabold shadow-lg shadow-amber-950 text-sm tracking-wide"
               >
-                <CheckCircle2 className="w-5 h-5 mr-2" /> Complete Ticket & Issue Voucher
+                <CheckCircle2 className="w-5 h-5 mr-2" /> Complete Ticket & Stage Vehicle
               </Button>
 
             </CardContent>

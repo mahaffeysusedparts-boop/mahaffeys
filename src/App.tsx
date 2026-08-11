@@ -12,6 +12,7 @@ import { CompliancePage } from "./pages/CompliancePage";
 import ContainersPage from "./pages/ContainersPage";
 import CashDrawerPage from "./pages/CashDrawerPage";
 import YardMapPage from "./pages/YardMapPage";
+import PullAPartPage from "./pages/PullAPartPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -24,6 +25,7 @@ const App = () => (
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Index />} />
+          <Route path="/pull-a-part" element={<PullAPartPage />} />
           <Route path="/compliance" element={<CompliancePage />} />
           <Route path="/tickets" element={<TicketsPage />} />
           <Route path="/pricing" element={<PricingPage />} />

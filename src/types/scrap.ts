@@ -52,6 +52,53 @@ export interface CatalyticConverterCode {
   photoUrl?: string;
 }
 
+export interface PullPartItem {
+  id: string;
+  partName: string;
+  category: 'Engine & Driveline' | 'Body & Panels' | 'Electrical & Lights' | 'Interior & Glass' | 'Wheels & Tires' | 'Exhaust & Fuel';
+  price: number;
+  coreDeposit: number; // e.g. $10 or $25 core refund
+  warrantyFee: number; // 30-day exchange warranty optional $5
+  interchangeNotes?: string;
+  isPopular?: boolean;
+}
+
+export interface PullYardVehicle {
+  id: string;
+  rowNumber: string; // e.g. "Row 104"
+  spaceNumber: string; // e.g. "Space 12"
+  section: 'Domestic Trucks & SUVs' | 'Ford & Lincoln' | 'GM & Chevrolet' | 'Chrysler & Dodge' | 'Asian Imports' | 'European';
+  year: number;
+  make: string;
+  model: string;
+  color: string;
+  vin: string;
+  dateSetInYard: string;
+  status: 'FRESH_SET' | 'POPULAR' | 'STRIPPED_SHELL' | 'READY_FOR_CRUSHER';
+  partsRemaining: string[];
+}
+
+export interface CoreReturnLog {
+  id: string;
+  customerName: string;
+  customerIdNumber?: string;
+  partName: string;
+  coreDepositRefunded: number;
+  returnedAt: string;
+  operatorName: string;
+  ticketId?: string;
+}
+
+export interface AdmissionPass {
+  id: string;
+  customerName: string;
+  customerIdNumber: string;
+  passDate: string;
+  feePaid: number; // e.g. $2.00
+  waiverSigned: boolean;
+  operatorName: string;
+}
+
 export interface ContainerDrop {
   id: string;
   containerNumber: string; // e.g. "BOX-20-88"
@@ -158,6 +205,10 @@ export interface CarIntakeRecord {
   hasAluminumRims: boolean;
   fluidsDrained: boolean;
   
+  // Pull-a-Part Row Staging
+  assignedRow?: string;
+  assignedSpace?: string;
+  
   // Pricing
   pricingMode: 'TONNAGE' | 'FLAT_RATE';
   vehicleWeightLbs: number;
@@ -229,4 +280,5 @@ export interface YardSettings {
   operatorName: string;
   nmvtisReportingId?: string;
   cashDrawerFloatLimit?: number;
+  admissionFeeUsd?: number;
 }
