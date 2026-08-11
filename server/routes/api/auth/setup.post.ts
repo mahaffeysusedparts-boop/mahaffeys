@@ -17,7 +17,7 @@ export default defineHandler(async (event) => {
   let row: UserRow;
   try {
     row = await withTransaction(async (client) => {
-      await client.query("SELECT pg_advisory_xact_lock(hashtext('scrapflow_initial_admin'))");
+      await client.query("SELECT pg_advisory_xact_lock(hashtext('mahaffeys_initial_admin'))");
       const existing = await client.query("SELECT id FROM users WHERE role = 'admin' AND status = 'approved' LIMIT 1");
       if (existing.rowCount) {
         throw createError({ statusCode: 409, statusMessage: "Administrator setup is already complete" });

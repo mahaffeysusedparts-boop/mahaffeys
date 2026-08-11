@@ -342,7 +342,7 @@ export default function SystemHealthPage() {
               {[
                 { name: "Frontend Vite Web Server", status: "HEALTHY", desc: "React 19 single-page app framework runtime", icon: Server },
                 { name: "Scale Hardware Connectivity Bridge", status: scaleStatus.connected ? "HEALTHY" : "OFFLINE", desc: `${scaleStatus.mode} scale indicator driver stream`, icon: Gauge },
-                { name: "Local Storage Database (ScrapFlow DB)", status: "HEALTHY", desc: `${ticketsCount} Intake Tickets | ${customersCount} Registered Sellers`, icon: Database },
+                { name: "Local Storage Database (Mahaffeys DB)", status: "HEALTHY", desc: `${ticketsCount} Intake Tickets | ${customersCount} Registered Sellers`, icon: Database },
                 { name: "Compliance Photo Studio Engine", status: "HEALTHY", desc: "4-Point snapshot OCR scanner & biometric thumbprint API", icon: Zap },
               ].map((srv, i) => {
                 const Icon = srv.icon;

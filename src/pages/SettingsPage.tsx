@@ -52,7 +52,7 @@ export default function SettingsPage() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `ScrapFlow_LocalBackup_${new Date().toISOString().slice(0, 10)}.json`;
+    link.download = `Mahaffeys_LocalBackup_${new Date().toISOString().slice(0, 10)}.json`;
     link.click();
     toast.success('Local network database backup file downloaded');
   };
@@ -66,19 +66,19 @@ export default function SettingsPage() {
       try {
         const data = JSON.parse(evt.target?.result as string);
         const state = {
-          scrapflow_metals: data.metals,
-          scrapflow_car_rates: data.carRates,
-          scrapflow_customers: data.customers,
-          scrapflow_tickets: data.tickets,
-          scrapflow_settings: data.settings,
-          scrapflow_cat_codes: data.catCodes,
-          scrapflow_container_drops: data.containerDrops,
-          scrapflow_cash_drawer: data.cashDrawer,
-          scrapflow_yard_bays: data.yardBays,
-          scrapflow_pull_parts: data.pullParts,
-          scrapflow_pull_yard_vehicles: data.pullVehicles,
-          scrapflow_core_returns: data.coreReturns,
-          scrapflow_admission_passes: data.admissionPasses,
+          mahaffeys_metals: data.metals,
+          mahaffeys_car_rates: data.carRates,
+          mahaffeys_customers: data.customers,
+          mahaffeys_tickets: data.tickets,
+          mahaffeys_settings: data.settings,
+          mahaffeys_cat_codes: data.catCodes,
+          mahaffeys_container_drops: data.containerDrops,
+          mahaffeys_cash_drawer: data.cashDrawer,
+          mahaffeys_yard_bays: data.yardBays,
+          mahaffeys_pull_parts: data.pullParts,
+          mahaffeys_pull_yard_vehicles: data.pullVehicles,
+          mahaffeys_core_returns: data.coreReturns,
+          mahaffeys_admission_passes: data.admissionPasses,
         };
         await sharedStorage.importState(Object.fromEntries(Object.entries(state).filter(([, value]) => value !== undefined)));
         toast.success("Backup imported into the shared PC database");

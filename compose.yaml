@@ -1,23 +1,23 @@
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: scrapflow-postgres
+    container_name: mahaffeys-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: scrapflow
-      POSTGRES_USER: scrapflow
+      POSTGRES_DB: mahaffeys
+      POSTGRES_USER: mahaffeys
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in the server environment}
     volumes:
-      - scrapflow-postgres-data:/var/lib/postgresql/data
+      - mahaffeys-postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U scrapflow -d scrapflow"]
+      test: ["CMD-SHELL", "pg_isready -U mahaffeys -d mahaffeys"]
       interval: 5s
       timeout: 5s
       retries: 12
 
-  scrapflow:
+  mahaffeys:
     build: .
-    container_name: scrapflow
+    container_name: mahaffeys
     restart: unless-stopped
     depends_on:
       postgres:
@@ -26,10 +26,10 @@ services:
       NODE_ENV: production
       NITRO_HOST: 0.0.0.0
       NITRO_PORT: 3000
-      NITRO_DATABASE_URL: postgresql://scrapflow:${POSTGRES_PASSWORD}@postgres:5432/scrapflow
+      NITRO_DATABASE_URL: postgresql://mahaffeys:${POSTGRES_PASSWORD}@postgres:5432/mahaffeys
       NITRO_COOKIE_SECURE: ${NITRO_COOKIE_SECURE:-false}
     ports:
       - "3000:3000"
 
 volumes:
-  scrapflow-postgres-data:
+  mahaffeys-postgres-data:

@@ -47,7 +47,7 @@ export default function TicketsPage() {
   const handleVoidTicket = (id: string) => {
     const updated = tickets.map((t) => (t.id === id ? { ...t, status: 'VOIDED' as const } : t));
     setTickets(updated);
-    sharedStorage.setItem('scrapflow_tickets', JSON.stringify(updated));
+    sharedStorage.setItem('mahaffeys_tickets', JSON.stringify(updated));
     toast.info(`Ticket #${id} marked as VOIDED`);
   };
 
@@ -73,7 +73,7 @@ export default function TicketsPage() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `ScrapFlow_Tickets_${new Date().toISOString().slice(0, 10)}.csv`;
+    link.download = `Mahaffeys_Tickets_${new Date().toISOString().slice(0, 10)}.csv`;
     link.click();
     toast.success('Ticket ledger exported to CSV');
   };

@@ -55,7 +55,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (status.user?.status === "approved") await sharedStorage.hydrate();
         syncState();
       } catch (error) {
-        setServerError(error instanceof Error ? error.message : "Unable to reach the ScrapFlow server");
+        setServerError(error instanceof Error ? error.message : "Unable to reach the Mahaffeys server");
       } finally {
         setIsLoading(false);
       }

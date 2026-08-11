@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-APP_NAME="scrapflow"
-APP_USER="scrapflow"
-APP_HOME="/home/scrapflow"
-INSTALL_DIR="/var/www/scrapflow"
+APP_NAME="mahaffeys"
+APP_USER="mahaffeys"
+APP_HOME="/home/mahaffeys"
+INSTALL_DIR="/var/www/mahaffeys"
 DOMAIN="app.mahaffeysusedparts.com"
 PM2_SERVICE="pm2-${APP_USER}"
 ECOSYSTEM_FILE="${INSTALL_DIR}/ecosystem.config.cjs"
@@ -55,7 +55,7 @@ systemctl reload nginx
 LOCAL_HEALTHY=false
 for attempt in {1..15}; do
   if curl --fail --silent --show-error \
-    http://127.0.0.1:3000/api/health >/tmp/scrapflow-health.json; then
+    http://127.0.0.1:3000/api/health >/tmp/mahaffeys-health.json; then
     LOCAL_HEALTHY=true
     break
   fi
@@ -63,7 +63,7 @@ for attempt in {1..15}; do
 done
 
 if [[ "${LOCAL_HEALTHY}" != "true" ]]; then
-  echo "ScrapFlow did not pass its local health check." >&2
+  echo "Mahaffeys did not pass its local health check." >&2
   echo "Current PM2 status:" >&2
   runuser -u "${APP_USER}" -- env HOME="${APP_HOME}" pm2 status >&2 || true
   echo "Recent application logs:" >&2
@@ -73,13 +73,13 @@ if [[ "${LOCAL_HEALTHY}" != "true" ]]; then
 fi
 
 echo "Local health check passed:"
-cat /tmp/scrapflow-health.json
+cat /tmp/mahaffeys-health.json
 echo
-rm -f /tmp/scrapflow-health.json
+rm -f /tmp/mahaffeys-health.json
 
 if curl --fail --silent --show-error --max-time 15 \
   "https://${DOMAIN}/api/health" >/dev/null; then
-  echo "ScrapFlow is online at https://${DOMAIN}"
+  echo "Mahaffeys is online at https://${DOMAIN}"
 else
   echo "The app is healthy locally, but the public HTTPS check failed." >&2
   echo "Verify DNS, ports 80/443, the TLS certificate, and any provider firewall." >&2

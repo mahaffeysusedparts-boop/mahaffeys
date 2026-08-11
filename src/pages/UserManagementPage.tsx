@@ -203,7 +203,7 @@ export default function UserManagementPage() {
                   Pending Account Approval Requests ({pendingUsers.length})
                 </CardTitle>
                 <CardDescription className="text-xs text-slate-400">
-                  Operators requesting access to ScrapFlow workstations
+                  Operators requesting access to Mahaffeys workstations
                 </CardDescription>
               </div>
             </div>

@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-APP_NAME="scrapflow"
+APP_NAME="mahaffeys"
 DOMAIN="app.mahaffeysusedparts.com"
-INSTALL_DIR="/var/www/scrapflow"
-APP_USER="scrapflow"
-DB_NAME="scrapflow"
-DB_USER="scrapflow"
+INSTALL_DIR="/var/www/mahaffeys"
+APP_USER="mahaffeys"
+DB_NAME="mahaffeys"
+DB_USER="mahaffeys"
 SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 NGINX_SITE="/etc/nginx/sites-available/${APP_NAME}"
 NGINX_LINK="/etc/nginx/sites-enabled/${APP_NAME}"
@@ -23,7 +23,7 @@ if [[ "${SOURCE_DIR}" == "${INSTALL_DIR}" ]]; then
 fi
 
 cat <<WARNING
-DANGER: This permanently deletes the existing ScrapFlow deployment and its
+DANGER: This permanently deletes the existing Mahaffeys deployment and its
 PostgreSQL database, including every account, ticket, customer, and setting.
 
 Domain:       ${DOMAIN}

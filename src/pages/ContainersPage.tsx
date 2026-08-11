@@ -74,7 +74,7 @@ export default function ContainersPage() {
       assignedDriver,
       materialCategory,
       estimatedWeightLbs: 5000,
-      notes: "Commercial container drop dispatched via ScrapFlow dispatch desk",
+      notes: "Commercial container drop dispatched via Mahaffeys dispatch desk",
     };
 
     storageService.saveContainerDrop(newDrop);
@@ -90,7 +90,7 @@ export default function ContainersPage() {
 
   const handleUpdateStatus = (id: string, newStatus: ContainerDrop["status"]) => {
     const updated = drops.map((d) => (d.id === id ? { ...d, status: newStatus } : d));
-    sharedStorage.setItem("scrapflow_container_drops", JSON.stringify(updated));
+    sharedStorage.setItem("mahaffeys_container_drops", JSON.stringify(updated));
     setDrops(updated);
     toast.success(`Updated container status to ${newStatus.replace(/_/g, " ")}`);
   };

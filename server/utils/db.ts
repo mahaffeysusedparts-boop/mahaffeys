@@ -8,7 +8,7 @@ function getPool() {
 
   const connectionString = process.env.NITRO_DATABASE_URL || process.env.DATABASE_URL;
   if (!connectionString) {
-    throw new Error("NITRO_DATABASE_URL is required. Point it to the local PostgreSQL ScrapFlow database.");
+    throw new Error("NITRO_DATABASE_URL is required. Point it to the local PostgreSQL Mahaffeys database.");
   }
 
   pool = new Pool({ connectionString, max: 10 });

@@ -123,7 +123,7 @@ export const Navbar: React.FC = () => {
                       </div>
                       <div>
                         <SheetTitle className="text-base font-extrabold text-white font-mono">
-                          ScrapFlow Suite
+                          Mahaffeys Suite
                         </SheetTitle>
                         <p className="text-xs text-slate-400 font-medium truncate max-w-[200px]">
                           {settings.yardName}
@@ -186,7 +186,7 @@ export const Navbar: React.FC = () => {
                 <div>
                   <div className="flex items-center gap-1.5">
                     <span className="font-extrabold text-base sm:text-lg tracking-tight text-white font-mono">
-                      ScrapFlow
+                      Mahaffeys
                     </span>
                     <Badge variant="outline" className="hidden sm:inline-flex border-emerald-500/40 text-emerald-400 text-[10px] px-1.5 py-0 bg-emerald-950/40">
                       COMMAND

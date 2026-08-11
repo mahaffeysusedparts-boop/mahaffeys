@@ -19,20 +19,20 @@ import { generateSamplePhoto } from "@/utils/complianceUtils";
 import { sharedStorage } from "@/services/sharedStorage";
 
 const STORAGE_KEYS = {
-  METALS: 'scrapflow_metals',
-  CAR_RATES: 'scrapflow_car_rates',
-  CUSTOMERS: 'scrapflow_customers',
-  TICKETS: 'scrapflow_tickets',
-  SETTINGS: 'scrapflow_settings',
-  NMVTIS_LOGS: 'scrapflow_nmvtis_logs',
-  CATALYTIC_CODES: 'scrapflow_cat_codes',
-  CONTAINER_DROPS: 'scrapflow_container_drops',
-  CASH_DRAWER: 'scrapflow_cash_drawer',
-  YARD_BAYS: 'scrapflow_yard_bays',
-  PULL_PARTS: 'scrapflow_pull_parts',
-  PULL_YARD_VEHICLES: 'scrapflow_pull_yard_vehicles',
-  CORE_RETURNS: 'scrapflow_core_returns',
-  ADMISSION_PASSES: 'scrapflow_admission_passes',
+  METALS: 'mahaffeys_metals',
+  CAR_RATES: 'mahaffeys_car_rates',
+  CUSTOMERS: 'mahaffeys_customers',
+  TICKETS: 'mahaffeys_tickets',
+  SETTINGS: 'mahaffeys_settings',
+  NMVTIS_LOGS: 'mahaffeys_nmvtis_logs',
+  CATALYTIC_CODES: 'mahaffeys_cat_codes',
+  CONTAINER_DROPS: 'mahaffeys_container_drops',
+  CASH_DRAWER: 'mahaffeys_cash_drawer',
+  YARD_BAYS: 'mahaffeys_yard_bays',
+  PULL_PARTS: 'mahaffeys_pull_parts',
+  PULL_YARD_VEHICLES: 'mahaffeys_pull_yard_vehicles',
+  CORE_RETURNS: 'mahaffeys_core_returns',
+  ADMISSION_PASSES: 'mahaffeys_admission_passes',
 };
 
 export const INITIAL_PULL_PARTS: PullPartItem[] = [

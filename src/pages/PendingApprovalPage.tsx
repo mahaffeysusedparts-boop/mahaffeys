@@ -13,7 +13,7 @@ export default function PendingApprovalPage() {
 
   React.useEffect(() => {
     if (user?.status === "approved") {
-      toast.success("Account approved!", { description: "Welcome to ScrapFlow." });
+      toast.success("Account approved!", { description: "Welcome to Mahaffeys." });
       navigate("/");
     }
   }, [navigate, user?.status]);

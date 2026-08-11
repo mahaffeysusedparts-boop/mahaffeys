@@ -1,14 +1,14 @@
 [Unit]
-Description=ScrapFlow production server
+Description=Mahaffeys production server
 After=network-online.target postgresql.service
 Wants=network-online.target
 
 [Service]
 Type=simple
 User=YOUR_LINUX_USER
-WorkingDirectory=/var/www/scrapflow
+WorkingDirectory=/var/www/mahaffeys
 Environment=NODE_ENV=production
-EnvironmentFile=/etc/scrapflow/scrapflow.env
+EnvironmentFile=/etc/mahaffeys/mahaffeys.env
 ExecStart=/usr/bin/npm run start
 Restart=on-failure
 RestartSec=5

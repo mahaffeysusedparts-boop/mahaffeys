@@ -15,7 +15,7 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, requir
     return (
       <div className="min-h-screen bg-slate-950 text-slate-300 grid place-items-center">
         <div className="rounded-2xl border border-slate-800 bg-slate-900 px-6 py-4 text-sm font-semibold shadow-xl">
-          Connecting to the ScrapFlow database…
+          Connecting to the Mahaffeys database…
         </div>
       </div>
     );

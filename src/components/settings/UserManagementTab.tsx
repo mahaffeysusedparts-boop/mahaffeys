@@ -77,7 +77,7 @@ export const UserManagementTab: React.FC = () => {
                 Pending Access Approval Requests ({pendingUsers.length})
               </CardTitle>
               <CardDescription className="text-xs text-slate-400">
-                New operators requesting workstation access to ScrapFlow
+                New operators requesting workstation access to Mahaffeys
               </CardDescription>
             </div>
           </div>

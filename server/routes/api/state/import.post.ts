@@ -4,10 +4,10 @@ import { requireAdmin } from "../../../utils/auth";
 import { withTransaction } from "../../../utils/db";
 
 const ALLOWED_KEYS = new Set([
-  "scrapflow_metals", "scrapflow_car_rates", "scrapflow_customers", "scrapflow_tickets",
-  "scrapflow_settings", "scrapflow_nmvtis_logs", "scrapflow_cat_codes", "scrapflow_container_drops",
-  "scrapflow_cash_drawer", "scrapflow_yard_bays", "scrapflow_pull_parts", "scrapflow_pull_yard_vehicles",
-  "scrapflow_core_returns", "scrapflow_admission_passes",
+  "mahaffeys_metals", "mahaffeys_car_rates", "mahaffeys_customers", "mahaffeys_tickets",
+  "mahaffeys_settings", "mahaffeys_nmvtis_logs", "mahaffeys_cat_codes", "mahaffeys_container_drops",
+  "mahaffeys_cash_drawer", "mahaffeys_yard_bays", "mahaffeys_pull_parts", "mahaffeys_pull_yard_vehicles",
+  "mahaffeys_core_returns", "mahaffeys_admission_passes",
 ]);
 
 export default defineHandler(async (event) => {

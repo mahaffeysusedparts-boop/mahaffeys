@@ -33,7 +33,7 @@ export interface UserRow {
   updated_at: Date | string | null;
 }
 
-const SESSION_COOKIE = "scrapflow_session";
+const SESSION_COOKIE = "mahaffeys_session";
 const SESSION_LIFETIME_SECONDS = 60 * 60 * 24 * 14;
 const asIso = (value: Date | string) => value instanceof Date ? value.toISOString() : value;
 

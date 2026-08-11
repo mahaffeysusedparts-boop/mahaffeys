@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 
-# Reinstalls the ScrapFlow application while preserving its server configuration
+# Reinstalls the Mahaffeys application while preserving its server configuration
 # and creating a PostgreSQL backup. Run this as the normal deployment user.
 
 set -Eeuo pipefail
 
-APP_DIR="/var/www/scrapflow"
+APP_DIR="/var/www/mahaffeys"
 REPO_URL="<YOUR_GIT_REPOSITORY_URL>"
 BRANCH="main"
-BACKUP_DIR="/var/backups/scrapflow"
-ENV_FILE="/etc/scrapflow/scrapflow.env"
-SERVICE_NAME="scrapflow"
+BACKUP_DIR="/var/backups/mahaffeys"
+ENV_FILE="/etc/mahaffeys/mahaffeys.env"
+SERVICE_NAME="mahaffeys"
 
 if [[ "$REPO_URL" == "<YOUR_GIT_REPOSITORY_URL>" ]]; then
     echo "Set REPO_URL near the top of this script before running it."
@@ -29,7 +29,7 @@ if [[ ! "$REPLY" =~ ^[Yy]$ ]]; then
 fi
 
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
-BACKUP_FILE="$BACKUP_DIR/scrapflow_${TIMESTAMP}.dump"
+BACKUP_FILE="$BACKUP_DIR/mahaffeys_${TIMESTAMP}.dump"
 
 echo "[1/7] Backing up PostgreSQL..."
 sudo install -d -m 700 "$BACKUP_DIR"
@@ -41,8 +41,8 @@ if [[ -z "${NITRO_DATABASE_URL:-}" ]]; then
     echo "NITRO_DATABASE_URL is not set in $ENV_FILE."
     exit 1
 fi
-pg_dump --format=custom --file="/tmp/scrapflow_${TIMESTAMP}.dump" "$NITRO_DATABASE_URL"
-sudo mv "/tmp/scrapflow_${TIMESTAMP}.dump" "$BACKUP_FILE"
+pg_dump --format=custom --file="/tmp/mahaffeys_${TIMESTAMP}.dump" "$NITRO_DATABASE_URL"
+sudo mv "/tmp/mahaffeys_${TIMESTAMP}.dump" "$BACKUP_FILE"
 sudo chmod 600 "$BACKUP_FILE"
 echo "Database backup saved to $BACKUP_FILE"
 
@@ -70,7 +70,7 @@ sudo systemctl reload nginx
 echo "[7/7] Checking application health..."
 for attempt in {1..15}; do
     if curl --fail --silent http://127.0.0.1:3000/api/health >/dev/null; then
-        echo "ScrapFlow is healthy. Reinstallation complete."
+        echo "Mahaffeys is healthy. Reinstallation complete."
         echo "Backup retained at $BACKUP_FILE"
         exit 0
     fi

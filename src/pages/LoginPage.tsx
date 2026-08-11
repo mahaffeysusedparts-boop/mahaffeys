@@ -157,7 +157,7 @@ export default function LoginPage() {
             <Scale className="w-8 h-8 text-white" />
           </div>
           <h1 className="text-3xl font-extrabold text-white tracking-tight font-mono">
-            ScrapFlow Local
+            Mahaffeys Local
           </h1>
           <p className="text-xs text-slate-400">
             Industrial Scrap Yard Scale, Auto Salvage & Compliance Suite
@@ -220,7 +220,7 @@ export default function LoginPage() {
                     type="email"
                     value={setupEmail}
                     onChange={(e) => setSetupEmail(e.target.value)}
-                    placeholder="admin@scrapflow.local"
+                    placeholder="admin@mahaffeys.local"
                     className="bg-slate-950 border-slate-800 text-white text-xs mt-1 h-10"
                   />
                 </div>
@@ -336,7 +336,7 @@ export default function LoginPage() {
                       type="email"
                       value={regEmail}
                       onChange={(e) => setRegEmail(e.target.value)}
-                      placeholder="sam@scrapflow.local"
+                      placeholder="sam@mahaffeys.local"
                       className="bg-slate-950 border-slate-800 text-white text-xs mt-1 h-10"
                     />
                   </div>
