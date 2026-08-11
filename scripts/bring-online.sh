@@ -2,8 +2,8 @@
 set -Eeuo pipefail
 
 APP_NAME="mahaffeys"
-APP_USER="mahaffeys"
-APP_HOME="/home/mahaffeys"
+APP_USER="jhilliard"
+APP_HOME="/home/jhilliard"
 INSTALL_DIR="/var/www/mahaffeys"
 DOMAIN="app.mahaffeysusedparts.com"
 PM2_SERVICE="pm2-${APP_USER}"

@@ -26,12 +26,13 @@ node --version
 npm --version
 ```
 
-Reserve a static address for this server in the router's DHCP settings. Record:
+Reserve a static address for this server in the router's DHCP settings. This deployment uses:
 
-- The server LAN IP, such as `192.168.1.100`
-- The Linux login username that will own the app
-- The Git repository URL
-- The domain name, if using one
+- Server LAN IP: `192.168.1.210`
+- Linux login username: `jhilliard`
+- Domain: `app.mahaffeysusedparts.com`
+
+Also record the Git repository URL.
 
 ## 2. Create the PostgreSQL database
 
@@ -88,11 +89,11 @@ The production build includes the browser assets and Nitro server output in `.ou
 
 ## 4. Install the systemd service
 
-Copy the included service template and set its Linux user:
+The included service template is configured to run under the `jhilliard` Linux account:
 
 ```bash
 cd /var/www/mahaffeys
-sed 's/YOUR_LINUX_USER/your-actual-linux-user/g' deploy/mahaffeys.service.example | sudo tee /etc/systemd/system/mahaffeys.service >/dev/null
+sudo cp deploy/mahaffeys.service.example /etc/systemd/system/mahaffeys.service
 sudo systemctl daemon-reload
 sudo systemctl enable --now mahaffeys
 sudo systemctl status mahaffeys

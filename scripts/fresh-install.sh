@@ -4,7 +4,7 @@ set -Eeuo pipefail
 APP_NAME="mahaffeys"
 DOMAIN="app.mahaffeysusedparts.com"
 INSTALL_DIR="/var/www/mahaffeys"
-APP_USER="mahaffeys"
+APP_USER="jhilliard"
 DB_NAME="mahaffeys"
 DB_USER="mahaffeys"
 SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -37,6 +37,13 @@ if [[ "${CONFIRMATION}" != "WIPE SCRAPFLOW" ]]; then
   exit 0
 fi
 
+read -r -s -p "Password for Linux user ${APP_USER}: " APP_PASSWORD
+echo
+if [[ -z "${APP_PASSWORD}" ]]; then
+  echo "The Linux account password cannot be empty." >&2
+  exit 1
+fi
+
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
 apt-get install -y ca-certificates curl gnupg nginx postgresql postgresql-contrib rsync certbot python3-certbot-nginx
@@ -63,6 +70,8 @@ else
   useradd --create-home --shell /bin/bash "${APP_USER}"
   APP_HOME="/home/${APP_USER}"
 fi
+printf '%s:%s\n' "${APP_USER}" "${APP_PASSWORD}" | chpasswd
+unset APP_PASSWORD
 
 if runuser -u "${APP_USER}" -- env HOME="${APP_HOME}" pm2 describe "${APP_NAME}" >/dev/null 2>&1; then
   runuser -u "${APP_USER}" -- env HOME="${APP_HOME}" pm2 delete "${APP_NAME}"

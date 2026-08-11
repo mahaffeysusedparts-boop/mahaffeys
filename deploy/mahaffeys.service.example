@@ -5,7 +5,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=YOUR_LINUX_USER
+User=jhilliard
 WorkingDirectory=/var/www/mahaffeys
 Environment=NODE_ENV=production
 EnvironmentFile=/etc/mahaffeys/mahaffeys.env
