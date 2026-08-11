@@ -17,6 +17,7 @@ import {
   Banknote,
   Map,
   Wrench,
+  Server,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 
@@ -43,6 +44,7 @@ export const Navbar: React.FC = () => {
     { label: 'Cash Drawer', path: '/cash-drawer', icon: Banknote },
     { label: 'Yard Map', path: '/yard-map', icon: Map },
     { label: 'Customers & VINs', path: '/customers', icon: Users },
+    { label: 'System Status', path: '/system-status', icon: Server },
     { label: 'Yard Settings', path: '/settings', icon: Settings },
   ];
 

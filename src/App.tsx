@@ -13,6 +13,7 @@ import ContainersPage from "./pages/ContainersPage";
 import CashDrawerPage from "./pages/CashDrawerPage";
 import YardMapPage from "./pages/YardMapPage";
 import PullAPartPage from "./pages/PullAPartPage";
+import SystemHealthPage from "./pages/SystemHealthPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -33,6 +34,7 @@ const App = () => (
           <Route path="/cash-drawer" element={<CashDrawerPage />} />
           <Route path="/yard-map" element={<YardMapPage />} />
           <Route path="/customers" element={<CustomersPage />} />
+          <Route path="/system-status" element={<SystemHealthPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
