@@ -6,6 +6,7 @@ APP_USER="jhilliard"
 APP_HOME="/home/jhilliard"
 INSTALL_DIR="/var/www/mahaffeys"
 DOMAIN="app.mahaffeysusedparts.com"
+SERVER_IP="192.168.1.210"
 PM2_SERVICE="pm2-${APP_USER}"
 ECOSYSTEM_FILE="${INSTALL_DIR}/ecosystem.config.cjs"
 
@@ -77,11 +78,16 @@ cat /tmp/mahaffeys-health.json
 echo
 rm -f /tmp/mahaffeys-health.json
 
+if ! curl --fail --silent --show-error --max-time 15 \
+  "http://${SERVER_IP}/api/health" >/dev/null; then
+  echo "The app is healthy locally, but Nginx is not responding at http://${SERVER_IP}." >&2
+  exit 2
+fi
+echo "Mahaffeys is online on the LAN at http://${SERVER_IP}"
+
 if curl --fail --silent --show-error --max-time 15 \
   "https://${DOMAIN}/api/health" >/dev/null; then
-  echo "Mahaffeys is online at https://${DOMAIN}"
+  echo "Mahaffeys is online publicly at https://${DOMAIN}"
 else
-  echo "The app is healthy locally, but the public HTTPS check failed." >&2
-  echo "Verify DNS, ports 80/443, the TLS certificate, and any provider firewall." >&2
-  exit 2
+  echo "The LAN app is healthy, but the optional public HTTPS check failed." >&2
 fi

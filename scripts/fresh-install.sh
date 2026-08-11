@@ -3,6 +3,7 @@ set -Eeuo pipefail
 
 APP_NAME="mahaffeys"
 DOMAIN="app.mahaffeysusedparts.com"
+SERVER_IP="192.168.1.210"
 INSTALL_DIR="/var/www/mahaffeys"
 APP_USER="jhilliard"
 DB_NAME="mahaffeys"
@@ -155,9 +156,9 @@ systemctl enable --now "pm2-${APP_USER}"
 
 cat > "${NGINX_SITE}" <<EOF
 server {
-    listen 80;
+    listen ${SERVER_IP}:80;
     listen [::]:80;
-    server_name ${DOMAIN};
+    server_name ${SERVER_IP} ${DOMAIN};
 
     client_max_body_size 20m;
 
@@ -204,10 +205,11 @@ if ! curl --fail --silent --show-error http://127.0.0.1:3000/api/health; then
 fi
 
 echo
+echo "LAN setup URL: http://${SERVER_IP}/setup"
 if [[ "${HTTPS_ENABLED}" == "true" ]]; then
-  echo "Fresh installation complete: https://${DOMAIN}/setup"
+  echo "Public setup URL: https://${DOMAIN}/setup"
 else
-  echo "Fresh installation complete over HTTP: http://${DOMAIN}/setup"
+  echo "Public HTTP URL: http://${DOMAIN}/setup"
 fi
 echo "The generated database password is stored only in:"
 echo "  ${INSTALL_DIR}/ecosystem.config.cjs"
