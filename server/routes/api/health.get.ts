@@ -1,7 +1,7 @@
 import { defineHandler } from "nitro";
-import { getDatabase } from "../../utils/db";
+import { query } from "../../utils/db";
 
-export default defineHandler(() => {
-  getDatabase().prepare("SELECT 1").get();
-  return { ok: true, database: "connected", timestamp: new Date().toISOString() };
+export default defineHandler(async () => {
+  await query("SELECT 1");
+  return { ok: true, database: "postgresql", timestamp: new Date().toISOString() };
 });

@@ -36,6 +36,7 @@ export default function PendingApprovalPage() {
     admin: "Administrator",
     yard_manager: "Yard Manager",
     scale_operator: "Scale Operator",
+    yard_employee: "Yard Employee",
   };
 
   return (

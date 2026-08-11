@@ -35,6 +35,7 @@ const App = () => (
         <BrowserRouter>
           <Routes>
             {/* PUBLIC AUTH ROUTES */}
+            <Route path="/setup" element={<LoginPage />} />
             <Route path="/login" element={<LoginPage />} />
             <Route path="/pending-approval" element={<PendingApprovalPage />} />
 

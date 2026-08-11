@@ -1,7 +1,7 @@
 import { defineHandler } from "nitro";
 import { createError, readBody } from "nitro/h3";
 import { requireAdmin } from "../../../utils/auth";
-import { getDatabase } from "../../../utils/db";
+import { withTransaction } from "../../../utils/db";
 
 const ALLOWED_KEYS = new Set([
   "scrapflow_metals", "scrapflow_car_rates", "scrapflow_customers", "scrapflow_tickets",
@@ -11,24 +11,18 @@ const ALLOWED_KEYS = new Set([
 ]);
 
 export default defineHandler(async (event) => {
-  const admin = requireAdmin(event);
+  const admin = await requireAdmin(event);
   const body = await readBody<{ state?: Record<string, unknown> }>(event);
   if (!body.state || typeof body.state !== "object") throw createError({ statusCode: 400, statusMessage: "Shared state is required" });
-  const db = getDatabase();
-  const now = new Date().toISOString();
-  const upsert = db.prepare(`
-    INSERT INTO app_state (key, value, updated_at, updated_by) VALUES (?, ?, ?, ?)
-    ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, updated_by = excluded.updated_by
-  `);
-  db.exec("BEGIN");
-  try {
-    for (const [key, value] of Object.entries(body.state)) {
-      if (ALLOWED_KEYS.has(key)) upsert.run(key, JSON.stringify(value), now, admin.id);
+  const now = new Date();
+  await withTransaction(async (client) => {
+    for (const [key, value] of Object.entries(body.state!)) {
+      if (!ALLOWED_KEYS.has(key)) continue;
+      await client.query(`
+        INSERT INTO app_state (key, value, updated_at, updated_by) VALUES ($1, $2::jsonb, $3, $4)
+        ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at, updated_by = EXCLUDED.updated_by
+      `, [key, JSON.stringify(value), now, admin.id]);
     }
-    db.exec("COMMIT");
-  } catch (error) {
-    db.exec("ROLLBACK");
-    throw error;
-  }
-  return { ok: true, updatedAt: now };
+  });
+  return { ok: true, updatedAt: now.toISOString() };
 });

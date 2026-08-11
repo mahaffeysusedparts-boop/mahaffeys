@@ -61,6 +61,7 @@ export const UserManagementTab: React.FC = () => {
     admin: "Administrator",
     yard_manager: "Yard Manager",
     scale_operator: "Scale Operator",
+    yard_employee: "Yard Employee",
   };
 
   return (
@@ -116,6 +117,7 @@ export const UserManagementTab: React.FC = () => {
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent className="bg-slate-900 border-slate-800 text-white text-xs">
+                          <SelectItem value="yard_employee">Yard Employee</SelectItem>
                           <SelectItem value="scale_operator">Scale Operator</SelectItem>
                           <SelectItem value="yard_manager">Yard Manager</SelectItem>
                           <SelectItem value="admin">Administrator</SelectItem>
@@ -197,6 +199,7 @@ export const UserManagementTab: React.FC = () => {
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent className="bg-slate-900 border-slate-800 text-white text-xs">
+                          <SelectItem value="yard_employee">Yard Employee</SelectItem>
                           <SelectItem value="scale_operator">Scale Operator</SelectItem>
                           <SelectItem value="yard_manager">Yard Manager</SelectItem>
                           <SelectItem value="admin">Administrator</SelectItem>

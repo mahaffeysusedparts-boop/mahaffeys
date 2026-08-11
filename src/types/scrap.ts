@@ -4,7 +4,7 @@ export type ScaleConnectionMode = 'WEB_SERIAL' | 'WEBSOCKET';
 
 export type WeightUnit = 'LBS' | 'KG';
 
-export type UserRole = 'admin' | 'yard_manager' | 'scale_operator';
+export type UserRole = 'admin' | 'yard_manager' | 'scale_operator' | 'yard_employee';
 
 export type AccountStatus = 'pending' | 'approved' | 'rejected' | 'disabled';
 

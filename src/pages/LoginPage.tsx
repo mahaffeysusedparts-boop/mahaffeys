@@ -21,12 +21,20 @@ export default function LoginPage() {
 
   React.useEffect(() => {
     if (isLoading) return;
+    if (!hasAdminInSystem && location.pathname !== "/setup") {
+      navigate("/setup", { replace: true });
+      return;
+    }
+    if (hasAdminInSystem && location.pathname === "/setup") {
+      navigate("/login", { replace: true });
+      return;
+    }
     if (isAuthenticated && isApproved) {
       navigate(from, { replace: true });
     } else if (isAuthenticated && !isApproved) {
       navigate("/pending-approval", { replace: true });
     }
-  }, [isAuthenticated, isApproved, isLoading, navigate, from]);
+  }, [hasAdminInSystem, isAuthenticated, isApproved, isLoading, location.pathname, navigate, from]);
 
   // First-Time Setup State
   const [setupFullName, setSetupFullName] = useState("");
@@ -315,9 +323,9 @@ export default function LoginPage() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent className="bg-slate-900 border-slate-800 text-white text-xs">
+                        <SelectItem value="yard_employee">Yard Employee (General Yard Access)</SelectItem>
                         <SelectItem value="scale_operator">Scale Operator (Intake, Scale & Tickets)</SelectItem>
                         <SelectItem value="yard_manager">Yard Manager (Full Operations & Pricing)</SelectItem>
-                        <SelectItem value="admin">Administrator (System & User Management)</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>

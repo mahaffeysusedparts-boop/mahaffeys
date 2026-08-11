@@ -1,9 +1,9 @@
 import { defineHandler } from "nitro";
-import { requireAdmin, toPublicUser } from "../../../utils/auth";
-import { getDatabase } from "../../../utils/db";
+import { requireAdmin, toPublicUser, type UserRow } from "../../../utils/auth";
+import { query } from "../../../utils/db";
 
-export default defineHandler((event) => {
-  requireAdmin(event);
-  const rows = getDatabase().prepare("SELECT * FROM users ORDER BY created_at DESC").all() as Parameters<typeof toPublicUser>[0][];
-  return { users: rows.map(toPublicUser) };
+export default defineHandler(async (event) => {
+  await requireAdmin(event);
+  const result = await query<UserRow>("SELECT * FROM users ORDER BY created_at DESC");
+  return { users: result.rows.map(toPublicUser) };
 });

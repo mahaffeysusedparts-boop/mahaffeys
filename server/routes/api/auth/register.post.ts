@@ -1,27 +1,30 @@
 import { defineHandler } from "nitro";
 import { createError, readBody } from "nitro/h3";
-import { createSession, createUserId, hashPassword, isRole, toPublicUser } from "../../../utils/auth";
-import { getDatabase } from "../../../utils/db";
+import { createSession, createUserId, hashPassword, isRole, toPublicUser, type UserRow } from "../../../utils/auth";
+import { query } from "../../../utils/db";
 
 export default defineHandler(async (event) => {
   const body = await readBody<{ fullName?: string; username?: string; password?: string; email?: string; role?: string }>(event);
   const fullName = body.fullName?.trim();
   const username = body.username?.trim().toLowerCase();
-  if (!fullName || !username || !body.password || body.password.length < 8 || !isRole(body.role)) {
-    throw createError({ statusCode: 400, statusMessage: "Valid account details and an 8-character password are required" });
+  const email = body.email?.trim().toLowerCase() || null;
+  if (!fullName || !username || !body.password || body.password.length < 8 || !isRole(body.role) || body.role === "admin") {
+    throw createError({ statusCode: 400, statusMessage: "Valid account details, a staff role, and an 8-character password are required" });
   }
+
   const id = createUserId();
-  const now = new Date().toISOString();
-  const db = getDatabase();
   try {
-    db.prepare(`INSERT INTO users
-      (id, full_name, username, email, password_hash, role, status, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)`)
-      .run(id, fullName, username, body.email?.trim().toLowerCase() || null, hashPassword(body.password), body.role, now);
-  } catch {
-    throw createError({ statusCode: 409, statusMessage: "Username or email is already registered" });
+    const result = await query<UserRow>(`
+      INSERT INTO users (id, full_name, username, email, password_hash, role, status, created_at)
+      VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7)
+      RETURNING *
+    `, [id, fullName, username, email, hashPassword(body.password), body.role, new Date()]);
+    await createSession(event, id);
+    return { user: toPublicUser(result.rows[0]) };
+  } catch (error: any) {
+    if (error?.code === "23505") {
+      throw createError({ statusCode: 409, statusMessage: "Username or email is already registered" });
+    }
+    throw error;
   }
-  const row = db.prepare("SELECT * FROM users WHERE id = ?").get(id) as Parameters<typeof toPublicUser>[0];
-  createSession(event, id);
-  return { user: toPublicUser(row) };
 });

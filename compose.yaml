@@ -1,17 +1,35 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: scrapflow-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: scrapflow
+      POSTGRES_USER: scrapflow
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in the server environment}
+    volumes:
+      - scrapflow-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U scrapflow -d scrapflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
   scrapflow:
     build: .
     container_name: scrapflow
     restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
     environment:
       NODE_ENV: production
       NITRO_HOST: 0.0.0.0
       NITRO_PORT: 3000
-      NITRO_DATABASE_PATH: /data/scrapflow.db
+      NITRO_DATABASE_URL: postgresql://scrapflow:${POSTGRES_PASSWORD}@postgres:5432/scrapflow
+      NITRO_COOKIE_SECURE: ${NITRO_COOKIE_SECURE:-false}
     ports:
       - "3000:3000"
-    volumes:
-      - scrapflow-data:/data
 
 volumes:
-  scrapflow-data:
+  scrapflow-postgres-data:

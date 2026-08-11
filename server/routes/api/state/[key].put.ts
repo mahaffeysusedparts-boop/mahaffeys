@@ -1,7 +1,7 @@
 import { defineHandler } from "nitro";
 import { createError, getRouterParam, readBody } from "nitro/h3";
 import { requireUser } from "../../../utils/auth";
-import { getDatabase } from "../../../utils/db";
+import { query } from "../../../utils/db";
 
 const ALLOWED_KEYS = new Set([
   "scrapflow_metals", "scrapflow_car_rates", "scrapflow_customers", "scrapflow_tickets",
@@ -11,15 +11,15 @@ const ALLOWED_KEYS = new Set([
 ]);
 
 export default defineHandler(async (event) => {
-  const user = requireUser(event);
+  const user = await requireUser(event);
   const key = getRouterParam(event, "key");
   if (!key || !ALLOWED_KEYS.has(key)) throw createError({ statusCode: 400, statusMessage: "Invalid shared data key" });
   const body = await readBody<{ value?: unknown }>(event);
   if (!("value" in body)) throw createError({ statusCode: 400, statusMessage: "A value is required" });
-  const now = new Date().toISOString();
-  getDatabase().prepare(`
-    INSERT INTO app_state (key, value, updated_at, updated_by) VALUES (?, ?, ?, ?)
-    ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, updated_by = excluded.updated_by
-  `).run(key, JSON.stringify(body.value), now, user.id);
-  return { ok: true, updatedAt: now };
+  const now = new Date();
+  await query(`
+    INSERT INTO app_state (key, value, updated_at, updated_by) VALUES ($1, $2::jsonb, $3, $4)
+    ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at, updated_by = EXCLUDED.updated_by
+  `, [key, JSON.stringify(body.value), now, user.id]);
+  return { ok: true, updatedAt: now.toISOString() };
 });

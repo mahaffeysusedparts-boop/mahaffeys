@@ -1,9 +1,9 @@
 import { createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
 import { createError, deleteCookie, getCookie, setCookie } from "nitro/h3";
 import type { H3Event } from "nitro/h3";
-import { getDatabase } from "./db";
+import { query } from "./db";
 
-export type UserRole = "admin" | "yard_manager" | "scale_operator";
+export type UserRole = "admin" | "yard_manager" | "scale_operator" | "yard_employee";
 export type AccountStatus = "pending" | "approved" | "rejected" | "disabled";
 
 export interface PublicUser {
@@ -19,7 +19,7 @@ export interface PublicUser {
   updatedAt?: string;
 }
 
-interface UserRow {
+export interface UserRow {
   id: string;
   full_name: string;
   username: string;
@@ -27,14 +27,15 @@ interface UserRow {
   password_hash: string;
   role: UserRole;
   status: AccountStatus;
-  created_at: string;
-  approved_at: string | null;
+  created_at: Date | string;
+  approved_at: Date | string | null;
   approved_by: string | null;
-  updated_at: string | null;
+  updated_at: Date | string | null;
 }
 
 const SESSION_COOKIE = "scrapflow_session";
 const SESSION_LIFETIME_SECONDS = 60 * 60 * 24 * 14;
+const asIso = (value: Date | string) => value instanceof Date ? value.toISOString() : value;
 
 export function toPublicUser(row: UserRow): PublicUser {
   return {
@@ -44,10 +45,10 @@ export function toPublicUser(row: UserRow): PublicUser {
     email: row.email || undefined,
     role: row.role,
     status: row.status,
-    createdAt: row.created_at,
-    approvedAt: row.approved_at || undefined,
+    createdAt: asIso(row.created_at),
+    approvedAt: row.approved_at ? asIso(row.approved_at) : undefined,
     approvedBy: row.approved_by || undefined,
-    updatedAt: row.updated_at || undefined,
+    updatedAt: row.updated_at ? asIso(row.updated_at) : undefined,
   };
 }
 
@@ -69,50 +70,51 @@ function tokenHash(token: string) {
   return createHash("sha256").update(token).digest("hex");
 }
 
-export function createSession(event: H3Event, userId: string) {
+export async function createSession(event: H3Event, userId: string) {
   const token = randomBytes(32).toString("base64url");
   const now = new Date();
   const expiresAt = new Date(now.getTime() + SESSION_LIFETIME_SECONDS * 1000);
-  const db = getDatabase();
-  db.prepare("DELETE FROM sessions WHERE expires_at <= ?").run(now.toISOString());
-  db.prepare("INSERT INTO sessions (token_hash, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)")
-    .run(tokenHash(token), userId, expiresAt.toISOString(), now.toISOString());
+  await query("DELETE FROM sessions WHERE expires_at <= NOW()");
+  await query(
+    "INSERT INTO sessions (token_hash, user_id, expires_at, created_at) VALUES ($1, $2, $3, $4)",
+    [tokenHash(token), userId, expiresAt, now],
+  );
   setCookie(event, SESSION_COOKIE, token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
+    secure: process.env.NITRO_COOKIE_SECURE === "true",
+    sameSite: "strict",
     path: "/",
     maxAge: SESSION_LIFETIME_SECONDS,
   });
 }
 
-export function clearSession(event: H3Event) {
+export async function clearSession(event: H3Event) {
   const token = getCookie(event, SESSION_COOKIE);
-  if (token) getDatabase().prepare("DELETE FROM sessions WHERE token_hash = ?").run(tokenHash(token));
+  if (token) await query("DELETE FROM sessions WHERE token_hash = $1", [tokenHash(token)]);
   deleteCookie(event, SESSION_COOKIE, { path: "/" });
 }
 
-export function getSessionUser(event: H3Event): PublicUser | null {
+export async function getSessionUser(event: H3Event): Promise<PublicUser | null> {
   const token = getCookie(event, SESSION_COOKIE);
   if (!token) return null;
-  const row = getDatabase().prepare(`
+  const result = await query<UserRow>(`
     SELECT u.* FROM sessions s
     JOIN users u ON u.id = s.user_id
-    WHERE s.token_hash = ? AND s.expires_at > ?
-  `).get(tokenHash(token), new Date().toISOString()) as UserRow | undefined;
-  return row ? toPublicUser(row) : null;
+    WHERE s.token_hash = $1 AND s.expires_at > NOW()
+  `, [tokenHash(token)]);
+  return result.rows[0] ? toPublicUser(result.rows[0]) : null;
 }
 
-export function requireUser(event: H3Event) {
-  const user = getSessionUser(event);
+export async function requireUser(event: H3Event) {
+  const user = await getSessionUser(event);
   if (!user || user.status !== "approved") {
     throw createError({ statusCode: 401, statusMessage: "Authentication required" });
   }
   return user;
 }
 
-export function requireAdmin(event: H3Event) {
-  const user = requireUser(event);
+export async function requireAdmin(event: H3Event) {
+  const user = await requireUser(event);
   if (user.role !== "admin") {
     throw createError({ statusCode: 403, statusMessage: "Administrator access required" });
   }
@@ -124,7 +126,7 @@ export function createUserId() {
 }
 
 export function isRole(value: unknown): value is UserRole {
-  return value === "admin" || value === "yard_manager" || value === "scale_operator";
+  return value === "admin" || value === "yard_manager" || value === "scale_operator" || value === "yard_employee";
 }
 
 export function isStatus(value: unknown): value is AccountStatus {

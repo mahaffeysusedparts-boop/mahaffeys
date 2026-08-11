@@ -90,6 +90,7 @@ export const Navbar: React.FC = () => {
     admin: 'Admin',
     yard_manager: 'Yard Mgr',
     scale_operator: 'Scale Tech',
+    yard_employee: 'Yard Employee',
   };
 
   return (

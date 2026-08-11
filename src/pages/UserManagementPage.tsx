@@ -95,6 +95,7 @@ export default function UserManagementPage() {
     admin: "Administrator",
     yard_manager: "Yard Manager",
     scale_operator: "Scale Operator",
+    yard_employee: "Yard Employee",
   };
 
   const adminCount = allUsers.filter((u) => u.role === "admin" && u.status === "approved").length;
@@ -244,6 +245,7 @@ export default function UserManagementPage() {
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent className="bg-slate-900 border-slate-800 text-white text-xs">
+                            <SelectItem value="yard_employee">Yard Employee</SelectItem>
                             <SelectItem value="scale_operator">Scale Operator</SelectItem>
                             <SelectItem value="yard_manager">Yard Manager</SelectItem>
                             <SelectItem value="admin">Administrator</SelectItem>
@@ -336,6 +338,7 @@ export default function UserManagementPage() {
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent className="bg-slate-900 border-slate-800 text-white text-xs">
+                            <SelectItem value="yard_employee">Yard Employee</SelectItem>
                             <SelectItem value="scale_operator">Scale Operator</SelectItem>
                             <SelectItem value="yard_manager">Yard Manager</SelectItem>
                             <SelectItem value="admin">Administrator</SelectItem>

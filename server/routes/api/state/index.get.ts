@@ -1,12 +1,19 @@
 import { defineHandler } from "nitro";
 import { requireUser } from "../../../utils/auth";
-import { getDatabase } from "../../../utils/db";
+import { query } from "../../../utils/db";
 
-export default defineHandler((event) => {
-  requireUser(event);
-  const rows = getDatabase().prepare("SELECT key, value, updated_at FROM app_state").all() as Array<{ key: string; value: string; updated_at: string }>;
+interface StateRow {
+  key: string;
+  value: unknown;
+  updated_at: Date | string;
+}
+
+export default defineHandler(async (event) => {
+  await requireUser(event);
+  const result = await query<StateRow>("SELECT key, value, updated_at FROM app_state");
+  const timestamps = result.rows.map((row) => row.updated_at instanceof Date ? row.updated_at.toISOString() : row.updated_at);
   return {
-    state: Object.fromEntries(rows.map((row) => [row.key, JSON.parse(row.value)])),
-    updatedAt: rows.reduce<string | null>((latest, row) => !latest || row.updated_at > latest ? row.updated_at : latest, null),
+    state: Object.fromEntries(result.rows.map((row) => [row.key, row.value])),
+    updatedAt: timestamps.sort().at(-1) || null,
   };
 });
