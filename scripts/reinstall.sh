@@ -1,109 +1,82 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-# ScrapFlow Reinstallation Script
-# This script automates the process of backing up data, removing the old
-# installation, and deploying a fresh version of the application.
-#
-# WARNING: This is a destructive operation.
+# Reinstalls the ScrapFlow application while preserving its server configuration
+# and creating a PostgreSQL backup. Run this as the normal deployment user.
 
-# --- Configuration ---
-# IMPORTANT: Update these variables before running the script.
+set -Eeuo pipefail
+
 APP_DIR="/var/www/scrapflow"
-REPO_URL="<YOUR_GIT_REPOSITORY_URL>" # <-- Replace this!
-SERVER_IP="192.168.1.100"           # <-- Replace with your server's static LAN IP
+REPO_URL="<YOUR_GIT_REPOSITORY_URL>"
+BRANCH="main"
 BACKUP_DIR="/var/backups/scrapflow"
-# --- End Configuration ---
+ENV_FILE="/etc/scrapflow/scrapflow.env"
+SERVICE_NAME="scrapflow"
 
-set -e # Exit immediately if a command exits with a non-zero status.
-
-echo "--- ScrapFlow Reinstallation Utility ---"
-
-# --- Safety Check ---
-read -p "WARNING: This will delete all files in $APP_DIR. A backup of your database will be attempted. Continue? (y/n) " -n 1 -r
-echo
-if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-    echo "Reinstallation cancelled."
+if [[ "$REPO_URL" == "<YOUR_GIT_REPOSITORY_URL>" ]]; then
+    echo "Set REPO_URL near the top of this script before running it."
     exit 1
 fi
 
-# --- 1. Backup Data ---
-echo "[1/7] Backing up database..."
-if [ -f "$APP_DIR/data/scrapflow.db" ]; then
-    sudo mkdir -p $BACKUP_DIR
-    TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
-    BACKUP_FILE="$BACKUP_DIR/scrapflow_backup_$TIMESTAMP.db"
-    sudo cp "$APP_DIR/data/scrapflow.db" "$BACKUP_FILE"
-    echo "✅ Database backed up to $BACKUP_FILE"
-else
-    echo "⚠️  No existing database found to back up. Skipping."
+if [[ ! -f "$ENV_FILE" ]]; then
+    echo "Missing $ENV_FILE. Complete the initial server setup in SELF_HOSTING.md first."
+    exit 1
 fi
 
-# --- 2. Stop Services ---
-echo "[2/7] Stopping PM2 services..."
-pm2 stop scrapflow-app >/dev/null 2>&1 || echo "  - scrapflow-app not running."
-pm2 delete scrapflow-app >/dev/null 2>&1 || echo "  - scrapflow-app not in pm2 list."
-pm2 save >/dev/null
-
-# --- 3. Remove Old Installation ---
-echo "[3/7] Removing old installation files..."
-sudo rm -f /etc/nginx/sites-enabled/scrapflow || echo "  - Nginx site not enabled."
-sudo rm -f /etc/nginx/sites-available/scrapflow || echo "  - Nginx config not found."
-sudo systemctl restart nginx
-sudo rm -rf $APP_DIR
-echo "✅ Old installation removed."
-
-# --- 4. Fresh Installation ---
-echo "[4/7] Cloning fresh repository from $REPO_URL..."
-cd /var/www
-sudo git clone "$REPO_URL" scrapflow
-cd $APP_DIR
-
-echo "[5/7] Installing dependencies and building application..."
-sudo npm install
-sudo npm run build
-echo "✅ Build complete."
-
-# --- 6. Restore Database ---
-read -p "Do you want to restore the latest database backup? (y/n) " -n 1 -r
-echo
-if [[ $REPLY =~ ^[Yy]$ && -f "$BACKUP_FILE" ]]; then
-    echo "  - Restoring database from $BACKUP_FILE..."
-    sudo cp "$BACKUP_FILE" "$APP_DIR/data/scrapflow.db"
-    echo "✅ Database restored."
-elif [[ $REPLY =~ ^[Yy]$ ]]; then
-    echo "⚠️  No backup file found to restore."
+read -r -p "This will replace $APP_DIR with a fresh clone. Continue? [y/N] " REPLY
+if [[ ! "$REPLY" =~ ^[Yy]$ ]]; then
+    echo "Reinstallation cancelled."
+    exit 0
 fi
 
-# --- 7. Configure and Launch ---
-echo "[7/7] Configuring Nginx and starting application..."
-NGINX_CONF="server {
-    listen 80;
-    server_name $SERVER_IP scrapflow.local;
+TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
+BACKUP_FILE="$BACKUP_DIR/scrapflow_${TIMESTAMP}.dump"
 
-    root $APP_DIR/dist;
-    index index.html;
+echo "[1/7] Backing up PostgreSQL..."
+sudo install -d -m 700 "$BACKUP_DIR"
+set -a
+# shellcheck disable=SC1090
+source "$ENV_FILE"
+set +a
+if [[ -z "${NITRO_DATABASE_URL:-}" ]]; then
+    echo "NITRO_DATABASE_URL is not set in $ENV_FILE."
+    exit 1
+fi
+pg_dump --format=custom --file="/tmp/scrapflow_${TIMESTAMP}.dump" "$NITRO_DATABASE_URL"
+sudo mv "/tmp/scrapflow_${TIMESTAMP}.dump" "$BACKUP_FILE"
+sudo chmod 600 "$BACKUP_FILE"
+echo "Database backup saved to $BACKUP_FILE"
 
-    location / {
-        try_files \\\$uri \\\$uri/ /index.html;
-    }
+echo "[2/7] Stopping the application..."
+sudo systemctl stop "$SERVICE_NAME" 2>/dev/null || true
 
-    location /api/ {
-        proxy_pass http://127.0.0.1:3000;
-        proxy_set_header Host \\\$host;
-        proxy_set_header X-Real-IP \\\$remote_addr;
-        proxy_set_header X-Forwarded-For \\\$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \\\$scheme;
-    }
-}"
-echo "$NGINX_CONF" | sudo tee /etc/nginx/sites-available/scrapflow > /dev/null
-sudo ln -s /etc/nginx/sites-available/scrapflow /etc/nginx/sites-enabled/
+echo "[3/7] Replacing application files..."
+sudo rm -rf "$APP_DIR"
+sudo git clone --branch "$BRANCH" --single-branch "$REPO_URL" "$APP_DIR"
+sudo chown -R "$(id -un):$(id -gn)" "$APP_DIR"
+
+echo "[4/7] Installing production dependencies and building..."
+cd "$APP_DIR"
+npm ci
+npm run build
+
+echo "[5/7] Starting the application..."
+sudo systemctl daemon-reload
+sudo systemctl enable --now "$SERVICE_NAME"
+
+echo "[6/7] Validating Nginx..."
 sudo nginx -t
-sudo systemctl restart nginx
+sudo systemctl reload nginx
 
-cd $APP_DIR
-pm2 start "npm" --name "scrapflow-app" -- run preview
-pm2 save
+echo "[7/7] Checking application health..."
+for attempt in {1..15}; do
+    if curl --fail --silent http://127.0.0.1:3000/api/health >/dev/null; then
+        echo "ScrapFlow is healthy. Reinstallation complete."
+        echo "Backup retained at $BACKUP_FILE"
+        exit 0
+    fi
+    sleep 2
+done
 
-echo "---"
-echo "✅ Reinstallation Complete! ---"
-echo "ScrapFlow is now running on http://$SERVER_IP"
+echo "The service started but its health check did not pass."
+echo "Inspect it with: sudo systemctl status $SERVICE_NAME"
+exit 1
