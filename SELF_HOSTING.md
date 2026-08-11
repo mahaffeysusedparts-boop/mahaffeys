@@ -1,48 +1,110 @@
-# ScrapFlow Ubuntu Self-Hosting
+# Self-Hosting ScrapFlow on a Linux Server
 
-## Production architecture
+This guide provides comprehensive instructions for deploying, managing, and reinstalling the ScrapFlow application on a dedicated Linux server (Ubuntu/Debian recommended) on your local network.
 
-ScrapFlow serves the React interface and Nitro API from one Node.js process. User accounts, sessions, roles, tickets, customers, settings, and shared yard records are stored in a local PostgreSQL database.
+## 1. Initial Server Preparation
 
-Required server environment:
+Before deploying, ensure your server is up-to-date and has the necessary software.
 
-- `NITRO_DATABASE_URL`: PostgreSQL connection URL, for example `postgresql://scrapflow:strong-password@127.0.0.1:5432/scrapflow`
-- `NITRO_HOST=127.0.0.1` when Nginx is the public entry point
-- `NITRO_PORT=3000`
-- `NODE_ENV=production`
-- `NITRO_COOKIE_SECURE=true` when the site uses HTTPS; leave it `false` only for a trusted HTTP LAN deployment
+```bash
+# 1. Update system packages
+sudo apt update && sudo apt upgrade -y
 
-The application creates its PostgreSQL tables and indexes automatically after connecting. Do not expose PostgreSQL port 5432 outside the server.
+# 2. Install Node.js (v20+), Nginx, Git, and build tools
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt install -y nodejs nginx git build-essential
 
-## Fresh PM2 and Nginx deployment checklist
+# 3. Install PM2 process manager globally to keep the app running
+sudo npm install -g pm2
+```
 
-1. Back up the previous database if any records must be retained.
-2. Stop the old PM2 application and remove its obsolete Nginx site configuration.
-3. Create an empty local PostgreSQL database and a dedicated least-privilege database user.
-4. Deploy a clean copy of this repository and install the dependencies from `package.json`.
-5. Build the production application and configure PM2 to start `.output/server/index.mjs` with the required environment above.
-6. Configure Nginx to proxy the site to `http://127.0.0.1:3000`, preserving `Host`, `X-Real-IP`, `X-Forwarded-For`, and `X-Forwarded-Proto` headers.
-7. Enable HTTPS before setting `NITRO_COOKIE_SECURE=true`.
-8. Verify `/api/health` reports `database: postgresql`.
-9. Open `/setup` and create the first administrator. The endpoint locks permanently once an approved administrator exists.
+## 2. Fresh Installation
 
-## Account workflow
+Follow these steps to deploy the application for the first time.
 
-- The first visit redirects to `/setup` while no approved administrator exists.
-- The first administrator is created in a PostgreSQL transaction to prevent two simultaneous bootstrap accounts.
-- Staff request access from `/login` as Yard Employee, Scale Operator, or Yard Manager.
-- Administrators approve requests and may promote trusted accounts to Administrator from User Access.
-- Disabled users have all active sessions revoked immediately.
-- The system prevents removal or disabling of the final approved administrator.
+#### Step 1: Clone the Repository
+```bash
+# Navigate to your web root directory
+cd /var/www
 
-## Starting over safely
+# Clone your project from your Git repository
+sudo git clone <YOUR_REPO_URL> scrapflow
 
-A fresh application build does not reset user accounts because they live in PostgreSQL. To intentionally start from the one-time administrator setup, deploy against a new empty database. Keep the old database backup until the new installation has been verified.
+# Enter the new directory
+cd scrapflow
+```
+> **Note:** Replace `<YOUR_REPO_URL>` with your actual Git repository URL.
 
-## Docker alternative
+#### Step 2: Install & Build
+```bash
+# Install all required npm packages
+sudo npm install
 
-`compose.yaml` includes both PostgreSQL and ScrapFlow. Set `POSTGRES_PASSWORD` in the deployment environment before launching the stack. The named `scrapflow-postgres-data` volume preserves all records across application rebuilds.
+# Build the optimized production application
+sudo npm run build
+```
 
-## Backups
+#### Step 3: Configure Nginx
+Nginx will act as a reverse proxy to serve your application.
 
-Use regular PostgreSQL backups and test restoration periodically. The Settings export covers operational yard data, but database backups are required to preserve account credentials and sessions.
+1.  Copy the example configuration to your Nginx sites directory:
+    ```bash
+    sudo cp nginx.conf.example /etc/nginx/sites-available/scrapflow
+    ```
+2.  **Edit the file** to set your server's IP address:
+    ```bash
+    sudo nano /etc/nginx/sites-available/scrapflow
+    # Find and replace '192.168.1.100' with your server's static LAN IP.
+    ```
+3.  Enable the site and restart Nginx:
+    ```bash
+    sudo ln -s /etc/nginx/sites-available/scrapflow /etc/nginx/sites-enabled/
+    sudo nginx -t
+    sudo systemctl restart nginx
+    ```
+
+#### Step 4: Launch with PM2
+```bash
+# From your app directory (/var/www/scrapflow)
+pm2 start "npm" --name "scrapflow-app" -- run preview
+
+# Save the process list to have it auto-start on server boot
+pm2 save
+pm2 startup
+# (Run the command outputted by the terminal to complete setup)
+```
+
+Your application is now live on your server's IP address!
+
+## 3. Updating the Application
+
+To deploy new changes from your repository:
+
+```bash
+cd /var/www/scrapflow
+
+# 1. Pull the latest code
+git pull origin main
+
+# 2. Re-install dependencies and rebuild
+npm install
+npm run build
+
+# 3. Restart the application process
+pm2 restart scrapflow-app
+```
+
+## 4. Complete Wipe & Reinstall
+
+If you need to completely remove the old installation and start fresh, you can use the provided script.
+
+**WARNING:** This is a destructive operation. It will create a backup of your database but will delete all other application files.
+
+```bash
+# Make the script executable
+chmod +x scripts/reinstall.sh
+
+# Run the script
+./scripts/reinstall.sh
+```
+The script will guide you through the backup, removal, and reinstallation process. You will need to provide your Git repository URL and server IP inside the script file itself.
