@@ -6,7 +6,7 @@ services:
     environment:
       POSTGRES_DB: mahaffeys
       POSTGRES_USER: mahaffeys
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in the server environment}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in a .env file or the server environment}
     volumes:
       - mahaffeys-postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -17,7 +17,7 @@ services:
 
   mahaffeys:
     build: .
-    container_name: mahaffeys
+    container_name: mahaffeys-app
     restart: unless-stopped
     depends_on:
       postgres:
@@ -28,8 +28,28 @@ services:
       NITRO_PORT: 3000
       NITRO_DATABASE_URL: postgresql://mahaffeys:${POSTGRES_PASSWORD}@postgres:5432/mahaffeys
       NITRO_COOKIE_SECURE: ${NITRO_COOKIE_SECURE:-false}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  nginx:
+    build:
+      context: .
+      dockerfile: deploy/docker/nginx.Dockerfile
+    container_name: mahaffeys-nginx
+    restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "80:80"
+    depends_on:
+      mahaffeys:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/nginx-health"]
+      interval: 10s
+      timeout: 2s
+      retries: 5
 
 volumes:
   mahaffeys-postgres-data:
