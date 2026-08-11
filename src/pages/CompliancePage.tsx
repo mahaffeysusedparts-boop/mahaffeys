@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { storageService } from "@/services/storageService";
-import { Ticket, NMVTISReportLog, ComplianceCaptures } from "@/types/scrap";
+import { Ticket, NMVTISReportLog } from "@/types/scrap";
 import {
   validateVin,
   generateNMVTISCsv,
@@ -31,16 +31,8 @@ import {
   Clock,
   Car,
   Search,
-  Filter,
-  RefreshCw,
   Eye,
-  CreditCard,
-  Fingerprint,
-  FileText,
-  Building,
-  UserCheck,
   ShieldAlert,
-  Sparkles,
   Award,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -66,7 +58,6 @@ export const CompliancePage: React.FC = () => {
     loadData();
   }, []);
 
-  // Filter salvage vehicle tickets
   const vehicleTickets = tickets.filter((t) => t.ticketType === 'CAR_SALVAGE' && t.carRecord);
 
   const filteredTickets = vehicleTickets.filter((t) => {
@@ -90,7 +81,6 @@ export const CompliancePage: React.FC = () => {
     return true;
   });
 
-  // Calculate Metrics
   const pendingCount = vehicleTickets.filter(
     (t) => !(t.complianceCaptures?.nmvtisReported || t.carRecord?.complianceCaptures?.nmvtisReported)
   ).length;
@@ -107,7 +97,6 @@ export const CompliancePage: React.FC = () => {
     .filter((t) => !(t.complianceCaptures?.nmvtisReported || t.carRecord?.complianceCaptures?.nmvtisReported))
     .reduce((acc, t) => acc + t.finalPayout, 0);
 
-  // Toggle selection
   const handleToggleSelectAll = () => {
     if (selectedTicketIds.length === filteredTickets.length) {
       setSelectedTicketIds([]);
@@ -124,7 +113,6 @@ export const CompliancePage: React.FC = () => {
     }
   };
 
-  // Export NMVTIS Batch CSV
   const handleExportNMVTISBatch = () => {
     const targets = selectedTicketIds.length > 0
       ? vehicleTickets.filter((t) => selectedTicketIds.includes(t.id))
@@ -142,7 +130,6 @@ export const CompliancePage: React.FC = () => {
 
     downloadFile(csvContent, filename, "text/csv;charset=utf-8;");
 
-    // Record log & mark tickets reported
     const targetIds = targets.map((t) => t.id);
     storageService.markTicketsAsNMVTISReported(targetIds, batchId);
 
@@ -165,7 +152,6 @@ export const CompliancePage: React.FC = () => {
     });
   };
 
-  // Export Law Enforcement Anti-Theft Scrap Log
   const handleExportPoliceLog = () => {
     const csvContent = generateLawEnforcementLogCsv(tickets, yardSettings.yardName);
     const dateStr = new Date().toISOString().slice(0, 10);
@@ -177,7 +163,6 @@ export const CompliancePage: React.FC = () => {
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 p-4 md:p-8 space-y-8">
       
-      {/* Header Banner */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-900/90 p-6 rounded-2xl border border-slate-800 backdrop-blur">
         <div className="flex items-center gap-4">
           <div className="p-3.5 rounded-2xl bg-blue-600/20 text-blue-400 border border-blue-500/30">
@@ -215,7 +200,6 @@ export const CompliancePage: React.FC = () => {
         </div>
       </div>
 
-      {/* Top Key Metrics Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card className="bg-slate-900 border-slate-800 text-white">
           <CardContent className="p-5 flex items-center justify-between">
@@ -261,7 +245,7 @@ export const CompliancePage: React.FC = () => {
             <div>
               <p className="text-xs text-slate-400 font-medium">Compliance Rate</p>
               <p className="text-2xl font-black text-sky-400 font-mono mt-1">100%</p>
-              <p className="text-[11px] text-slate-500 mt-1">Photo + DL + Thumbprint Sealed</p>
+              <p className="text-[11px] text-slate-500 mt-1">5-Point Photo Studio Audit</p>
             </div>
             <div className="p-3 rounded-xl bg-sky-500/10 text-sky-400 border border-sky-500/20">
               <Award className="w-6 h-6" />
@@ -270,7 +254,6 @@ export const CompliancePage: React.FC = () => {
         </Card>
       </div>
 
-      {/* Main Content Tabs */}
       <Tabs defaultValue="vehicles" className="w-full space-y-4">
         <TabsList className="bg-slate-900 border border-slate-800 p-1 rounded-xl">
           <TabsTrigger value="vehicles" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white text-xs gap-1.5">
@@ -281,7 +264,6 @@ export const CompliancePage: React.FC = () => {
           </TabsTrigger>
         </TabsList>
 
-        {/* TAB 1: VEHICLE SALVAGE TABLE */}
         <TabsContent value="vehicles" className="space-y-4">
           <Card className="bg-slate-900 border-slate-800 text-white overflow-hidden">
             <CardHeader className="py-4 px-6 bg-slate-950/60 border-b border-slate-800">
@@ -290,12 +272,8 @@ export const CompliancePage: React.FC = () => {
                   <CardTitle className="text-base font-bold flex items-center gap-2">
                     <Car className="w-5 h-5 text-blue-400" /> Vehicle Intake & NMVTIS Audit Desk
                   </CardTitle>
-                  <CardDescription className="text-xs text-slate-400 mt-0.5">
-                    Select junk vehicles to validate VIN format, seller photo ID compliance, and generate NMVTIS CSV batch records.
-                  </CardDescription>
                 </div>
 
-                {/* Filters */}
                 <div className="flex items-center gap-2">
                   <div className="relative">
                     <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-500" />
@@ -461,7 +439,6 @@ export const CompliancePage: React.FC = () => {
           </Card>
         </TabsContent>
 
-        {/* TAB 2: EXPORT BATCH LOGS */}
         <TabsContent value="logs" className="space-y-4">
           <Card className="bg-slate-900 border-slate-800 text-white overflow-hidden">
             <CardHeader className="py-4 px-6 bg-slate-950/60 border-b border-slate-800">
@@ -501,7 +478,6 @@ export const CompliancePage: React.FC = () => {
         </TabsContent>
       </Tabs>
 
-      {/* Compliance Inspector Detail Modal */}
       {selectedTicketForModal && (
         <Dialog open={!!selectedTicketForModal} onOpenChange={() => setSelectedTicketForModal(null)}>
           <DialogContent className="max-w-3xl bg-slate-950 text-slate-100 border-slate-800 p-6">
@@ -512,9 +488,6 @@ export const CompliancePage: React.FC = () => {
                     <ShieldCheck className="w-5 h-5 text-blue-400" />
                     Salvage Record Compliance Inspection - #{selectedTicketForModal.id}
                   </DialogTitle>
-                  <DialogDescription className="text-xs text-slate-400">
-                    Full photo proof studio audit & NMVTIS submission status
-                  </DialogDescription>
                 </div>
                 <Badge className="bg-emerald-950 text-emerald-400 border-emerald-500/40">
                   {selectedTicketForModal.carRecord?.vin}
@@ -523,7 +496,6 @@ export const CompliancePage: React.FC = () => {
             </DialogHeader>
 
             <div className="space-y-4 pt-2">
-              {/* Customer & Title details grid */}
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 bg-slate-900 p-3 rounded-xl border border-slate-800 text-xs font-mono">
                 <div>
                   <span className="text-slate-400 block text-[10px]">Seller Name</span>
@@ -553,19 +525,17 @@ export const CompliancePage: React.FC = () => {
                 </div>
               </div>
 
-              {/* Photos Gallery */}
               <div className="space-y-2">
                 <p className="text-xs font-bold text-slate-300 uppercase tracking-wider">
-                  Attached Studio Photos & Biometrics:
+                  Attached Studio Photos:
                 </p>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
                   {[
                     { label: "DL / State ID", url: selectedTicketForModal.complianceCaptures?.idPhotoUrl },
                     { label: "Seller Headshot", url: selectedTicketForModal.complianceCaptures?.personPhotoUrl },
                     { label: "Vehicle Snapshot", url: selectedTicketForModal.complianceCaptures?.vehiclePhotoUrl },
                     { label: "License Plate OCR", url: selectedTicketForModal.complianceCaptures?.licensePlatePhotoUrl },
                     { label: "Cargo Load View", url: selectedTicketForModal.complianceCaptures?.loadPhotoUrl },
-                    { label: "Biometric Thumbprint", url: selectedTicketForModal.complianceCaptures?.thumbprintDataUrl },
                   ].map((item, idx) => (
                     <div key={idx} className="bg-slate-900 p-2 rounded-xl border border-slate-800 text-center">
                       <div className="aspect-video bg-slate-950 rounded overflow-hidden mb-1 flex items-center justify-center">

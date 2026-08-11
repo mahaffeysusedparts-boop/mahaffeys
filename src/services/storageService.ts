@@ -15,7 +15,7 @@ import {
   CoreReturnLog,
   AdmissionPass,
 } from "@/types/scrap";
-import { generateSamplePhoto, generateSampleThumbprint } from "@/utils/complianceUtils";
+import { generateSamplePhoto } from "@/utils/complianceUtils";
 
 const STORAGE_KEYS = {
   METALS: 'scrapflow_metals',
@@ -34,7 +34,6 @@ const STORAGE_KEYS = {
   ADMISSION_PASSES: 'scrapflow_admission_passes',
 };
 
-// Seed Pull-A-Part Flat Part Price Catalog
 export const INITIAL_PULL_PARTS: PullPartItem[] = [
   {
     id: 'part-1',
@@ -135,7 +134,6 @@ export const INITIAL_PULL_PARTS: PullPartItem[] = [
   },
 ];
 
-// Seed Pull-A-Part Yard Row Vehicles
 export const INITIAL_PULL_VEHICLES: PullYardVehicle[] = [
   {
     id: 'veh-101',
@@ -195,7 +193,6 @@ export const INITIAL_PULL_VEHICLES: PullYardVehicle[] = [
   },
 ];
 
-// Seed Core Returns
 export const INITIAL_CORE_RETURNS: CoreReturnLog[] = [
   {
     id: 'core-1',
@@ -217,7 +214,6 @@ export const INITIAL_CORE_RETURNS: CoreReturnLog[] = [
   },
 ];
 
-// Seed Admission Passes
 export const INITIAL_ADMISSION_PASSES: AdmissionPass[] = [
   {
     id: 'pass-1001',
@@ -239,7 +235,269 @@ export const INITIAL_ADMISSION_PASSES: AdmissionPass[] = [
   },
 ];
 
-// Seed Catalytic Converter Codes
+export const INITIAL_CAT_CODES: CatalyticConverterCode[] = [
+  {
+    id: 'cat-101',
+    code: '4R31-5E212-AA',
+    make: 'Ford / Lincoln',
+    category: 'Domestic Large',
+    ptGrams: 2.8,
+    pdGrams: 1.9,
+    rhGrams: 0.35,
+    avgMarketValue: 185.00,
+    notes: 'Common on 2004-2010 Ford F-150 / Expedition 5.4L V8',
+  },
+  {
+    id: 'cat-102',
+    code: 'GM-12564299',
+    make: 'General Motors',
+    category: 'Domestic Large',
+    ptGrams: 3.1,
+    pdGrams: 2.2,
+    rhGrams: 0.42,
+    avgMarketValue: 210.00,
+    notes: 'Chevrolet Silverado / Tahoe 5.3L V8 catalytic manifold',
+  },
+  {
+    id: 'cat-103',
+    code: 'TOY<dyad-write path="src/services/storageService.ts" description="Complete storageService with updated initial mock data without thumbprint data">
+import {
+  Customer,
+  MetalGrade,
+  AutoSalvageCategoryRate,
+  Ticket,
+  YardSettings,
+  ComplianceCaptures,
+  NMVTISReportLog,
+  CatalyticConverterCode,
+  ContainerDrop,
+  CashDrawerLog,
+  YardBayLocation,
+  PullPartItem,
+  PullYardVehicle,
+  CoreReturnLog,
+  AdmissionPass,
+} from "@/types/scrap";
+import { generateSamplePhoto } from "@/utils/complianceUtils";
+
+const STORAGE_KEYS = {
+  METALS: 'scrapflow_metals',
+  CAR_RATES: 'scrapflow_car_rates',
+  CUSTOMERS: 'scrapflow_customers',
+  TICKETS: 'scrapflow_tickets',
+  SETTINGS: 'scrapflow_settings',
+  NMVTIS_LOGS: 'scrapflow_nmvtis_logs',
+  CATALYTIC_CODES: 'scrapflow_cat_codes',
+  CONTAINER_DROPS: 'scrapflow_container_drops',
+  CASH_DRAWER: 'scrapflow_cash_drawer',
+  YARD_BAYS: 'scrapflow_yard_bays',
+  PULL_PARTS: 'scrapflow_pull_parts',
+  PULL_YARD_VEHICLES: 'scrapflow_pull_yard_vehicles',
+  CORE_RETURNS: 'scrapflow_core_returns',
+  ADMISSION_PASSES: 'scrapflow_admission_passes',
+};
+
+export const INITIAL_PULL_PARTS: PullPartItem[] = [
+  {
+    id: 'part-1',
+    partName: 'Complete Engine Assembly (Short/Long Block)',
+    category: 'Engine & Driveline',
+    price: 245.00,
+    coreDeposit: 45.00,
+    warrantyFee: 15.00,
+    interchangeNotes: 'Includes intake manifold, oil pan, and heads.',
+    isPopular: true,
+  },
+  {
+    id: 'part-2',
+    partName: 'Automatic / Manual Transmission Assembly',
+    category: 'Engine & Driveline',
+    price: 175.00,
+    coreDeposit: 35.00,
+    warrantyFee: 12.00,
+    interchangeNotes: 'Torque converter included if attached.',
+    isPopular: true,
+  },
+  {
+    id: 'part-3',
+    partName: 'Alternator / Generator',
+    category: 'Electrical & Lights',
+    price: 38.00,
+    coreDeposit: 10.00,
+    warrantyFee: 5.00,
+    interchangeNotes: 'Standard 12V OEM alternator.',
+    isPopular: true,
+  },
+  {
+    id: 'part-4',
+    partName: 'Starter Motor Assembly',
+    category: 'Electrical & Lights',
+    price: 32.00,
+    coreDeposit: 10.00,
+    warrantyFee: 5.00,
+    interchangeNotes: 'Bench tested at counter.',
+    isPopular: true,
+  },
+  {
+    id: 'part-5',
+    partName: 'Door Assembly (Bare Shell or Loaded)',
+    category: 'Body & Panels',
+    price: 75.00,
+    coreDeposit: 0.00,
+    warrantyFee: 5.00,
+    interchangeNotes: 'Includes door glass and regulator if intact.',
+    isPopular: true,
+  },
+  {
+    id: 'part-6',
+    partName: 'Front / Rear Fender Panel',
+    category: 'Body & Panels',
+    price: 48.00,
+    coreDeposit: 0.00,
+    warrantyFee: 3.00,
+    interchangeNotes: 'Steel or aluminum OEM body fender.',
+  },
+  {
+    id: 'part-7',
+    partName: '12V Lead Auto Battery',
+    category: 'Electrical & Lights',
+    price: 28.00,
+    coreDeposit: 12.00,
+    warrantyFee: 5.00,
+    interchangeNotes: 'Charged and battery tester verified.',
+    isPopular: true,
+  },
+  {
+    id: 'part-8',
+    partName: 'Headlight / Tail Light Assembly',
+    category: 'Electrical & Lights',
+    price: 35.00,
+    coreDeposit: 0.00,
+    warrantyFee: 3.00,
+    interchangeNotes: 'Clean OEM lens assembly.',
+  },
+  {
+    id: 'part-9',
+    partName: 'Aluminum Rim / Alloy Wheel',
+    category: 'Wheels & Tires',
+    price: 42.00,
+    coreDeposit: 0.00,
+    warrantyFee: 0.00,
+    interchangeNotes: 'Straight alloy wheel (tire separate).',
+    isPopular: true,
+  },
+  {
+    id: 'part-10',
+    partName: 'Radiator & Cooling Fan Shroud',
+    category: 'Exhaust & Fuel',
+    price: 45.00,
+    coreDeposit: 8.00,
+    warrantyFee: 5.00,
+    interchangeNotes: 'Pressure checked for core leaks.',
+  },
+];
+
+export const INITIAL_PULL_VEHICLES: PullYardVehicle[] = [
+  {
+    id: 'veh-101',
+    rowNumber: 'Row 104',
+    spaceNumber: 'Space 12',
+    section: 'Domestic Trucks & SUVs',
+    year: 2008,
+    make: 'Ford',
+    model: 'F-150 SuperCrew 5.4L',
+    color: 'Oxford White',
+    vin: '1FTRF12W88KA10291',
+    dateSetInYard: new Date(Date.now() - 1000 * 60 * 60 * 24 * 3).toISOString(),
+    status: 'FRESH_SET',
+    partsRemaining: ['Transmission 4R75E', 'Doors (4x)', 'Rear Axle Assembly', 'Interior Seats', 'Fenders', 'Hood'],
+  },
+  {
+    id: 'veh-102',
+    rowNumber: 'Row 202',
+    spaceNumber: 'Space 05',
+    section: 'GM & Chevrolet',
+    year: 2008,
+    make: 'Chevrolet',
+    model: 'Impala LT 3.5L V6',
+    color: 'Silver Metallic',
+    vin: '1G1JC524317109281',
+    dateSetInYard: new Date(Date.now() - 1000 * 60 * 60 * 24 * 10).toISOString(),
+    status: 'POPULAR',
+    partsRemaining: ['Engine 3.5L V6', 'Headlights', 'Bumper Assembly', 'Front Struts'],
+  },
+  {
+    id: 'veh-103',
+    rowNumber: 'Row 308',
+    spaceNumber: 'Space 22',
+    section: 'Asian Imports',
+    year: 2008,
+    make: 'Nissan',
+    model: 'Altima 2.5S Sedan',
+    color: 'Super Black',
+    vin: '1N4AL21E38C209182',
+    dateSetInYard: new Date(Date.now() - 1000 * 60 * 60 * 24 * 22).toISOString(),
+    status: 'STRIPPED_SHELL',
+    partsRemaining: ['Bare Body Shell', 'Subframe', 'Rear Suspension Beam'],
+  },
+  {
+    id: 'veh-104',
+    rowNumber: 'Row 310',
+    spaceNumber: 'Space 01',
+    section: 'Asian Imports',
+    year: 2011,
+    make: 'Toyota',
+    model: 'Camry LE 2.5L',
+    color: 'Classic Silver',
+    vin: '4T1BF1FK1BU209182',
+    dateSetInYard: new Date(Date.now() - 1000 * 60 * 60 * 24 * 1).toISOString(),
+    status: 'FRESH_SET',
+    partsRemaining: ['2AR-FE Engine', '6-Speed Auto Transmission', 'Alloy Wheels (4x)', 'Doors', 'Front End Assembly'],
+  },
+];
+
+export const INITIAL_CORE_RETURNS: CoreReturnLog[] = [
+  {
+    id: 'core-1',
+    customerName: 'Robert Henderson',
+    customerIdNumber: 'DL-9823145-GA',
+    partName: 'Alternator / Generator Core',
+    coreDepositRefunded: 10.00,
+    returnedAt: new Date(Date.now() - 1000 * 60 * 60 * 4).toISOString(),
+    operatorName: 'Scale Tech Station 1',
+  },
+  {
+    id: 'core-2',
+    customerName: 'Marcus Vance',
+    customerIdNumber: 'DL-4481029-GA',
+    partName: '4R75E Transmission Core',
+    coreDepositRefunded: 35.00,
+    returnedAt: new Date(Date.now() - 1000 * 60 * 60 * 18).toISOString(),
+    operatorName: 'Scale Tech Station 1',
+  },
+];
+
+export const INITIAL_ADMISSION_PASSES: AdmissionPass[] = [
+  {
+    id: 'pass-1001',
+    customerName: 'Robert Henderson',
+    customerIdNumber: 'DL-9823145-GA',
+    passDate: new Date().toISOString(),
+    feePaid: 2.00,
+    waiverSigned: true,
+    operatorName: 'Scale Tech Station 1',
+  },
+  {
+    id: 'pass-1002',
+    customerName: 'Sarah Jenkins',
+    customerIdNumber: 'ID-881920-GA',
+    passDate: new Date().toISOString(),
+    feePaid: 2.00,
+    waiverSigned: true,
+    operatorName: 'Scale Tech Station 1',
+  },
+];
+
 export const INITIAL_CAT_CODES: CatalyticConverterCode[] = [
   {
     id: 'cat-101',
@@ -309,7 +567,6 @@ export const INITIAL_CAT_CODES: CatalyticConverterCode[] = [
   },
 ];
 
-// Seed Container Drops
 export const INITIAL_CONTAINER_DROPS: ContainerDrop[] = [
   {
     id: 'drop-1001',
@@ -358,7 +615,6 @@ export const INITIAL_CONTAINER_DROPS: ContainerDrop[] = [
   },
 ];
 
-// Seed Cash Drawer Logs
 export const INITIAL_CASH_DRAWER: CashDrawerLog[] = [
   {
     id: 'cd-101',
@@ -400,7 +656,6 @@ export const INITIAL_CASH_DRAWER: CashDrawerLog[] = [
   },
 ];
 
-// Seed Yard Storage Bays
 export const INITIAL_YARD_BAYS: YardBayLocation[] = [
   {
     id: 'bay-1',
@@ -459,7 +714,6 @@ export const INITIAL_YARD_BAYS: YardBayLocation[] = [
   },
 ];
 
-// Seed Metals Data
 export const INITIAL_METALS: MetalGrade[] = [
   {
     id: 'm1',
@@ -568,7 +822,6 @@ export const INITIAL_METALS: MetalGrade[] = [
   },
 ];
 
-// Seed Car Rates
 export const INITIAL_CAR_RATES: AutoSalvageCategoryRate[] = [
   {
     id: 'car1',
@@ -608,7 +861,6 @@ export const INITIAL_CAR_RATES: AutoSalvageCategoryRate[] = [
   },
 ];
 
-// Seed Customers
 export const INITIAL_CUSTOMERS: Customer[] = [
   {
     id: 'cust-101',
@@ -624,7 +876,6 @@ export const INITIAL_CUSTOMERS: Customer[] = [
     totalPayouts: 1450.80,
     totalWeightLbs: 3820,
     idPhotoUrl: generateSamplePhoto('id'),
-    thumbprintData: generateSampleThumbprint(),
     capturedPlates: ['7ABC89'],
   },
   {
@@ -641,7 +892,6 @@ export const INITIAL_CUSTOMERS: Customer[] = [
     totalPayouts: 8940.00,
     totalWeightLbs: 34200,
     idPhotoUrl: generateSamplePhoto('id'),
-    thumbprintData: generateSampleThumbprint(),
     capturedPlates: ['TOW-912'],
   },
   {
@@ -658,12 +908,10 @@ export const INITIAL_CUSTOMERS: Customer[] = [
     totalPayouts: 340.25,
     totalWeightLbs: 890,
     idPhotoUrl: generateSamplePhoto('id'),
-    thumbprintData: generateSampleThumbprint(),
     capturedPlates: ['BKN-402'],
   },
 ];
 
-// Seed Yard Settings
 export const INITIAL_SETTINGS: YardSettings = {
   yardName: 'Apex Metal & Auto Recyclers',
   address: '400 Recycling Way, Suite A',
@@ -673,7 +921,7 @@ export const INITIAL_SETTINGS: YardSettings = {
   licenseNumber: 'SCRAP-GA-2025-901A',
   nmvtisReportingId: 'NMVTIS-ENTITY-881902',
   receiptHeader: 'THANK YOU FOR RECYCLING WITH APEX! STATE COMPLIANCE ID VERIFIED.',
-  receiptFooter: 'All scrap transactions final. Photo ID & Thumbprint on record. NMVTIS Auto Salvage Verified.',
+  receiptFooter: 'All scrap transactions final. Photo ID on record. NMVTIS Auto Salvage Verified.',
   defaultWeightUnit: 'LBS',
   serialBaudRate: 9600,
   webSocketUrl: 'ws://localhost:8080/scale',
@@ -682,15 +930,12 @@ export const INITIAL_SETTINGS: YardSettings = {
   admissionFeeUsd: 2.00,
 };
 
-// Seed Sample Compliance Captures
 const sampleCarCaptures: ComplianceCaptures = {
   personPhotoUrl: generateSamplePhoto('person'),
   idPhotoUrl: generateSamplePhoto('id'),
   vehiclePhotoUrl: generateSamplePhoto('vehicle'),
   licensePlatePhotoUrl: generateSamplePhoto('plate'),
   loadPhotoUrl: generateSamplePhoto('load'),
-  thumbprintCaptured: true,
-  thumbprintDataUrl: generateSampleThumbprint(),
   nmvtisReported: false,
 };
 
@@ -700,11 +945,8 @@ const sampleScrapCaptures: ComplianceCaptures = {
   vehiclePhotoUrl: generateSamplePhoto('vehicle'),
   licensePlatePhotoUrl: generateSamplePhoto('plate'),
   loadPhotoUrl: generateSamplePhoto('load'),
-  thumbprintCaptured: true,
-  thumbprintDataUrl: generateSampleThumbprint(),
 };
 
-// Seed Sample Tickets
 export const INITIAL_TICKETS: Ticket[] = [
   {
     id: 'T-2025-1001',
@@ -927,7 +1169,6 @@ export const storageService = {
     logs.unshift(log);
     localStorage.setItem(STORAGE_KEYS.CORE_RETURNS, JSON.stringify(logs));
 
-    // Deduct cash from Paymaster Cash Drawer as a payout disbursement
     this.addCashDrawerEntry({
       type: 'PAYOUT_DISBURSEMENT',
       amount: -Math.abs(log.coreDepositRefunded),
@@ -952,7 +1193,6 @@ export const storageService = {
     passes.unshift(pass);
     localStorage.setItem(STORAGE_KEYS.ADMISSION_PASSES, JSON.stringify(passes));
 
-    // Add admission fee cash income to cash drawer balance
     this.addCashDrawerEntry({
       type: 'VAULT_REPLENISHMENT',
       amount: Math.abs(pass.feePaid),
@@ -1084,7 +1324,6 @@ export const storageService = {
     }
     localStorage.setItem(STORAGE_KEYS.TICKETS, JSON.stringify(tickets));
 
-    // Also auto-add car salvage intake vehicle into PullYardVehicle list if assignedRow is present
     if (ticket.ticketType === 'CAR_SALVAGE' && ticket.carRecord && ticket.carRecord.assignedRow) {
       const c = ticket.carRecord;
       this.savePullYardVehicle({
@@ -1109,7 +1348,6 @@ export const storageService = {
       });
     }
 
-    // Deduct cash from Paymaster Cash Drawer if payoutMethod === 'Cash'
     if (ticket.payoutMethod === 'Cash') {
       this.addCashDrawerEntry({
         type: 'PAYOUT_DISBURSEMENT',
@@ -1120,7 +1358,6 @@ export const storageService = {
       });
     }
 
-    // Update customer stats if customerId matches
     if (ticket.customerId) {
       const customers = this.getCustomers();
       const cust = customers.find((c) => c.id === ticket.customerId);
@@ -1135,9 +1372,6 @@ export const storageService = {
         cust.totalWeightLbs += totalLbs;
         if (ticket.complianceCaptures?.idPhotoUrl) {
           cust.idPhotoUrl = ticket.complianceCaptures.idPhotoUrl;
-        }
-        if (ticket.complianceCaptures?.thumbprintDataUrl) {
-          cust.thumbprintData = ticket.complianceCaptures.thumbprintDataUrl;
         }
         if (ticket.vehicleLicensePlate && (!cust.capturedPlates || !cust.capturedPlates.includes(ticket.vehicleLicensePlate))) {
           cust.capturedPlates = [...(cust.capturedPlates || []), ticket.vehicleLicensePlate];

@@ -4,7 +4,7 @@ import { storageService } from '@/services/storageService';
 import { Navbar } from '@/components/layout/Navbar';
 import { ReceiptModal } from '@/components/receipts/ReceiptModal';
 import { calculateComplianceScore } from '@/utils/complianceUtils';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -25,12 +25,8 @@ import {
   Car,
   Scale,
   Download,
-  Filter,
-  DollarSign,
   Ban,
   ShieldCheck,
-  Camera,
-  Fingerprint,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -102,7 +98,6 @@ export default function TicketsPage() {
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
         
-        {/* Header Bar */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-900 p-5 rounded-2xl border border-slate-800 shadow-xl">
           <div>
             <div className="flex items-center gap-2">
@@ -135,11 +130,9 @@ export default function TicketsPage() {
           </div>
         </div>
 
-        {/* Filter Controls */}
         <Card className="bg-slate-900 border-slate-800 text-white shadow-lg">
           <CardContent className="p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
             
-            {/* Search Input */}
             <div className="relative w-full sm:w-80">
               <Search className="w-4 h-4 absolute left-3 top-3 text-slate-500" />
               <Input
@@ -150,7 +143,6 @@ export default function TicketsPage() {
               />
             </div>
 
-            {/* Type Filter Tabs */}
             <Tabs
               value={typeFilter}
               onValueChange={(val) => setTypeFilter(val as any)}
@@ -170,7 +162,6 @@ export default function TicketsPage() {
           </CardContent>
         </Card>
 
-        {/* Tickets Table */}
         <Card className="bg-slate-900 border-slate-800 text-white shadow-xl overflow-hidden">
           <CardContent className="p-0">
             {filteredTickets.length === 0 ? (
@@ -316,14 +307,12 @@ export default function TicketsPage() {
 
       </main>
 
-      {/* Ticket Printable Receipt Modal */}
       <ReceiptModal
         ticket={selectedTicket}
         open={receiptOpen}
         onOpenChange={setReceiptOpen}
       />
 
-      {/* Compliance Inspection Modal */}
       {inspectionTicket && (
         <Dialog open={!!inspectionTicket} onOpenChange={() => setInspectionTicket(null)}>
           <DialogContent className="max-w-2xl bg-slate-950 text-slate-100 border-slate-800 p-6">
@@ -333,7 +322,7 @@ export default function TicketsPage() {
                 Compliance Photo Proof Audit - Ticket #{inspectionTicket.id}
               </DialogTitle>
               <DialogDescription className="text-xs text-slate-400">
-                Customer ID, Face Shot, License Plate & Biometric Thumbprint
+                Customer ID, Face Shot & License Plate Photo Audit
               </DialogDescription>
             </DialogHeader>
 
@@ -345,14 +334,13 @@ export default function TicketsPage() {
                 <div>Payout: <strong className="text-emerald-400">${inspectionTicket.finalPayout.toFixed(2)}</strong></div>
               </div>
 
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
                 {[
                   { label: "DL Scan", url: inspectionTicket.complianceCaptures?.idPhotoUrl },
                   { label: "Seller Face", url: inspectionTicket.complianceCaptures?.personPhotoUrl },
                   { label: "Vehicle", url: inspectionTicket.complianceCaptures?.vehiclePhotoUrl },
                   { label: "License Plate", url: inspectionTicket.complianceCaptures?.licensePlatePhotoUrl },
                   { label: "Cargo Load", url: inspectionTicket.complianceCaptures?.loadPhotoUrl },
-                  { label: "Thumbprint", url: inspectionTicket.complianceCaptures?.thumbprintDataUrl },
                 ].map((item, idx) => (
                   <div key={idx} className="bg-slate-900 p-2 rounded-lg border border-slate-800 text-center">
                     <div className="aspect-video bg-slate-950 rounded overflow-hidden mb-1 flex items-center justify-center">

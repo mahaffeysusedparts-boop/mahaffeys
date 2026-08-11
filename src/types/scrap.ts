@@ -31,7 +31,7 @@ export interface MetalGrade {
 
 export interface AutoSalvageCategoryRate {
   id: string;
-  categoryName: string; // e.g. "Complete Sedan / Coupe", "SUV / Pickup Truck", "Striped Vehicle Shell", "Heavy Commercial Truck"
+  categoryName: string;
   description: string;
   ratePerTon: number;
   flatBonusWithCat: number;
@@ -41,13 +41,13 @@ export interface AutoSalvageCategoryRate {
 
 export interface CatalyticConverterCode {
   id: string;
-  code: string; // e.g. "4R31-5E212-AA", "GM-125642", "TOYOTA-GD3", "HONDA-251"
+  code: string;
   make: string;
   category: 'Domestic Large' | 'Foreign Small' | 'Exotic / High-Grade' | 'Aftermarket' | 'Diesel DPF Filter';
-  ptGrams: number; // Platinum grams
-  pdGrams: number; // Palladium grams
-  rhGrams: number; // Rhodium grams
-  avgMarketValue: number; // USD
+  ptGrams: number;
+  pdGrams: number;
+  rhGrams: number;
+  avgMarketValue: number;
   notes?: string;
   photoUrl?: string;
 }
@@ -57,16 +57,16 @@ export interface PullPartItem {
   partName: string;
   category: 'Engine & Driveline' | 'Body & Panels' | 'Electrical & Lights' | 'Interior & Glass' | 'Wheels & Tires' | 'Exhaust & Fuel';
   price: number;
-  coreDeposit: number; // e.g. $10 or $25 core refund
-  warrantyFee: number; // 30-day exchange warranty optional $5
+  coreDeposit: number;
+  warrantyFee: number;
   interchangeNotes?: string;
   isPopular?: boolean;
 }
 
 export interface PullYardVehicle {
   id: string;
-  rowNumber: string; // e.g. "Row 104"
-  spaceNumber: string; // e.g. "Space 12"
+  rowNumber: string;
+  spaceNumber: string;
   section: 'Domestic Trucks & SUVs' | 'Ford & Lincoln' | 'GM & Chevrolet' | 'Chrysler & Dodge' | 'Asian Imports' | 'European';
   year: number;
   make: string;
@@ -94,14 +94,14 @@ export interface AdmissionPass {
   customerName: string;
   customerIdNumber: string;
   passDate: string;
-  feePaid: number; // e.g. $2.00
+  feePaid: number;
   waiverSigned: boolean;
   operatorName: string;
 }
 
 export interface ContainerDrop {
   id: string;
-  containerNumber: string; // e.g. "BOX-20-88"
+  containerNumber: string;
   clientName: string;
   clientAddress: string;
   clientPhone: string;
@@ -119,7 +119,7 @@ export interface CashDrawerLog {
   id: string;
   timestamp: string;
   type: 'OPENING_FLOAT' | 'PAYOUT_DISBURSEMENT' | 'VAULT_REPLENISHMENT' | 'CLOSING_AUDIT';
-  amount: number; // Positive for float/replenish, negative for payout
+  amount: number;
   ticketId?: string;
   operatorName: string;
   balanceAfter: number;
@@ -134,7 +134,7 @@ export interface YardBayLocation {
   currentLbs: number;
   estValueUsd: number;
   status: 'NORMAL' | 'NEAR_CAPACITY' | 'CRITICAL_FULL';
-  gridArea: string; // e.g. "Grid A1"
+  gridArea: string;
   lastUpdated: string;
 }
 
@@ -152,9 +152,7 @@ export interface Customer {
   createdAt: string;
   totalPayouts: number;
   totalWeightLbs: number;
-  // Enhanced Compliance Fields
   idPhotoUrl?: string;
-  thumbprintData?: string;
   capturedPlates?: string[];
 }
 
@@ -164,8 +162,6 @@ export interface ComplianceCaptures {
   vehiclePhotoUrl?: string;
   licensePlatePhotoUrl?: string;
   loadPhotoUrl?: string;
-  thumbprintCaptured?: boolean;
-  thumbprintDataUrl?: string;
   nmvtisReported?: boolean;
   nmvtisReportedAt?: string;
   nmvtisBatchId?: string;
@@ -179,9 +175,9 @@ export interface ScrapTicketLine {
   grossWeight: number;
   tareWeight: number;
   netWeight: number;
-  deductionPercent: number; // e.g. 5% moisture/plastic
-  deductionLbs: number; // calculated deduction in lbs
-  billableWeight: number; // netWeight - deductionLbs
+  deductionPercent: number;
+  deductionLbs: number;
+  billableWeight: number;
   ratePerLb: number;
   lineTotal: number;
 }
@@ -196,7 +192,6 @@ export interface CarIntakeRecord {
   titleStatus: 'Clean Title' | 'Salvage Title' | 'Bill of Sale' | 'Missing Title (Affidavit)' | 'Junk / Scrap Certificate';
   titleNumber?: string;
   
-  // Checklist & Features
   hasCatalyticConverter: boolean;
   catCondition: 'Original OEM' | 'Aftermarket' | 'Missing / Removed';
   catCodeSerial?: string;
@@ -205,11 +200,9 @@ export interface CarIntakeRecord {
   hasAluminumRims: boolean;
   fluidsDrained: boolean;
   
-  // Pull-a-Part Row Staging
   assignedRow?: string;
   assignedSpace?: string;
   
-  // Pricing
   pricingMode: 'TONNAGE' | 'FLAT_RATE';
   vehicleWeightLbs: number;
   ratePerTon: number;
@@ -220,12 +213,11 @@ export interface CarIntakeRecord {
   deductions: number;
   totalPayout: number;
 
-  // Compliance
   complianceCaptures?: ComplianceCaptures;
 }
 
 export interface Ticket {
-  id: string; // e.g. "T-2025-0104"
+  id: string;
   ticketType: IntakeType;
   createdAt: string;
   status: 'COMPLETED' | 'VOIDED' | 'DRAFT';
@@ -235,16 +227,10 @@ export interface Ticket {
   customerIdNumber?: string;
   vehicleLicensePlate?: string;
   
-  // Scrap metal specific
   scrapLines?: ScrapTicketLine[];
-  
-  // Car salvage specific
   carRecord?: CarIntakeRecord;
-  
-  // Compliance attachment
   complianceCaptures?: ComplianceCaptures;
 
-  // Financial
   grossTotal: number;
   totalDeductions: number;
   finalPayout: number;

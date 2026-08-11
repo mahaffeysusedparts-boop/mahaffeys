@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Customer } from '@/types/scrap';
 import { storageService } from '@/services/storageService';
 import { Navbar } from '@/components/layout/Navbar';
-import { generateSampleThumbprint, generateSamplePhoto } from '@/utils/complianceUtils';
+import { generateSamplePhoto } from '@/utils/complianceUtils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -16,16 +16,17 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
-import { Users, Search, UserPlus, ShieldCheck, Phone, Car, Fingerprint, CreditCard, Camera } from 'lucide-react';
+import { Users, Search, UserPlus, ShieldCheck, Phone, Car, CreditCard, Edit3, Save } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function CustomersPage() {
   const [customers, setCustomers] = useState<Customer[]>(storageService.getCustomers());
   const [search, setSearch] = useState('');
   const [addOpen, setAddOpen] = useState(false);
-  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
 
-  // New Customer Form State
+  // Form State
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
   const [idType, setIdType] = useState<Customer['idType']>('Driver License');
@@ -33,6 +34,29 @@ export default function CustomersPage() {
   const [idState, setIdState] = useState('GA');
   const [address, setAddress] = useState('');
   const [vehicleLicensePlate, setVehicleLicensePlate] = useState('');
+
+  const handleOpenAdd = () => {
+    setFullName('');
+    setPhone('');
+    setIdNumber('');
+    setIdState('GA');
+    setIdType('Driver License');
+    setAddress('');
+    setVehicleLicensePlate('');
+    setAddOpen(true);
+  };
+
+  const handleOpenEdit = (c: Customer) => {
+    setEditingCustomer(c);
+    setFullName(c.fullName);
+    setPhone(c.phone || '');
+    setIdType(c.idType);
+    setIdNumber(c.idNumber);
+    setIdState(c.idState);
+    setAddress(c.address || '');
+    setVehicleLicensePlate(c.vehicleLicensePlate || '');
+    setEditOpen(true);
+  };
 
   const handleSaveNewCustomer = () => {
     if (!fullName.trim() || !idNumber.trim()) {
@@ -53,21 +77,38 @@ export default function CustomersPage() {
       totalPayouts: 0,
       totalWeightLbs: 0,
       idPhotoUrl: generateSamplePhoto('id'),
-      thumbprintData: generateSampleThumbprint(),
       capturedPlates: vehicleLicensePlate ? [vehicleLicensePlate] : [],
     };
 
     storageService.saveCustomer(newCust);
     setCustomers(storageService.getCustomers());
-    toast.success(`Customer ${fullName} registered successfully with ID scan & thumbprint profile!`);
+    toast.success(`Customer ${fullName} registered successfully!`);
     setAddOpen(false);
+  };
 
-    // Reset
-    setFullName('');
-    setPhone('');
-    setIdNumber('');
-    setAddress('');
-    setVehicleLicensePlate('');
+  const handleSaveEditCustomer = () => {
+    if (!editingCustomer) return;
+    if (!fullName.trim() || !idNumber.trim()) {
+      toast.error('Full Name and ID Number are required');
+      return;
+    }
+
+    const updatedCust: Customer = {
+      ...editingCustomer,
+      fullName,
+      phone,
+      idType,
+      idNumber,
+      idState,
+      address,
+      vehicleLicensePlate,
+    };
+
+    storageService.saveCustomer(updatedCust);
+    setCustomers(storageService.getCustomers());
+    toast.success(`Updated details for customer ${fullName}`);
+    setEditOpen(false);
+    setEditingCustomer(null);
   };
 
   const filtered = customers.filter(
@@ -94,12 +135,12 @@ export default function CustomersPage() {
               </h1>
             </div>
             <p className="text-xs text-slate-400 mt-1">
-              State-mandated photo ID registry, biometric thumbprints, tow truck customer accounts, and transaction records
+              State-mandated photo ID registry, tow truck seller profiles, and lifetime payout records
             </p>
           </div>
 
           <Button
-            onClick={() => setAddOpen(true)}
+            onClick={handleOpenAdd}
             className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs"
           >
             <UserPlus className="w-4 h-4 mr-1.5" /> Register New Customer
@@ -135,9 +176,10 @@ export default function CustomersPage() {
                     <TableHead className="w-12 text-slate-400">ID Scan</TableHead>
                     <TableHead className="text-slate-400">Full Name & Address</TableHead>
                     <TableHead className="text-slate-400">ID Credentials</TableHead>
-                    <TableHead className="text-slate-400">Biometrics & Plates</TableHead>
+                    <TableHead className="text-slate-400">Phone & Vehicle Plate</TableHead>
                     <TableHead className="text-slate-400 text-right">Lifetime Weight</TableHead>
                     <TableHead className="text-slate-400 text-right">Lifetime Payouts</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -145,12 +187,9 @@ export default function CustomersPage() {
                     <TableRow key={c.id} className="border-slate-800 hover:bg-slate-800/50 text-xs">
                       
                       <TableCell>
-                        <div
-                          onClick={() => setSelectedCustomer(c)}
-                          className="w-10 h-7 bg-slate-950 rounded border border-slate-800 overflow-hidden cursor-pointer flex items-center justify-center group"
-                        >
+                        <div className="w-10 h-7 bg-slate-950 rounded border border-slate-800 overflow-hidden flex items-center justify-center">
                           {c.idPhotoUrl ? (
-                            <img src={c.idPhotoUrl} alt="ID" className="w-full h-full object-cover group-hover:scale-110 transition-transform" />
+                            <img src={c.idPhotoUrl} alt="ID" className="w-full h-full object-cover" />
                           ) : (
                             <CreditCard className="w-3.5 h-3.5 text-slate-600" />
                           )}
@@ -170,18 +209,10 @@ export default function CustomersPage() {
                       </TableCell>
 
                       <TableCell className="text-slate-300">
-                        <div className="flex items-center gap-1.5 mb-0.5">
-                          {c.thumbprintData ? (
-                            <Badge className="bg-sky-950 text-sky-300 border-sky-800 text-[9px] gap-1">
-                              <Fingerprint className="w-2.5 h-2.5 text-sky-400" /> Thumbprint Sealed
-                            </Badge>
-                          ) : (
-                            <Badge variant="outline" className="text-slate-500 text-[9px]">No Biometrics</Badge>
-                          )}
-                        </div>
+                        <div className="text-[11px] text-slate-300">{c.phone || "No phone listed"}</div>
                         {c.vehicleLicensePlate && (
-                          <div className="text-[10px] text-slate-400 font-mono flex items-center gap-1">
-                            <Car className="w-3 h-3 text-amber-400" /> Plate: {c.vehicleLicensePlate}
+                          <div className="text-[10px] text-amber-400 font-mono flex items-center gap-1 mt-0.5">
+                            <Car className="w-3 h-3" /> Tag: {c.vehicleLicensePlate}
                           </div>
                         )}
                       </TableCell>
@@ -192,6 +223,17 @@ export default function CustomersPage() {
 
                       <TableCell className="text-right font-mono font-extrabold text-emerald-400">
                         ${c.totalPayouts.toFixed(2)}
+                      </TableCell>
+
+                      <TableCell className="text-right">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleOpenEdit(c)}
+                          className="h-8 text-xs text-slate-300 hover:text-white hover:bg-slate-800"
+                        >
+                          <Edit3 className="w-3.5 h-3.5 mr-1 text-emerald-400" /> Edit
+                        </Button>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -293,35 +335,90 @@ export default function CustomersPage() {
         </DialogContent>
       </Dialog>
 
-      {/* View Customer ID Photo & Biometrics Modal */}
-      {selectedCustomer && (
-        <Dialog open={!!selectedCustomer} onOpenChange={() => setSelectedCustomer(null)}>
-          <DialogContent className="max-w-md bg-slate-950 text-slate-100 border-slate-800 p-6">
-            <DialogHeader className="border-b border-slate-800 pb-3">
-              <DialogTitle className="text-base font-bold text-white flex items-center gap-2">
-                <CreditCard className="w-5 h-5 text-emerald-400" />
-                Seller ID Credentials - {selectedCustomer.fullName}
-              </DialogTitle>
-            </DialogHeader>
+      {/* Edit Customer Modal */}
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent className="sm:max-w-[500px] bg-slate-900 border-slate-800 text-slate-100">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold text-white flex items-center gap-2">
+              <Edit3 className="w-5 h-5 text-emerald-400" /> Edit Seller ID Profile
+            </DialogTitle>
+          </DialogHeader>
 
-            <div className="space-y-4 pt-2">
-              <div className="aspect-video bg-slate-900 rounded-xl overflow-hidden border border-slate-800 flex items-center justify-center">
-                {selectedCustomer.idPhotoUrl ? (
-                  <img src={selectedCustomer.idPhotoUrl} alt="ID Card" className="w-full h-full object-contain" />
-                ) : (
-                  <span className="text-xs text-slate-500">No Driver License image on file</span>
-                )}
+          <div className="space-y-3 py-2 text-xs">
+            <div>
+              <Label className="text-slate-300">Full Name *</Label>
+              <Input
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+                className="bg-slate-950 border-slate-800 text-white text-xs mt-1"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <Label className="text-slate-300">ID Type</Label>
+                <select
+                  value={idType}
+                  onChange={(e) => setIdType(e.target.value as any)}
+                  className="w-full h-9 bg-slate-950 border border-slate-800 rounded-md text-xs text-white px-2 mt-1"
+                >
+                  <option value="Driver License">Driver License</option>
+                  <option value="State ID">State ID</option>
+                  <option value="Passport">Passport</option>
+                  <option value="Military ID">Military ID</option>
+                </select>
               </div>
 
-              <div className="p-3 bg-slate-900 rounded-lg border border-slate-800 text-xs font-mono space-y-1">
-                <div>ID Type: <span className="text-white font-bold">{selectedCustomer.idType}</span></div>
-                <div>ID Number: <span className="text-emerald-400 font-bold">{selectedCustomer.idNumber} ({selectedCustomer.idState})</span></div>
-                <div>Address: <span className="text-slate-300">{selectedCustomer.address}</span></div>
+              <div>
+                <Label className="text-slate-300">ID Number *</Label>
+                <Input
+                  value={idNumber}
+                  onChange={(e) => setIdNumber(e.target.value)}
+                  className="bg-slate-950 border-slate-800 text-white text-xs mt-1"
+                />
               </div>
             </div>
-          </DialogContent>
-        </Dialog>
-      )}
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <Label className="text-slate-300">Phone Number</Label>
+                <Input
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  className="bg-slate-950 border-slate-800 text-white text-xs mt-1"
+                />
+              </div>
+
+              <div>
+                <Label className="text-slate-300">Default License Plate</Label>
+                <Input
+                  value={vehicleLicensePlate}
+                  onChange={(e) => setVehicleLicensePlate(e.target.value)}
+                  className="bg-slate-950 border-slate-800 text-white text-xs mt-1"
+                />
+              </div>
+            </div>
+
+            <div>
+              <Label className="text-slate-300">Street Address</Label>
+              <Input
+                value={address}
+                onChange={(e) => setAddress(e.target.value)}
+                className="bg-slate-950 border-slate-800 text-white text-xs mt-1"
+              />
+            </div>
+          </div>
+
+          <DialogFooter className="pt-2 border-t border-slate-800">
+            <Button variant="ghost" onClick={() => setEditOpen(false)} className="text-slate-400">
+              Cancel
+            </Button>
+            <Button onClick={handleSaveEditCustomer} className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold">
+              Update Profile
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -8,8 +8,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Printer, ShieldCheck, CheckCircle2, QrCode, Fingerprint } from 'lucide-react';
+import { Printer, ShieldCheck, QrCode } from 'lucide-react';
 
 interface ReceiptModalProps {
   ticket: Ticket | null;
@@ -48,7 +47,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ ticket, open, onOpen
           </div>
         </DialogHeader>
 
-        {/* Printable Area with CSS print class */}
+        {/* Printable Area */}
         <div className="bg-white text-slate-900 p-6 sm:p-8 rounded-lg shadow-inner font-mono text-xs space-y-5 border border-slate-300 print:p-0 print:border-none print:shadow-none print:text-black">
           
           {/* Receipt Header */}
@@ -139,24 +138,23 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ ticket, open, onOpen
             </div>
           )}
 
-          {/* ATTACHED COMPLIANCE PHOTO & THUMBPRINT STAMP GALLERY */}
+          {/* ATTACHED COMPLIANCE PHOTO GALLERY */}
           {caps && (
             <div className="border border-slate-300 rounded p-3 bg-slate-50 space-y-2">
               <div className="flex items-center justify-between border-b border-slate-300 pb-1">
                 <p className="font-bold text-[10px] uppercase text-slate-800 flex items-center gap-1">
-                  <ShieldCheck className="w-3.5 h-3.5 text-blue-600 inline" /> ATTACHED COMPLIANCE MEDIA & BIOMETRIC RECORD
+                  <ShieldCheck className="w-3.5 h-3.5 text-blue-600 inline" /> ATTACHED COMPLIANCE PHOTO RECORD
                 </p>
                 <span className="text-[9px] font-bold text-emerald-800">STATE ANTI-THEFT AUDIT SEAL</span>
               </div>
               
-              <div className="grid grid-cols-4 sm:grid-cols-6 gap-2 text-center">
+              <div className="grid grid-cols-5 gap-2 text-center">
                 {[
                   { label: "ID SCAN", url: caps.idPhotoUrl },
                   { label: "SELLER FACE", url: caps.personPhotoUrl },
                   { label: "VEHICLE", url: caps.vehiclePhotoUrl },
                   { label: "PLATE OCR", url: caps.licensePlatePhotoUrl },
                   { label: "CARGO LOAD", url: caps.loadPhotoUrl },
-                  { label: "THUMBPRINT", url: caps.thumbprintDataUrl },
                 ].map((item, idx) => (
                   <div key={idx} className="bg-white p-1 border border-slate-300 rounded">
                     <div className="aspect-square bg-slate-200 rounded overflow-hidden flex items-center justify-center">
@@ -191,7 +189,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ ticket, open, onOpen
             </div>
           </div>
 
-          {/* Legal Compliance Disclosures */}
+          {/* Legal Disclosures */}
           <div className="text-[9px] text-slate-600 border-t border-slate-300 pt-3 space-y-1 leading-tight">
             <p className="font-bold uppercase">{settings.receiptHeader}</p>
             <p>
@@ -199,7 +197,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ ticket, open, onOpen
             </p>
           </div>
 
-          {/* Customer Signature Line & Biometric Stamp */}
+          {/* Customer Signature Line */}
           <div className="pt-4 grid grid-cols-2 gap-8 items-end">
             <div>
               <div className="border-b border-slate-900 mb-1 h-8" />

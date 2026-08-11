@@ -119,24 +119,7 @@ export function generateSamplePhoto(type: 'person' | 'id' | 'vehicle' | 'plate' 
   return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 }
 
-// Generate realistic thumbprint SVG
-export function generateSampleThumbprint(): string {
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300" viewBox="0 0 300 300">
-    <rect width="300" height="300" rx="20" fill="#020617" stroke="#1e293b" stroke-width="2"/>
-    <g fill="none" stroke="#38bdf8" stroke-width="3" stroke-linecap="round" opacity="0.85">
-      <path d="M 150, 70 C 100, 70 80, 110 80, 160 C 80, 220 110, 250 150, 250 C 190, 250 220, 220 220, 160 C 220, 110 200, 70 150, 70 Z" />
-      <path d="M 150, 90 C 115, 90 100, 120 100, 160 C 100, 210 120, 230 150, 230 C 180, 230 200, 210 200, 160 C 200, 120 185, 90 150, 90 Z" />
-      <path d="M 150, 110 C 130, 110 118, 130 118, 160 C 118, 195 130, 210 150, 210 C 170, 210 182, 195 182, 160 C 182, 130 170, 110 150, 110 Z" />
-      <path d="M 150, 130 C 140, 130 135, 142 135, 160 C 135, 180 140, 190 150, 190 C 160, 190 165, 180 165, 160 C 165, 142 160, 130 150, 130 Z" />
-      <circle cx="150" cy="160" r="6" fill="#38bdf8" />
-    </g>
-    <rect x="20" y="255" width="260" height="30" rx="6" fill="#0369a1" opacity="0.3"/>
-    <text x="150" y="275" text-anchor="middle" fill="#7dd3fc" font-family="monospace" font-size="12" font-weight="bold">BIOMETRIC THUMBPRINT VERIFIED</text>
-  </svg>`;
-  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
-}
-
-// Check compliance level for a ticket or intake
+// Check compliance level for a ticket or intake (5 Photo Audit Suite)
 export function calculateComplianceScore(captures?: ComplianceCaptures): {
   score: number;
   status: 'FULL' | 'PARTIAL' | 'MISSING';
@@ -146,7 +129,7 @@ export function calculateComplianceScore(captures?: ComplianceCaptures): {
     return {
       score: 0,
       status: 'MISSING',
-      missingItems: ['Seller Photo', 'ID Scan', 'Vehicle Photo', 'License Plate Photo', 'Scrap Cargo Photo', 'Thumbprint'],
+      missingItems: ['Seller Photo', 'ID Scan', 'Vehicle Photo', 'License Plate Photo', 'Scrap Cargo Photo'],
     };
   }
 
@@ -156,7 +139,6 @@ export function calculateComplianceScore(captures?: ComplianceCaptures): {
     { key: 'vehiclePhotoUrl', name: 'Vehicle Photo' },
     { key: 'licensePlatePhotoUrl', name: 'License Plate' },
     { key: 'loadPhotoUrl', name: 'Scrap Cargo Photo' },
-    { key: 'thumbprintCaptured', name: 'Thumbprint' },
   ];
 
   const missing: string[] = [];
@@ -186,7 +168,6 @@ export function validateVin(vin?: string): { isValid: boolean; reason?: string }
   if (cleaned.length !== 17) {
     return { isValid: false, reason: `VIN must be 17 characters (currently ${cleaned.length})` };
   }
-  // Check illegal chars I, O, Q
   if (/[IOQ]/.test(cleaned)) {
     return { isValid: false, reason: "VIN cannot contain letters I, O, or Q" };
   }
@@ -219,8 +200,7 @@ export function generateNMVTISCsv(tickets: Ticket[], reportingEntityId: string =
     "VehiclePlate",
     "VehiclePlateState",
     "PayoutAmount",
-    "CompliancePhotoCount",
-    "ThumbprintAttached"
+    "CompliancePhotoCount"
   ];
 
   const rows = tickets
@@ -252,7 +232,7 @@ export function generateNMVTISCsv(tickets: Ticket[], reportingEntityId: string =
         escapeCsv(c.titleStatus),
         escapeCsv(c.titleNumber || "N/A"),
         escapeCsv(t.vehicleLicensePlate?.split(' ')[1] || "GA"),
-        escapeCsv("S"), // S = Salvage / Scrap
+        escapeCsv("S"),
         escapeCsv(t.customerName),
         escapeCsv(t.customerIdNumber || "N/A"),
         escapeCsv("Driver License"),
@@ -261,8 +241,7 @@ export function generateNMVTISCsv(tickets: Ticket[], reportingEntityId: string =
         escapeCsv(t.vehicleLicensePlate || "N/A"),
         escapeCsv("GA"),
         escapeCsv(t.finalPayout.toFixed(2)),
-        escapeCsv(photoCount),
-        escapeCsv(caps?.thumbprintCaptured ? "YES" : "NO")
+        escapeCsv(photoCount)
       ].join(",");
     });
 
@@ -284,8 +263,7 @@ export function generateLawEnforcementLogCsv(tickets: Ticket[], yardName: string
     "NetPayoutUSD",
     "PayoutMethod",
     "OperatorName",
-    "PhotosAttached",
-    "ThumbprintCaptured"
+    "PhotosAttached"
   ];
 
   const rows = tickets.map((t) => {
@@ -324,15 +302,13 @@ export function generateLawEnforcementLogCsv(tickets: Ticket[], yardName: string
       escapeCsv(t.finalPayout.toFixed(2)),
       escapeCsv(t.payoutMethod),
       escapeCsv(t.operatorName),
-      escapeCsv(`${photoCount}/5 Photos`),
-      escapeCsv(caps?.thumbprintCaptured ? "YES" : "NO")
+      escapeCsv(`${photoCount}/5 Photos`)
     ].join(",");
   });
 
   return [headers.join(","), ...rows].join("\n");
 }
 
-// Download Helper
 export function downloadFile(content: string, fileName: string, mimeType: string = 'text/csv;charset=utf-8;') {
   const blob = new Blob([content], { type: mimeType });
   const url = URL.createObjectURL(blob);

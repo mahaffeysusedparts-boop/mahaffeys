@@ -16,12 +16,10 @@ import {
   CreditCard,
   Car,
   Package,
-  Fingerprint,
   CheckCircle2,
   AlertCircle,
   Scan,
   Upload,
-  RefreshCw,
   Zap,
   Sparkles,
   ShieldCheck,
@@ -30,13 +28,11 @@ import {
 } from "lucide-react";
 import {
   ComplianceCaptures,
-  Customer,
 } from "@/types/scrap";
 import {
   DLScanResult,
   SAMPLE_DL_PROFILES,
   generateSamplePhoto,
-  generateSampleThumbprint,
   calculateComplianceScore,
 } from "@/utils/complianceUtils";
 import { toast } from "sonner";
@@ -54,7 +50,6 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
   onClose,
   initialCaptures,
   onSaveCaptures,
-  intakeType = 'CAR_SALVAGE',
 }) => {
   const [captures, setCaptures] = useState<ComplianceCaptures>(
     initialCaptures || {
@@ -63,8 +58,6 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
       vehiclePhotoUrl: undefined,
       licensePlatePhotoUrl: undefined,
       loadPhotoUrl: undefined,
-      thumbprintCaptured: false,
-      thumbprintDataUrl: undefined,
     }
   );
 
@@ -76,7 +69,6 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
 
   const complianceStats = calculateComplianceScore(captures);
 
-  // Auto snapshot generator helper for fast demo testing
   const handleGenerateSample = (key: keyof ComplianceCaptures, type: 'person' | 'id' | 'vehicle' | 'plate' | 'load') => {
     setIsCapturing(true);
     setTimeout(() => {
@@ -87,10 +79,9 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
       }));
       setIsCapturing(false);
       toast.success(`${type.toUpperCase()} snapshot captured successfully!`);
-    }, 400);
+    }, 300);
   };
 
-  // DL OCR Simulator
   const handleScanDlProfile = (profile: DLScanResult) => {
     setIsCapturing(true);
     setTimeout(() => {
@@ -109,34 +100,17 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
       toast.success(`DL Barcode Scanned: ${profile.fullName} (${profile.idNumber})`, {
         description: "Customer fields and license plate auto-filled!",
       });
-    }, 500);
+    }, 400);
   };
 
-  // Thumbprint capture
-  const handleCaptureThumbprint = () => {
-    const thumbUrl = generateSampleThumbprint();
-    setCaptures((prev) => ({
-      ...prev,
-      thumbprintCaptured: true,
-      thumbprintDataUrl: thumbUrl,
-    }));
-    toast.success("Biometric Thumbprint Recorded & Sealed");
-  };
-
-  // Clear single capture
   const handleClearCapture = (key: keyof ComplianceCaptures) => {
     setCaptures((prev) => {
       const updated = { ...prev };
       delete updated[key];
-      if (key === 'thumbprintCaptured') {
-        updated.thumbprintCaptured = false;
-        delete updated.thumbprintDataUrl;
-      }
       return updated;
     });
   };
 
-  // Instant Auto-Capture All (One-Click 100% Studio)
   const handleOneClickStudioScan = () => {
     setIsCapturing(true);
     setTimeout(() => {
@@ -147,19 +121,16 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
         vehiclePhotoUrl: generateSamplePhoto('vehicle'),
         licensePlatePhotoUrl: generateSamplePhoto('plate'),
         loadPhotoUrl: generateSamplePhoto('load'),
-        thumbprintCaptured: true,
-        thumbprintDataUrl: generateSampleThumbprint(),
       };
       setCaptures(updated);
       setScannedProfile(randomProfile);
       setIsCapturing(false);
-      toast.success("100% Full Studio Capture Completed!", {
+      toast.success("100% Full Studio Photo Capture Completed!", {
         description: `Verified for ${randomProfile.fullName} (${randomProfile.idNumber})`,
       });
-    }, 600);
+    }, 500);
   };
 
-  // Custom Image File Upload
   const handleTriggerUpload = (key: keyof ComplianceCaptures) => {
     setCurrentUploadTarget(key);
     fileInputRef.current?.click();
@@ -205,7 +176,7 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
               </div>
               <div>
                 <DialogTitle className="text-xl font-bold tracking-tight text-white flex items-center gap-2">
-                  Legal Compliance & 4-Point Photo Studio
+                  Legal Compliance & 5-Point Photo Studio
                 </DialogTitle>
                 <DialogDescription className="text-slate-400 text-xs mt-0.5">
                   State Scrap Theft Statute & NMVTIS Anti-Fraud Digital Audit Suite
@@ -213,7 +184,6 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
               </div>
             </div>
 
-            {/* Compliance Badge Indicator */}
             <div className="flex items-center gap-2">
               <Badge
                 variant="outline"
@@ -230,7 +200,7 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
                 ) : (
                   <AlertCircle className="w-3.5 h-3.5 mr-1.5 text-amber-400 inline" />
                 )}
-                {complianceStats.score}% Compliant ({6 - complianceStats.missingItems.length}/6 Captures)
+                {complianceStats.score}% Compliant ({5 - complianceStats.missingItems.length}/5 Photos)
               </Badge>
 
               <Button
@@ -248,14 +218,13 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
         </DialogHeader>
 
         {/* Live Thumbnails Bar */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2.5 my-4 p-3 bg-slate-900/90 rounded-xl border border-slate-800">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 my-4 p-3 bg-slate-900/90 rounded-xl border border-slate-800">
           {[
             { id: 'idPhotoUrl', title: 'DL / State ID', icon: CreditCard, val: captures.idPhotoUrl, tab: 'id' },
             { id: 'personPhotoUrl', title: 'Seller Face', icon: UserCheck, val: captures.personPhotoUrl, tab: 'person' },
             { id: 'vehiclePhotoUrl', title: 'Vehicle 45°', icon: Car, val: captures.vehiclePhotoUrl, tab: 'vehicle' },
             { id: 'licensePlatePhotoUrl', title: 'License Plate', icon: Scan, val: captures.licensePlatePhotoUrl, tab: 'plate' },
             { id: 'loadPhotoUrl', title: 'Cargo / Load', icon: Package, val: captures.loadPhotoUrl, tab: 'load' },
-            { id: 'thumbprintCaptured', title: 'Thumbprint', icon: Fingerprint, val: captures.thumbprintCaptured ? (captures.thumbprintDataUrl || generateSampleThumbprint()) : undefined, tab: 'thumbprint' },
           ].map((item) => {
             const Icon = item.icon;
             const isDone = !!item.val;
@@ -292,7 +261,7 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
 
         {/* Studio Workspace Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid grid-cols-3 sm:grid-cols-6 bg-slate-900 border border-slate-800 p-1 rounded-xl">
+          <TabsList className="grid grid-cols-2 sm:grid-cols-5 bg-slate-900 border border-slate-800 p-1 rounded-xl">
             <TabsTrigger value="id" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white text-xs gap-1.5">
               <CreditCard className="w-3.5 h-3.5" /> ID Scan
             </TabsTrigger>
@@ -307,9 +276,6 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
             </TabsTrigger>
             <TabsTrigger value="load" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white text-xs gap-1.5">
               <Package className="w-3.5 h-3.5" /> Cargo Load
-            </TabsTrigger>
-            <TabsTrigger value="thumbprint" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white text-xs gap-1.5">
-              <Fingerprint className="w-3.5 h-3.5" /> Thumbprint
             </TabsTrigger>
           </TabsList>
 
@@ -328,7 +294,6 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
               </CardHeader>
               <CardContent className="pt-4 space-y-4">
                 <div className="grid md:grid-cols-2 gap-6 items-center">
-                  {/* Viewfinder Preview */}
                   <div className="relative aspect-video bg-slate-950 rounded-xl border-2 border-dashed border-slate-800 flex flex-col items-center justify-center p-4 overflow-hidden group">
                     {captures.idPhotoUrl ? (
                       <>
@@ -352,7 +317,6 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
                     )}
                   </div>
 
-                  {/* Quick DL Scanner Simulator Profiles */}
                   <div className="space-y-3">
                     <div className="text-xs font-semibold text-slate-300 flex items-center justify-between">
                       <span>Simulate Barcode/OCR DL Scanner:</span>
@@ -401,7 +365,6 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
                   </div>
                 </div>
 
-                {/* Scanned Output Card */}
                 {scannedProfile && (
                   <div className="p-3 bg-blue-950/40 border border-blue-500/30 rounded-lg text-xs space-y-1 font-mono text-blue-200">
                     <div className="text-white font-semibold flex items-center gap-1.5">
@@ -657,78 +620,6 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
                       >
                         <Upload className="w-3.5 h-3.5 mr-1.5" /> Upload File
                       </Button>
-                    </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* TAB 6: THUMBPRINT SCANNER */}
-          <TabsContent value="thumbprint" className="mt-4 space-y-4">
-            <Card className="bg-slate-900 border-slate-800 text-slate-100">
-              <CardHeader className="pb-3 border-b border-slate-800">
-                <CardTitle className="text-sm font-semibold flex items-center justify-between">
-                  <span className="flex items-center gap-2 text-sky-400">
-                    <Fingerprint className="w-4 h-4" /> Digital Biometric Thumbprint Pad
-                  </span>
-                  {captures.thumbprintCaptured && (
-                    <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30">Thumbprint Sealed</Badge>
-                  )}
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="pt-4 space-y-4">
-                <div className="grid md:grid-cols-2 gap-6 items-center">
-                  {/* Thumbprint Preview Box */}
-                  <div
-                    onClick={handleCaptureThumbprint}
-                    className={`relative aspect-square max-w-[240px] mx-auto w-full rounded-2xl border-2 cursor-pointer transition-all flex flex-col items-center justify-center p-4 overflow-hidden ${
-                      captures.thumbprintCaptured
-                        ? "bg-slate-950 border-sky-500 shadow-lg shadow-sky-950/50"
-                        : "bg-slate-950/80 border-dashed border-slate-700 hover:border-sky-400"
-                    }`}
-                  >
-                    {captures.thumbprintCaptured ? (
-                      <img
-                        src={captures.thumbprintDataUrl || generateSampleThumbprint()}
-                        alt="Thumbprint"
-                        className="w-full h-full object-contain"
-                      />
-                    ) : (
-                      <div className="text-center space-y-2">
-                        <Fingerprint className="w-16 h-16 mx-auto text-sky-400/60 animate-pulse" />
-                        <p className="text-xs font-semibold text-slate-300">Tap to Scan Right Thumbprint</p>
-                        <p className="text-[10px] text-slate-500">USB Biometric Touch Scanner</p>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="space-y-3 text-xs text-slate-300">
-                    <div className="p-3 bg-sky-950/30 border border-sky-500/20 rounded-xl space-y-1.5">
-                      <div className="font-semibold text-sky-300 flex items-center gap-1.5">
-                        <ShieldCheck className="w-4 h-4 text-sky-400" /> Anti-Theft Statute Compliance
-                      </div>
-                      <p className="text-slate-400 leading-relaxed text-[11px]">
-                        State regulations mandate digital biometric thumbprint records for cash payouts exceeding $50 or non-ferrous precious scrap sales.
-                      </p>
-                    </div>
-
-                    <div className="space-y-2 pt-2">
-                      <Button
-                        onClick={handleCaptureThumbprint}
-                        className="w-full bg-sky-600 hover:bg-sky-500 text-white text-xs gap-1.5"
-                      >
-                        <Fingerprint className="w-4 h-4" /> Touch Sensor to Capture Thumbprint
-                      </Button>
-                      {captures.thumbprintCaptured && (
-                        <Button
-                          variant="ghost"
-                          onClick={() => handleClearCapture('thumbprintCaptured')}
-                          className="w-full text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-950/30"
-                        >
-                          Clear Thumbprint Record
-                        </Button>
-                      )}
                     </div>
                   </div>
                 </div>

@@ -4,7 +4,7 @@ import { storageService } from '@/services/storageService';
 import { scaleService } from '@/services/scaleService';
 import { LiveScaleGauge } from '../scale/LiveScaleGauge';
 import { ComplianceCaptureModal } from '../compliance/ComplianceCaptureModal';
-import { calculateComplianceScore, generateSamplePhoto, generateSampleThumbprint, DLScanResult } from '@/utils/complianceUtils';
+import { calculateComplianceScore, generateSamplePhoto, DLScanResult } from '@/utils/complianceUtils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -16,22 +16,15 @@ import { Textarea } from '@/components/ui/textarea';
 import {
   Car,
   CheckCircle2,
-  AlertCircle,
   Search,
   User,
   DollarSign,
-  Printer,
-  Sparkles,
   ArrowLeft,
-  FileCheck,
-  ShieldAlert,
-  Scale,
+  ShieldCheck,
   Camera,
   CreditCard,
   Scan,
   Package,
-  Fingerprint,
-  ShieldCheck,
   UserCheck,
   MapPin,
 } from 'lucide-react';
@@ -47,25 +40,20 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
   const [carRates] = useState(storageService.getCarRates());
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>(carRates[0]?.id || '');
   
-  // Selected Customer
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>('');
   const [customerName, setCustomerName] = useState<string>('');
   const [customerIdNumber, setCustomerIdNumber] = useState<string>('');
   const [vehicleLicensePlate, setVehicleLicensePlate] = useState<string>('');
 
-  // Compliance Captures state
   const [complianceCaptures, setComplianceCaptures] = useState<ComplianceCaptures>({
     personPhotoUrl: generateSamplePhoto('person'),
     idPhotoUrl: generateSamplePhoto('id'),
     vehiclePhotoUrl: generateSamplePhoto('vehicle'),
     licensePlatePhotoUrl: generateSamplePhoto('plate'),
     loadPhotoUrl: generateSamplePhoto('load'),
-    thumbprintCaptured: true,
-    thumbprintDataUrl: generateSampleThumbprint(),
   });
   const [isComplianceModalOpen, setIsComplianceModalOpen] = useState(false);
 
-  // Car Record State
   const [vin, setVin] = useState<string>('');
   const [year, setYear] = useState<number>(2012);
   const [make, setMake] = useState<string>('Ford');
@@ -76,11 +64,9 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
   const [titleStatus, setTitleStatus] = useState<CarIntakeRecord['titleStatus']>('Clean Title');
   const [titleNumber, setTitleNumber] = useState<string>('');
 
-  // Pull-A-Part Row Staging
   const [assignedRow, setAssignedRow] = useState<string>('Row 104');
   const [assignedSpace, setAssignedSpace] = useState<string>('Space 15');
 
-  // Features Checklist
   const [hasCatalyticConverter, setHasCatalyticConverter] = useState<boolean>(true);
   const [catCondition, setCatCondition] = useState<CarIntakeRecord['catCondition']>('Original OEM');
   const [hasEngineAndTrans, setHasEngineAndTrans] = useState<boolean>(true);
@@ -88,7 +74,6 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
   const [hasAluminumRims, setHasAluminumRims] = useState<boolean>(true);
   const [fluidsDrained, setFluidsDrained] = useState<boolean>(true);
 
-  // Weight & Pricing State
   const [pricingMode, setPricingMode] = useState<'TONNAGE' | 'FLAT_RATE'>('TONNAGE');
   const [vehicleWeightLbs, setVehicleWeightLbs] = useState<number>(3650);
   const [ratePerTon, setRatePerTon] = useState<number>(220);
@@ -99,7 +84,6 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
 
   const complianceStats = calculateComplianceScore(complianceCaptures);
 
-  // Sync selected customer details
   const handleCustomerSelect = (custId: string) => {
     setSelectedCustomerId(custId);
     const cust = customers.find((c) => c.id === custId);
@@ -107,18 +91,15 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
       setCustomerName(cust.fullName);
       setCustomerIdNumber(cust.idNumber);
       if (cust.vehicleLicensePlate) setVehicleLicensePlate(cust.vehicleLicensePlate);
-      if (cust.idPhotoUrl || cust.thumbprintData) {
+      if (cust.idPhotoUrl) {
         setComplianceCaptures((prev) => ({
           ...prev,
           idPhotoUrl: cust.idPhotoUrl || prev.idPhotoUrl,
-          thumbprintDataUrl: cust.thumbprintData || prev.thumbprintDataUrl,
-          thumbprintCaptured: !!cust.thumbprintData || prev.thumbprintCaptured,
         }));
       }
     }
   };
 
-  // Callback from ComplianceCaptureModal
   const handleApplyComplianceCaptures = (captures: ComplianceCaptures, scannedProfile?: DLScanResult) => {
     setComplianceCaptures(captures);
     if (scannedProfile) {
@@ -130,7 +111,6 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
     }
   };
 
-  // Sync category rates when user picks vehicle category preset
   useEffect(() => {
     const rateObj = carRates.find((r) => r.id === selectedCategoryId);
     if (rateObj) {
@@ -138,7 +118,6 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
     }
   }, [selectedCategoryId, carRates]);
 
-  // VIN Decoder Mock Tool
   const handleDecodeVin = () => {
     if (!vin || vin.length < 5) {
       toast.error('Enter a valid VIN string to decode');
@@ -166,7 +145,6 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
     toast.success('VIN decoded successfully');
   };
 
-  // Calculate bonuses
   const catBonus = hasCatalyticConverter
     ? catCondition === 'Original OEM'
       ? 80
@@ -175,7 +153,6 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
   const engineBonus = hasEngineAndTrans ? 50 : 0;
   const batteryBonus = hasBattery ? 15 : 0;
 
-  // Base weight payout
   const weightTons = vehicleWeightLbs / 2000;
   const baseTonnagePayout = Math.round(weightTons * ratePerTon * 100) / 100;
   const grossCalculatedPayout =
@@ -185,14 +162,12 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
 
   const finalPayout = Math.max(0, grossCalculatedPayout - manualDeductions);
 
-  // Capture live weight from scale gauge
   const handleHoldWeightFromScale = (weight: number, unit: WeightUnit) => {
     const lbs = unit === 'KG' ? Math.round(weight * 2.20462) : Math.round(weight);
     setVehicleWeightLbs(lbs);
     toast.success(`Vehicle weight set to ${lbs.toLocaleString()} LBS`);
   };
 
-  // Submit Ticket
   const handleSubmitTicket = () => {
     if (!customerName.trim()) {
       toast.error('Please enter or select a customer name for compliance');
@@ -261,7 +236,6 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
   return (
     <div className="max-w-6xl mx-auto space-y-6 pb-12">
       
-      {/* Header Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-900 p-4 rounded-xl border border-slate-800">
         <div className="flex items-center gap-3">
           <Button
@@ -282,7 +256,7 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
               </Badge>
             </div>
             <p className="text-xs text-slate-400">
-              Capture vehicle spec, VIN title compliance, NMVTIS audit, 4-point photo identification & Pull-A-Part row staging
+              Capture vehicle spec, VIN title compliance, NMVTIS audit, 5-point photo identification & Pull-A-Part row staging
             </p>
           </div>
         </div>
@@ -296,7 +270,6 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
-        {/* Left Column: Form Controls */}
         <div className="lg:col-span-2 space-y-6">
 
           {/* CARD 0: LEGAL COMPLIANCE & PHOTO CAPTURE STUDIO */}
@@ -321,15 +294,13 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
             </CardHeader>
 
             <CardContent className="p-4 space-y-4">
-              {/* Photo Live Thumbnails Grid */}
-              <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
                 {[
                   { title: "DL Scan", icon: CreditCard, val: complianceCaptures.idPhotoUrl },
                   { title: "Seller Face", icon: UserCheck, val: complianceCaptures.personPhotoUrl },
                   { title: "Vehicle 45°", icon: Car, val: complianceCaptures.vehiclePhotoUrl },
                   { title: "License Plate", icon: Scan, val: complianceCaptures.licensePlatePhotoUrl },
                   { title: "Cargo Load", icon: Package, val: complianceCaptures.loadPhotoUrl },
-                  { title: "Thumbprint", icon: Fingerprint, val: complianceCaptures.thumbprintCaptured ? (complianceCaptures.thumbprintDataUrl || generateSampleThumbprint()) : undefined },
                 ].map((item, idx) => {
                   const Icon = item.icon;
                   return (
@@ -358,7 +329,7 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
 
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 border-t border-slate-800">
                 <p className="text-xs text-slate-400">
-                  4-angle high-resolution photo verification, ID OCR scan & digital thumbprint sealed.
+                  5-point photo verification & ID OCR scan sealed.
                 </p>
                 <Button
                   onClick={() => setIsComplianceModalOpen(true)}
@@ -370,15 +341,11 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
             </CardContent>
           </Card>
           
-          {/* Card 1: Customer & Seller Info */}
           <Card className="bg-slate-900 border-slate-800 text-white shadow-lg">
             <CardHeader className="py-3 px-4 bg-slate-950/60 border-b border-slate-800 flex flex-row items-center justify-between">
               <CardTitle className="text-sm font-bold tracking-wide uppercase text-slate-300 flex items-center gap-2">
                 <User className="w-4 h-4 text-amber-400" /> Customer / Seller Compliance Info
               </CardTitle>
-              <Badge variant="outline" className="border-amber-500/40 text-amber-400 text-[10px]">
-                STATE REGISTRY
-              </Badge>
             </CardHeader>
 
             <CardContent className="p-4 space-y-4">
@@ -432,7 +399,6 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
             </CardContent>
           </Card>
 
-          {/* Card 2: Vehicle Specs & VIN Title Checklist */}
           <Card className="bg-slate-900 border-slate-800 text-white shadow-lg">
             <CardHeader className="py-3 px-4 bg-slate-950/60 border-b border-slate-800 flex flex-row items-center justify-between">
               <CardTitle className="text-sm font-bold tracking-wide uppercase text-slate-300 flex items-center gap-2">
@@ -442,7 +408,6 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
 
             <CardContent className="p-4 space-y-4">
               
-              {/* VIN Entry with decoder button */}
               <div className="space-y-1">
                 <Label className="text-xs text-slate-300">17-Digit Vehicle Identification Number (VIN) *</Label>
                 <div className="flex gap-2">
@@ -463,7 +428,6 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
                 </div>
               </div>
 
-              {/* Specs Grid */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <div>
                   <Label className="text-[11px] text-slate-400">Year</Label>
@@ -503,7 +467,6 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
                 </div>
               </div>
 
-              {/* Title Ownership Status & Pull-A-Part Row Staging */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-800/80">
                 <div>
                   <Label className="text-xs text-slate-300">Title / Ownership Document Status</Label>
@@ -535,7 +498,6 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
                 </div>
               </div>
 
-              {/* Pull-A-Part Yard Row Staging Assignment */}
               <div className="grid grid-cols-2 gap-3 bg-amber-950/20 p-3 rounded-lg border border-amber-500/30">
                 <div>
                   <Label className="text-xs text-amber-300 flex items-center gap-1">
@@ -560,7 +522,6 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
                 </div>
               </div>
 
-              {/* Vehicle Checklist & Components */}
               <div className="pt-3 border-t border-slate-800/80 space-y-3">
                 <Label className="text-xs font-bold text-amber-400 uppercase tracking-wider block">
                   Component Checklist & Environmental Compliance
@@ -568,7 +529,6 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-950/60 p-3 rounded-lg border border-slate-800">
                   
-                  {/* Catalytic Converter */}
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-semibold text-slate-200">Catalytic Converter</span>
@@ -593,7 +553,6 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
                     )}
                   </div>
 
-                  {/* Engine & Transmission */}
                   <div className="flex items-center justify-between">
                     <div>
                       <span className="text-xs font-semibold text-slate-200 block">Engine & Transmission</span>
@@ -605,7 +564,6 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
                     />
                   </div>
 
-                  {/* Battery */}
                   <div className="flex items-center justify-between">
                     <div>
                       <span className="text-xs font-semibold text-slate-200 block">12V Battery Included</span>
@@ -617,7 +575,6 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
                     />
                   </div>
 
-                  {/* Fluids Drained */}
                   <div className="flex items-center justify-between">
                     <div>
                       <span className="text-xs font-semibold text-slate-200 block">Fluids Drained</span>
@@ -637,13 +594,9 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
 
         </div>
 
-        {/* Right Column: Scale Weight & Payout Summary */}
         <div className="space-y-6">
-          
-          {/* Live Scale Monitor Gauge */}
           <LiveScaleGauge onHoldWeight={handleHoldWeightFromScale} compact />
 
-          {/* Vehicle Weight & Rates Card */}
           <Card className="bg-slate-900 border-slate-800 text-white shadow-xl">
             <CardHeader className="py-3 px-4 bg-slate-950/60 border-b border-slate-800">
               <CardTitle className="text-sm font-bold tracking-wide uppercase text-slate-300 flex items-center gap-2">
@@ -653,7 +606,6 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
 
             <CardContent className="p-4 space-y-4">
               
-              {/* Category Preset */}
               <div>
                 <Label className="text-xs text-slate-300">Vehicle Category Rate</Label>
                 <Select value={selectedCategoryId} onValueChange={setSelectedCategoryId}>
@@ -670,7 +622,6 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
                 </Select>
               </div>
 
-              {/* Pricing Mode Toggle */}
               <div className="grid grid-cols-2 gap-2 p-1 bg-slate-950 rounded-lg border border-slate-800 text-xs">
                 <Button
                   type="button"
@@ -694,7 +645,6 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
                 </Button>
               </div>
 
-              {/* Weight / Rate inputs */}
               {pricingMode === 'TONNAGE' ? (
                 <div className="grid grid-cols-2 gap-3">
                   <div>
@@ -728,7 +678,6 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
                 </div>
               )}
 
-              {/* Deductions input */}
               <div>
                 <Label className="text-[11px] text-slate-400">Deductions / Missing Parts ($)</Label>
                 <Input
@@ -740,7 +689,6 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
                 />
               </div>
 
-              {/* Itemized Payout Breakdown Box */}
               <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 space-y-1.5 font-mono text-xs text-slate-300">
                 <div className="flex justify-between">
                   <span className="text-slate-400">Base {pricingMode === 'TONNAGE' ? `(${weightTons.toFixed(2)} tons)` : 'Flat'}:</span>
@@ -779,7 +727,6 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
                 </div>
               </div>
 
-              {/* Payout Method */}
               <div>
                 <Label className="text-xs text-slate-300">Payout Method</Label>
                 <Select value={payoutMethod} onValueChange={(v) => setPayoutMethod(v as any)}>
@@ -794,7 +741,6 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
                 </Select>
               </div>
 
-              {/* Complete Ticket Action */}
               <Button
                 onClick={handleSubmitTicket}
                 className="w-full h-11 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-extrabold shadow-lg shadow-amber-950 text-sm tracking-wide"
@@ -809,7 +755,6 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
 
       </div>
 
-      {/* Compliance Studio Modal */}
       <ComplianceCaptureModal
         isOpen={isComplianceModalOpen}
         onClose={() => setIsComplianceModalOpen(false)}

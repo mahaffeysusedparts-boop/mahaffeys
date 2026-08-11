@@ -36,10 +36,7 @@ import {
   ShieldCheck,
   CheckCircle2,
   Plus,
-  Layers,
-  UserCheck,
-  FileText,
-  Flame,
+  Edit3,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -52,6 +49,21 @@ export default function PullAPartPage() {
   // Search states
   const [vehSearch, setVehSearch] = useState("");
   const [partSearch, setPartSearch] = useState("");
+
+  // Vehicle Add / Edit Modal
+  const [vehModalOpen, setVehModalOpen] = useState(false);
+  const [editingVeh, setEditingVeh] = useState<PullYardVehicle | null>(null);
+
+  const [vehRow, setVehRow] = useState("Row 104");
+  const [vehSpace, setVehSpace] = useState("Space 12");
+  const [vehSection, setVehSection] = useState<PullYardVehicle["section"]>("Domestic Trucks & SUVs");
+  const [vehYear, setVehYear] = useState(2010);
+  const [vehMake, setVehMake] = useState("Ford");
+  const [vehModel, setVehModel] = useState("F-150");
+  const [vehColor, setVehColor] = useState("White");
+  const [vehVin, setVehVin] = useState("1FTRF12W88KA10291");
+  const [vehStatus, setVehStatus] = useState<PullYardVehicle["status"]>("FRESH_SET");
+  const [vehParts, setVehParts] = useState("Engine Assembly, Transmission, Doors, Fenders, Alloy Wheels");
 
   // Print Pass Modal
   const [selectedVehForTicket, setSelectedVehForTicket] = useState<PullYardVehicle | null>(null);
@@ -80,6 +92,65 @@ export default function PullAPartPage() {
     loadData();
   }, []);
 
+  const handleOpenAddVeh = () => {
+    setEditingVeh(null);
+    setVehRow("Row 104");
+    setVehSpace("Space 01");
+    setVehYear(2012);
+    setVehMake("Chevrolet");
+    setVehModel("Silverado 1500");
+    setVehColor("Black");
+    setVehVin("1G1JC524317109281");
+    setVehSection("GM & Chevrolet");
+    setVehStatus("FRESH_SET");
+    setVehParts("Engine Assembly, Automatic Transmission, Doors, Hood, Tailgate");
+    setVehModalOpen(true);
+  };
+
+  const handleOpenEditVeh = (v: PullYardVehicle) => {
+    setEditingVeh(v);
+    setVehRow(v.rowNumber);
+    setVehSpace(v.spaceNumber);
+    setVehSection(v.section);
+    setVehYear(v.year);
+    setVehMake(v.make);
+    setVehModel(v.model);
+    setVehColor(v.color);
+    setVehVin(v.vin);
+    setVehStatus(v.status);
+    setVehParts(v.partsRemaining.join(", "));
+    setVehModalOpen(true);
+  };
+
+  const handleSaveVeh = () => {
+    if (!vehMake.trim() || !vehModel.trim()) {
+      toast.error("Make and Model are required");
+      return;
+    }
+
+    const partsList = vehParts.split(",").map((s) => s.trim()).filter(Boolean);
+
+    const vehObj: PullYardVehicle = {
+      id: editingVeh ? editingVeh.id : `veh-${Date.now()}`,
+      rowNumber: vehRow,
+      spaceNumber: vehSpace,
+      section: vehSection,
+      year: vehYear,
+      make: vehMake,
+      model: vehModel,
+      color: vehColor,
+      vin: vehVin.toUpperCase().trim(),
+      dateSetInYard: editingVeh ? editingVeh.dateSetInYard : new Date().toISOString(),
+      status: vehStatus,
+      partsRemaining: partsList.length > 0 ? partsList : ["Bare Body Shell"],
+    };
+
+    storageService.savePullYardVehicle(vehObj);
+    loadData();
+    setVehModalOpen(false);
+    toast.success(`${editingVeh ? "Updated" : "Added"} ${vehYear} ${vehMake} ${vehModel} on ${vehRow}!`);
+  };
+
   // Filter vehicles
   const filteredVehicles = vehicles.filter((v) => {
     const q = vehSearch.toLowerCase();
@@ -93,7 +164,6 @@ export default function PullAPartPage() {
     );
   });
 
-  // Filter parts
   const filteredParts = parts.filter((p) => {
     const q = partSearch.toLowerCase();
     return (
@@ -102,7 +172,6 @@ export default function PullAPartPage() {
     );
   });
 
-  // Handle Issue Core Refund
   const handleIssueCoreRefund = () => {
     if (!coreCustName.trim()) {
       toast.error("Customer name is required for core refund");
@@ -127,7 +196,6 @@ export default function PullAPartPage() {
     setCoreCustId("");
   };
 
-  // Handle Gate Pass Admission
   const handleIssuePass = () => {
     if (!passCustName.trim()) {
       toast.error("Puller name is required for yard admission pass");
@@ -188,8 +256,14 @@ export default function PullAPartPage() {
 
           <div className="flex items-center gap-2">
             <Button
+              onClick={handleOpenAddVeh}
+              className="bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs gap-1.5"
+            >
+              <Plus className="w-4 h-4" /> Add Car to Row
+            </Button>
+            <Button
               onClick={() => setPassModalOpen(true)}
-              className="bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-extrabold text-xs gap-1.5 shadow-lg shadow-amber-950"
+              className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-xs gap-1.5 shadow-lg shadow-amber-950"
             >
               <TicketIcon className="w-4 h-4" /> Issue $2.00 Gate Pass
             </Button>
@@ -198,7 +272,7 @@ export default function PullAPartPage() {
               variant="outline"
               className="border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold gap-1.5"
             >
-              <RotateCcw className="w-4 h-4 text-emerald-400" /> Core Deposit Refund
+              <RotateCcw className="w-4 h-4 text-emerald-400" /> Core Refund
             </Button>
           </div>
         </div>
@@ -221,7 +295,7 @@ export default function PullAPartPage() {
           <Card className="bg-slate-900 border-slate-800 text-white">
             <CardContent className="p-4 flex items-center justify-between">
               <div>
-                <p className="text-xs text-slate-400 font-medium">Fresh Set Vehicles (&lt;7 Days)</p>
+                <p className="text-xs text-slate-400 font-medium">Fresh Set Vehicles (<7 Days)</p>
                 <p className="text-2xl font-black text-emerald-400 font-mono mt-0.5">{freshSetCount}</p>
                 <p className="text-[11px] text-slate-500 mt-0.5">High component availability</p>
               </div>
@@ -283,19 +357,25 @@ export default function PullAPartPage() {
                   <CardTitle className="text-base font-bold text-white flex items-center gap-2">
                     <MapPin className="w-5 h-5 text-amber-400" /> Self-Service Puller Vehicle Row Finder
                   </CardTitle>
-                  <CardDescription className="text-xs text-slate-400 mt-0.5">
-                    Look up vehicles set on the yard lot by make, model, year, section grid, row, or space number.
-                  </CardDescription>
                 </div>
 
-                <div className="relative">
-                  <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-500" />
-                  <Input
-                    placeholder="Search Ford, Impala, Row 104..."
-                    value={vehSearch}
-                    onChange={(e) => setVehSearch(e.target.value)}
-                    className="bg-slate-950 border-slate-800 text-xs pl-8 w-64"
-                  />
+                <div className="flex items-center gap-2">
+                  <div className="relative">
+                    <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-500" />
+                    <Input
+                      placeholder="Search Ford, Impala, Row 104..."
+                      value={vehSearch}
+                      onChange={(e) => setVehSearch(e.target.value)}
+                      className="bg-slate-950 border-slate-800 text-xs pl-8 w-64"
+                    />
+                  </div>
+                  <Button
+                    size="sm"
+                    onClick={handleOpenAddVeh}
+                    className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold gap-1"
+                  >
+                    <Plus className="w-3.5 h-3.5" /> Add Car
+                  </Button>
                 </div>
               </CardHeader>
 
@@ -310,7 +390,7 @@ export default function PullAPartPage() {
                       <TableHead className="text-slate-400">Date Set In Yard</TableHead>
                       <TableHead className="text-slate-400">Status</TableHead>
                       <TableHead className="text-slate-400">Major Components Left</TableHead>
-                      <TableHead className="text-right">Action</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -360,14 +440,23 @@ export default function PullAPartPage() {
                           {v.partsRemaining.join(", ")}
                         </TableCell>
 
-                        <TableCell className="text-right">
+                        <TableCell className="text-right space-x-1">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => handleOpenEditVeh(v)}
+                            className="h-7 text-xs text-slate-300 hover:text-white hover:bg-slate-800"
+                          >
+                            <Edit3 className="w-3.5 h-3.5 mr-1 text-emerald-400" /> Edit
+                          </Button>
+
                           <Button
                             size="sm"
                             variant="ghost"
                             onClick={() => setSelectedVehForTicket(v)}
                             className="h-7 text-xs text-amber-400 hover:text-amber-300 hover:bg-slate-800"
                           >
-                            <Printer className="w-3.5 h-3.5 mr-1" /> Print Pass
+                            <Printer className="w-3.5 h-3.5 mr-1" /> Pass
                           </Button>
                         </TableCell>
                       </TableRow>
@@ -386,9 +475,6 @@ export default function PullAPartPage() {
                   <CardTitle className="text-base font-bold text-white flex items-center gap-2">
                     <DollarSign className="w-5 h-5 text-emerald-400" /> Pull-A-Part Flat Part Price & Core Deposit Sheet
                   </CardTitle>
-                  <CardDescription className="text-xs text-slate-400 mt-0.5">
-                    Standard fixed part prices, core deposit requirements, and optional 30-day exchange warranty fees.
-                  </CardDescription>
                 </div>
 
                 <div className="relative">
@@ -556,6 +642,146 @@ export default function PullAPartPage() {
         </Tabs>
 
       </main>
+
+      {/* Add / Edit Vehicle Modal */}
+      <Dialog open={vehModalOpen} onOpenChange={setVehModalOpen}>
+        <DialogContent className="bg-slate-950 text-slate-100 border-slate-800 sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold text-white flex items-center gap-2">
+              <Car className="w-5 h-5 text-emerald-400" /> {editingVeh ? "Edit Staged Vehicle" : "Add Vehicle to Yard Row"}
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2 text-xs">
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <Label className="text-slate-300">Row Number *</Label>
+                <Input
+                  value={vehRow}
+                  onChange={(e) => setVehRow(e.target.value)}
+                  placeholder="Row 104"
+                  className="bg-slate-900 border-slate-800 text-amber-300 font-mono font-bold text-xs mt-1"
+                />
+              </div>
+
+              <div>
+                <Label className="text-slate-300">Space Number</Label>
+                <Input
+                  value={vehSpace}
+                  onChange={(e) => setVehSpace(e.target.value)}
+                  placeholder="Space 12"
+                  className="bg-slate-900 border-slate-800 text-white font-mono text-xs mt-1"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2">
+              <div>
+                <Label className="text-slate-300">Year *</Label>
+                <Input
+                  type="number"
+                  value={vehYear}
+                  onChange={(e) => setVehYear(parseInt(e.target.value) || 2010)}
+                  className="bg-slate-900 border-slate-800 text-white text-xs mt-1"
+                />
+              </div>
+
+              <div>
+                <Label className="text-slate-300">Make *</Label>
+                <Input
+                  value={vehMake}
+                  onChange={(e) => setVehMake(e.target.value)}
+                  placeholder="Ford"
+                  className="bg-slate-900 border-slate-800 text-white text-xs mt-1"
+                />
+              </div>
+
+              <div>
+                <Label className="text-slate-300">Model *</Label>
+                <Input
+                  value={vehModel}
+                  onChange={(e) => setVehModel(e.target.value)}
+                  placeholder="F-150"
+                  className="bg-slate-900 border-slate-800 text-white text-xs mt-1"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <Label className="text-slate-300">Color</Label>
+                <Input
+                  value={vehColor}
+                  onChange={(e) => setVehColor(e.target.value)}
+                  placeholder="White"
+                  className="bg-slate-900 border-slate-800 text-white text-xs mt-1"
+                />
+              </div>
+
+              <div>
+                <Label className="text-slate-300">VIN Number</Label>
+                <Input
+                  value={vehVin}
+                  onChange={(e) => setVehVin(e.target.value)}
+                  placeholder="1FTRF12W88KA10291"
+                  className="bg-slate-900 border-slate-800 text-amber-300 font-mono text-xs mt-1"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <Label className="text-slate-300">Yard Section</Label>
+                <select
+                  value={vehSection}
+                  onChange={(e) => setVehSection(e.target.value as any)}
+                  className="w-full h-9 bg-slate-900 border border-slate-800 rounded-md text-xs text-white px-2 mt-1"
+                >
+                  <option value="Domestic Trucks & SUVs">Domestic Trucks & SUVs</option>
+                  <option value="Ford & Lincoln">Ford & Lincoln</option>
+                  <option value="GM & Chevrolet">GM & Chevrolet</option>
+                  <option value="Chrysler & Dodge">Chrysler & Dodge</option>
+                  <option value="Asian Imports">Asian Imports</option>
+                  <option value="European">European</option>
+                </select>
+              </div>
+
+              <div>
+                <Label className="text-slate-300">Status</Label>
+                <select
+                  value={vehStatus}
+                  onChange={(e) => setVehStatus(e.target.value as any)}
+                  className="w-full h-9 bg-slate-900 border border-slate-800 rounded-md text-xs text-white px-2 mt-1"
+                >
+                  <option value="FRESH_SET">FRESH SET</option>
+                  <option value="POPULAR">POPULAR DEMAND</option>
+                  <option value="STRIPPED_SHELL">STRIPPED SHELL</option>
+                  <option value="READY_FOR_CRUSHER">READY FOR CRUSHER</option>
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <Label className="text-slate-300">Remaining Parts List (Comma Separated)</Label>
+              <Input
+                value={vehParts}
+                onChange={(e) => setVehParts(e.target.value)}
+                placeholder="Engine, Transmission, Doors, Wheels, Fenders"
+                className="bg-slate-900 border-slate-800 text-white text-xs mt-1"
+              />
+            </div>
+          </div>
+
+          <DialogFooter className="pt-2 border-t border-slate-800">
+            <Button variant="ghost" onClick={() => setVehModalOpen(false)} className="text-slate-400">
+              Cancel
+            </Button>
+            <Button onClick={handleSaveVeh} className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold">
+              {editingVeh ? "Update Vehicle" : "Add Vehicle"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Core Refund Modal */}
       <Dialog open={coreModalOpen} onOpenChange={setCoreModalOpen}>

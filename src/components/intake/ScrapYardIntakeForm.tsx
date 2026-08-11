@@ -1,10 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Customer, MetalGrade, ScrapTicketLine, Ticket, WeightUnit, ComplianceCaptures } from '@/types/scrap';
 import { storageService } from '@/services/storageService';
-import { scaleService } from '@/services/scaleService';
 import { LiveScaleGauge } from '../scale/LiveScaleGauge';
 import { ComplianceCaptureModal } from '../compliance/ComplianceCaptureModal';
-import { calculateComplianceScore, generateSamplePhoto, generateSampleThumbprint, DLScanResult } from '@/utils/complianceUtils';
+import { calculateComplianceScore, generateSamplePhoto, DLScanResult } from '@/utils/complianceUtils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -22,13 +21,10 @@ import {
   Truck,
   CheckCircle2,
   Search,
-  Sparkles,
-  Layers,
   Camera,
   CreditCard,
   Scan,
   Package,
-  Fingerprint,
   ShieldCheck,
   UserCheck,
 } from 'lucide-react';
@@ -43,46 +39,37 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
   const [metals] = useState<MetalGrade[]>(storageService.getMetals());
   const [customers] = useState<Customer[]>(storageService.getCustomers());
 
-  // Customer
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>('');
   const [customerName, setCustomerName] = useState<string>('');
   const [customerIdNumber, setCustomerIdNumber] = useState<string>('');
   const [vehicleLicensePlate, setVehicleLicensePlate] = useState<string>('');
 
-  // Compliance Captures state
   const [complianceCaptures, setComplianceCaptures] = useState<ComplianceCaptures>({
     personPhotoUrl: generateSamplePhoto('person'),
     idPhotoUrl: generateSamplePhoto('id'),
     vehiclePhotoUrl: generateSamplePhoto('vehicle'),
     licensePlatePhotoUrl: generateSamplePhoto('plate'),
     loadPhotoUrl: generateSamplePhoto('load'),
-    thumbprintCaptured: true,
-    thumbprintDataUrl: generateSampleThumbprint(),
   });
   const [isComplianceModalOpen, setIsComplianceModalOpen] = useState(false);
 
-  // Ticket Lines
   const [lines, setLines] = useState<ScrapTicketLine[]>([]);
 
-  // Current Line Item Builder State
   const [selectedMetalId, setSelectedMetalId] = useState<string>(metals[0]?.id || '');
   const [grossWeight, setGrossWeight] = useState<number>(120);
   const [tareWeight, setTareWeight] = useState<number>(0);
   const [deductionPercent, setDeductionPercent] = useState<number>(0);
   const [metalSearch, setMetalSearch] = useState<string>('');
 
-  // Vehicle Double Weighing Mode (Drive-On / Drive-Off)
   const [weighingMode, setWeighingMode] = useState<'SINGLE_ITEM' | 'VEHICLE_DOUBLE'>('SINGLE_ITEM');
   const [vehicleGrossIn, setVehicleGrossIn] = useState<number>(0);
   const [vehicleTareOut, setVehicleTareOut] = useState<number>(0);
 
-  // Financials
   const [payoutMethod, setPayoutMethod] = useState<'Cash' | 'Check' | 'ACH Direct Transfer'>('Cash');
   const [notes, setNotes] = useState<string>('');
 
   const complianceStats = calculateComplianceScore(complianceCaptures);
 
-  // Sync selected customer
   const handleCustomerSelect = (custId: string) => {
     setSelectedCustomerId(custId);
     const cust = customers.find((c) => c.id === custId);
@@ -90,18 +77,15 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
       setCustomerName(cust.fullName);
       setCustomerIdNumber(cust.idNumber);
       if (cust.vehicleLicensePlate) setVehicleLicensePlate(cust.vehicleLicensePlate);
-      if (cust.idPhotoUrl || cust.thumbprintData) {
+      if (cust.idPhotoUrl) {
         setComplianceCaptures((prev) => ({
           ...prev,
           idPhotoUrl: cust.idPhotoUrl || prev.idPhotoUrl,
-          thumbprintDataUrl: cust.thumbprintData || prev.thumbprintDataUrl,
-          thumbprintCaptured: !!cust.thumbprintData || prev.thumbprintCaptured,
         }));
       }
     }
   };
 
-  // Callback from ComplianceCaptureModal
   const handleApplyComplianceCaptures = (captures: ComplianceCaptures, scannedProfile?: DLScanResult) => {
     setComplianceCaptures(captures);
     if (scannedProfile) {
@@ -115,7 +99,6 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
 
   const selectedMetal = metals.find((m) => m.id === selectedMetalId) || metals[0];
 
-  // Capture current live weight from scale gauge
   const handleHoldWeightFromScale = (weight: number, unit: WeightUnit) => {
     const lbs = unit === 'KG' ? Math.round(weight * 2.20462) : Math.round(weight);
     
@@ -135,7 +118,6 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
     }
   };
 
-  // Add line to ticket
   const handleAddLine = () => {
     if (!selectedMetal) return;
 
@@ -162,7 +144,6 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
     setLines([...lines, newLine]);
     toast.success(`Added ${newLine.billableWeight} LBS of ${newLine.metalName}`);
 
-    // Reset line builder for next item
     setGrossWeight(0);
     setTareWeight(0);
     setDeductionPercent(0);
@@ -174,11 +155,9 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
     setLines(lines.filter((l) => l.id !== id));
   };
 
-  // Totals
   const totalBillableWeight = lines.reduce((acc, l) => acc + l.billableWeight, 0);
   const totalPayout = lines.reduce((acc, l) => acc + l.lineTotal, 0);
 
-  // Submit Ticket
   const handleSubmitTicket = () => {
     if (lines.length === 0) {
       toast.error('Add at least one scrap line item to complete ticket');
@@ -211,7 +190,7 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
     };
 
     storageService.saveTicket(newTicket);
-    toast.success(`Scrap Ticket #${newTicket.id} Saved with Compliance Photos & Thumbprint!`);
+    toast.success(`Scrap Ticket #${newTicket.id} Saved with Compliance Photos!`);
     onTicketCreated(newTicket);
   };
 
@@ -224,7 +203,6 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
   return (
     <div className="max-w-6xl mx-auto space-y-6 pb-12">
       
-      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-900 p-4 rounded-xl border border-slate-800">
         <div className="flex items-center gap-3">
           <Button
@@ -245,7 +223,7 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
               </Badge>
             </div>
             <p className="text-xs text-slate-400">
-              Live scale weighing, metal classification, ID photo capture, thumbprint sealing & cash vouchers
+              Live scale weighing, metal classification, ID photo capture & cash vouchers
             </p>
           </div>
         </div>
@@ -259,7 +237,6 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
-        {/* Left 2 Columns: Scale Line Builder & Customer Info */}
         <div className="lg:col-span-2 space-y-6">
 
           {/* CARD 0: LEGAL COMPLIANCE & PHOTO CAPTURE STUDIO */}
@@ -284,15 +261,13 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
             </CardHeader>
 
             <CardContent className="p-4 space-y-4">
-              {/* Photo Live Thumbnails Grid */}
-              <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
                 {[
                   { title: "DL Scan", icon: CreditCard, val: complianceCaptures.idPhotoUrl },
                   { title: "Seller Face", icon: UserCheck, val: complianceCaptures.personPhotoUrl },
                   { title: "Vehicle 45°", icon: Truck, val: complianceCaptures.vehiclePhotoUrl },
                   { title: "License Plate", icon: Scan, val: complianceCaptures.licensePlatePhotoUrl },
                   { title: "Cargo Load", icon: Package, val: complianceCaptures.loadPhotoUrl },
-                  { title: "Thumbprint", icon: Fingerprint, val: complianceCaptures.thumbprintCaptured ? (complianceCaptures.thumbprintDataUrl || generateSampleThumbprint()) : undefined },
                 ].map((item, idx) => {
                   const Icon = item.icon;
                   return (
@@ -321,7 +296,7 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
 
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 border-t border-slate-800">
                 <p className="text-xs text-slate-400">
-                  4-angle high-resolution photo verification, ID OCR scan & digital thumbprint sealed.
+                  5-point photo verification & ID OCR scan sealed.
                 </p>
                 <Button
                   onClick={() => setIsComplianceModalOpen(true)}
@@ -333,7 +308,6 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
             </CardContent>
           </Card>
           
-          {/* Card 1: Customer / Seller Info */}
           <Card className="bg-slate-900 border-slate-800 text-white shadow-lg">
             <CardHeader className="py-3 px-4 bg-slate-950/60 border-b border-slate-800 flex flex-row items-center justify-between">
               <CardTitle className="text-sm font-bold tracking-wide uppercase text-slate-300 flex items-center gap-2">
@@ -382,14 +356,12 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
             </CardContent>
           </Card>
 
-          {/* Card 2: Scale Line Item Entry */}
           <Card className="bg-slate-900 border-slate-800 text-white shadow-lg">
             <CardHeader className="py-3 px-4 bg-slate-950/60 border-b border-slate-800 flex flex-row items-center justify-between">
               <CardTitle className="text-sm font-bold tracking-wide uppercase text-slate-300 flex items-center gap-2">
                 <Scale className="w-4 h-4 text-emerald-400" /> Live Scale Item Entry
               </CardTitle>
 
-              {/* Weighing Mode Toggle */}
               <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800 text-xs">
                 <button
                   type="button"
@@ -414,7 +386,6 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
 
             <CardContent className="p-4 space-y-4">
               
-              {/* Metal Search & Select */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <Label className="text-xs text-slate-300 font-semibold">Select Scrap Metal Grade</Label>
@@ -451,7 +422,6 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
                 </div>
               </div>
 
-              {/* Vehicle Double Weighing Helper box */}
               {weighingMode === 'VEHICLE_DOUBLE' && (
                 <div className="p-3 bg-slate-950 border border-emerald-500/30 rounded-lg space-y-2 text-xs">
                   <div className="flex items-center justify-between text-emerald-400 font-bold">
@@ -477,7 +447,6 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
                 </div>
               )}
 
-              {/* Weight & Deduction Inputs */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">
                 <div>
                   <Label className="text-[11px] text-slate-400">Gross Weight (LBS)</Label>
@@ -523,7 +492,6 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
             </CardContent>
           </Card>
 
-          {/* Ticket Line Items Table */}
           <Card className="bg-slate-900 border-slate-800 text-white shadow-lg overflow-hidden">
             <CardHeader className="py-3 px-4 bg-slate-950/60 border-b border-slate-800 flex flex-row items-center justify-between">
               <CardTitle className="text-sm font-bold tracking-wide uppercase text-slate-300">
@@ -585,13 +553,9 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
 
         </div>
 
-        {/* Right Column: Live Scale Readout & Payout Summary */}
         <div className="space-y-6">
-          
-          {/* Live Scale HUD */}
           <LiveScaleGauge onHoldWeight={handleHoldWeightFromScale} compact />
 
-          {/* Ticket Total Summary */}
           <Card className="bg-slate-900 border-slate-800 text-white shadow-xl">
             <CardHeader className="py-3 px-4 bg-slate-950/60 border-b border-slate-800">
               <CardTitle className="text-sm font-bold tracking-wide uppercase text-slate-300 flex items-center gap-2">
@@ -618,7 +582,6 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
                 </div>
               </div>
 
-              {/* Payout method */}
               <div>
                 <Label className="text-xs text-slate-300">Payout Method</Label>
                 <Select value={payoutMethod} onValueChange={(v) => setPayoutMethod(v as any)}>
@@ -633,7 +596,6 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
                 </Select>
               </div>
 
-              {/* Complete Ticket Action */}
               <Button
                 onClick={handleSubmitTicket}
                 disabled={lines.length === 0}
@@ -648,7 +610,6 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
 
       </div>
 
-      {/* Compliance Studio Modal */}
       <ComplianceCaptureModal
         isOpen={isComplianceModalOpen}
         onClose={() => setIsComplianceModalOpen(false)}
