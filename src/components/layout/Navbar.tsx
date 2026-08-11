@@ -18,6 +18,7 @@ import {
   Map,
   Wrench,
   Server,
+  Boxes,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 
@@ -36,6 +37,7 @@ export const Navbar: React.FC = () => {
 
   const navItems = [
     { label: 'Intake Station', path: '/', icon: Scale },
+    { label: 'Public Inventory', path: '/inventory', icon: Car },
     { label: 'Pull-A-Part Suite', path: '/pull-a-part', icon: Wrench },
     { label: 'Compliance & NMVTIS', path: '/compliance', icon: ShieldCheck },
     { label: 'Ticket Ledger', path: '/tickets', icon: Receipt },
