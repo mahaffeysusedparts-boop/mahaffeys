@@ -1,0 +1,17 @@
+services:
+  scrapflow:
+    build: .
+    container_name: scrapflow
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      NITRO_HOST: 0.0.0.0
+      NITRO_PORT: 3000
+      NITRO_DATABASE_PATH: /data/scrapflow.db
+    ports:
+      - "3000:3000"
+    volumes:
+      - scrapflow-data:/data
+
+volumes:
+  scrapflow-data:

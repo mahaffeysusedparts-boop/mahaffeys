@@ -1,122 +1,143 @@
-import React, { createContext, useContext, useState, useEffect } from "react";
-import { UserAccount, UserRole, AccountStatus } from "@/types/scrap";
+import React, { createContext, useContext, useEffect, useState } from "react";
+import { AccountStatus, UserAccount, UserRole } from "@/types/scrap";
 import { authService } from "@/services/authService";
+import { sharedStorage } from "@/services/sharedStorage";
 
 interface AuthContextType {
   user: UserAccount | null;
   isAuthenticated: boolean;
   isApproved: boolean;
   isAdmin: boolean;
+  isLoading: boolean;
+  serverError: string | null;
   hasAdminInSystem: boolean;
   pendingUsersCount: number;
-  login: (username: string, password: string) => void;
-  logout: () => void;
-  register: (data: { fullName: string; username: string; password: string; role: UserRole; email?: string }) => void;
-  setupAdmin: (data: { fullName: string; username: string; password: string; email?: string }) => void;
-  approveUser: (userId: string, assignedRole?: UserRole) => void;
-  rejectUser: (userId: string) => void;
-  updateUserStatus: (userId: string, status: AccountStatus) => void;
-  updateUserRole: (userId: string, role: UserRole) => void;
-  deleteUser: (userId: string) => void;
-  refreshUsers: () => void;
+  login: (username: string, password: string) => Promise<void>;
+  logout: () => Promise<void>;
+  register: (data: { fullName: string; username: string; password: string; role: UserRole; email?: string }) => Promise<void>;
+  setupAdmin: (data: { fullName: string; username: string; password: string; email?: string }) => Promise<void>;
+  approveUser: (userId: string, assignedRole?: UserRole) => Promise<void>;
+  rejectUser: (userId: string) => Promise<void>;
+  updateUserStatus: (userId: string, status: AccountStatus) => Promise<void>;
+  updateUserRole: (userId: string, role: UserRole) => Promise<void>;
+  deleteUser: (userId: string) => Promise<void>;
+  refreshUsers: () => Promise<void>;
   allUsers: UserAccount[];
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<UserAccount | null>(() => authService.getCurrentUser());
-  const [hasAdminInSystem, setHasAdminInSystem] = useState<boolean>(() => authService.hasAdmin());
-  const [allUsers, setAllUsers] = useState<UserAccount[]>(() => authService.getUsers());
+  const [user, setUser] = useState<UserAccount | null>(null);
+  const [hasAdminInSystem, setHasAdminInSystem] = useState(false);
+  const [allUsers, setAllUsers] = useState<UserAccount[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [serverError, setServerError] = useState<string | null>(null);
 
-  const refreshUsers = () => {
-    const users = authService.getUsers();
-    setAllUsers(users);
+  const syncState = () => {
+    setUser(authService.getCurrentUser());
     setHasAdminInSystem(authService.hasAdmin());
-    const currentUser = authService.getCurrentUser();
-    setUser(currentUser);
+    setAllUsers(authService.getUsers());
+  };
+
+  const refreshUsers = async () => {
+    await authService.refreshUsers();
+    if (authService.getCurrentUser()?.status === "approved" && sharedStorage.getStatus() !== "connected") {
+      await sharedStorage.hydrate();
+    }
+    syncState();
   };
 
   useEffect(() => {
-    refreshUsers();
+    const initialize = async () => {
+      try {
+        const status = await authService.initialize();
+        if (status.user?.status === "approved") await sharedStorage.hydrate();
+        syncState();
+      } catch (error) {
+        setServerError(error instanceof Error ? error.message : "Unable to reach the ScrapFlow server");
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    void initialize();
   }, []);
 
-  const login = (username: string, password: string) => {
-    const loggedInUser = authService.login(username, password);
-    setUser(loggedInUser);
-    refreshUsers();
+  const login = async (username: string, password: string) => {
+    const loggedInUser = await authService.login(username, password);
+    if (loggedInUser.status === "approved") await sharedStorage.hydrate();
+    syncState();
   };
 
-  const logout = () => {
-    authService.logout();
-    setUser(null);
-    refreshUsers();
+  const logout = async () => {
+    await authService.logout();
+    sharedStorage.disconnect();
+    syncState();
   };
 
-  const register = (data: { fullName: string; username: string; password: string; role: UserRole; email?: string }) => {
-    const newUser = authService.registerUser(data);
-    setUser(newUser);
-    refreshUsers();
+  const register = async (data: { fullName: string; username: string; password: string; role: UserRole; email?: string }) => {
+    await authService.registerUser(data);
+    syncState();
   };
 
-  const setupAdmin = (data: { fullName: string; username: string; password: string; email?: string }) => {
-    const adminUser = authService.setupInitialAdmin(data);
-    setUser(adminUser);
-    refreshUsers();
+  const setupAdmin = async (data: { fullName: string; username: string; password: string; email?: string }) => {
+    await authService.setupInitialAdmin(data);
+    await sharedStorage.hydrate();
+    syncState();
   };
 
-  const approveUser = (userId: string, assignedRole?: UserRole) => {
-    authService.approveUser(userId, assignedRole, user?.id);
-    refreshUsers();
+  const approveUser = async (userId: string, assignedRole?: UserRole) => {
+    await authService.approveUser(userId, assignedRole);
+    syncState();
   };
 
-  const rejectUser = (userId: string) => {
-    authService.rejectUser(userId);
-    refreshUsers();
+  const rejectUser = async (userId: string) => {
+    await authService.rejectUser(userId);
+    syncState();
   };
 
-  const updateUserStatus = (userId: string, status: AccountStatus) => {
-    authService.updateUserStatus(userId, status);
-    refreshUsers();
+  const updateUserStatus = async (userId: string, status: AccountStatus) => {
+    await authService.updateUserStatus(userId, status);
+    syncState();
   };
 
-  const updateUserRole = (userId: string, role: UserRole) => {
-    authService.updateUserRole(userId, role);
-    refreshUsers();
+  const updateUserRole = async (userId: string, role: UserRole) => {
+    await authService.updateUserRole(userId, role);
+    syncState();
   };
 
-  const deleteUser = (userId: string) => {
-    authService.deleteUser(userId);
-    refreshUsers();
+  const deleteUser = async (userId: string) => {
+    await authService.deleteUser(userId);
+    syncState();
   };
 
   const isAuthenticated = !!user;
   const isApproved = user?.status === "approved";
   const isAdmin = user?.role === "admin" && isApproved;
-  const pendingUsersCount = allUsers.filter((u) => u.status === "pending").length;
+  const pendingUsersCount = allUsers.filter((account) => account.status === "pending").length;
 
   return (
-    <AuthContext.Provider
-      value={{
-        user,
-        isAuthenticated,
-        isApproved,
-        isAdmin,
-        hasAdminInSystem,
-        pendingUsersCount,
-        login,
-        logout,
-        register,
-        setupAdmin,
-        approveUser,
-        rejectUser,
-        updateUserStatus,
-        updateUserRole,
-        deleteUser,
-        refreshUsers,
-        allUsers,
-      }}
-    >
+    <AuthContext.Provider value={{
+      user,
+      isAuthenticated,
+      isApproved,
+      isAdmin,
+      isLoading,
+      serverError,
+      hasAdminInSystem,
+      pendingUsersCount,
+      login,
+      logout,
+      register,
+      setupAdmin,
+      approveUser,
+      rejectUser,
+      updateUserStatus,
+      updateUserRole,
+      deleteUser,
+      refreshUsers,
+      allUsers,
+    }}>
       {children}
     </AuthContext.Provider>
   );
@@ -124,8 +145,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error("useAuth must be used within an AuthProvider");
-  }
+  if (!context) throw new Error("useAuth must be used within an AuthProvider");
   return context;
 };

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { storageService } from "@/services/storageService";
+import { sharedStorage } from "@/services/sharedStorage";
 import { ContainerDrop } from "@/types/scrap";
 import { Navbar } from "@/components/layout/Navbar";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -89,7 +90,7 @@ export default function ContainersPage() {
 
   const handleUpdateStatus = (id: string, newStatus: ContainerDrop["status"]) => {
     const updated = drops.map((d) => (d.id === id ? { ...d, status: newStatus } : d));
-    localStorage.setItem("scrapflow_container_drops", JSON.stringify(updated));
+    sharedStorage.setItem("scrapflow_container_drops", JSON.stringify(updated));
     setDrops(updated);
     toast.success(`Updated container status to ${newStatus.replace(/_/g, " ")}`);
   };

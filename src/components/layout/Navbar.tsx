@@ -62,8 +62,8 @@ export const Navbar: React.FC = () => {
     return () => unsubscribe();
   }, []);
 
-  const handleSignOut = () => {
-    logout();
+  const handleSignOut = async () => {
+    await logout();
     navigate('/login');
   };
 
@@ -79,9 +79,11 @@ export const Navbar: React.FC = () => {
     { label: 'Cash Drawer', path: '/cash-drawer', icon: Banknote },
     { label: 'Yard Map', path: '/yard-map', icon: Map },
     { label: 'Customers', path: '/customers', icon: Users },
-    ...(isAdmin ? [{ label: 'User Access', path: '/users', icon: Shield, badge: pendingUsersCount }] : []),
+    ...(isAdmin ? [
+      { label: 'User Access', path: '/users', icon: Shield, badge: pendingUsersCount },
+      { label: 'Settings', path: '/settings', icon: Settings },
+    ] : []),
     { label: 'System Status', path: '/system-status', icon: Server },
-    { label: 'Settings', path: '/settings', icon: Settings },
   ];
 
   const roleBadgeLabels: Record<string, string> = {
@@ -290,13 +292,15 @@ export const Navbar: React.FC = () => {
                     </div>
                     <DropdownMenuSeparator className="bg-slate-800" />
                     {isAdmin && (
-                      <DropdownMenuItem onClick={() => navigate("/users")} className="cursor-pointer text-xs">
-                        <Shield className="w-3.5 h-3.5 mr-2 text-emerald-400" /> User Access Management
-                      </DropdownMenuItem>
+                      <>
+                        <DropdownMenuItem onClick={() => navigate("/users")} className="cursor-pointer text-xs">
+                          <Shield className="w-3.5 h-3.5 mr-2 text-emerald-400" /> User Access Management
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => navigate("/settings")} className="cursor-pointer text-xs">
+                          <Settings className="w-3.5 h-3.5 mr-2 text-slate-400" /> System Settings
+                        </DropdownMenuItem>
+                      </>
                     )}
-                    <DropdownMenuItem onClick={() => navigate("/settings")} className="cursor-pointer text-xs">
-                      <Settings className="w-3.5 h-3.5 mr-2 text-slate-400" /> System Settings
-                    </DropdownMenuItem>
                     <DropdownMenuSeparator className="bg-slate-800" />
                     <DropdownMenuItem onClick={handleSignOut} className="cursor-pointer text-xs text-red-400 focus:text-red-400">
                       <LogOut className="w-3.5 h-3.5 mr-2" /> Sign Out

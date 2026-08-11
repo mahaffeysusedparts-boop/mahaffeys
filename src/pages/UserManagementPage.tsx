@@ -42,32 +42,52 @@ export default function UserManagementPage() {
       (u.email && u.email.toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
-  const handleApprove = (userId: string, currentReqRole: UserRole) => {
-    const assignedRole = roleEdits[userId] || currentReqRole;
-    approveUser(userId, assignedRole);
-    toast.success("User account approved successfully!");
+  const handleApprove = async (userId: string, currentReqRole: UserRole) => {
+    try {
+      const assignedRole = roleEdits[userId] || currentReqRole;
+      await approveUser(userId, assignedRole);
+      toast.success("User account approved successfully!");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to approve user");
+    }
   };
 
-  const handleReject = (userId: string) => {
-    rejectUser(userId);
-    toast.info("User access request rejected");
+  const handleReject = async (userId: string) => {
+    try {
+      await rejectUser(userId);
+      toast.info("User access request rejected");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to reject user");
+    }
   };
 
-  const handleStatusToggle = (userId: string, currentStatus: AccountStatus) => {
+  const handleStatusToggle = async (userId: string, currentStatus: AccountStatus) => {
     const newStatus = currentStatus === "approved" ? "disabled" : "approved";
-    updateUserStatus(userId, newStatus);
-    toast.success(`User status updated to ${newStatus.toUpperCase()}`);
+    try {
+      await updateUserStatus(userId, newStatus);
+      toast.success(`User status updated to ${newStatus.toUpperCase()}`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to update user status");
+    }
   };
 
-  const handleRoleChange = (userId: string, newRole: UserRole) => {
-    updateUserRole(userId, newRole);
-    toast.success(`User role updated to ${newRole.replace("_", " ").toUpperCase()}`);
+  const handleRoleChange = async (userId: string, newRole: UserRole) => {
+    try {
+      await updateUserRole(userId, newRole);
+      toast.success(`User role updated to ${newRole.replace("_", " ").toUpperCase()}`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to update user role");
+    }
   };
 
-  const handleDelete = (userId: string, userName: string) => {
+  const handleDelete = async (userId: string, userName: string) => {
     if (confirm(`Are you sure you want to permanently delete user account "${userName}"?`)) {
-      deleteUser(userId);
-      toast.info(`User account "${userName}" deleted`);
+      try {
+        await deleteUser(userId);
+        toast.info(`User account "${userName}" deleted`);
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "Unable to delete user");
+      }
     }
   };
 

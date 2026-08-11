@@ -16,6 +16,7 @@ import {
   AdmissionPass,
 } from "@/types/scrap";
 import { generateSamplePhoto } from "@/utils/complianceUtils";
+import { sharedStorage } from "@/services/sharedStorage";
 
 const STORAGE_KEYS = {
   METALS: 'scrapflow_metals',
@@ -833,48 +834,48 @@ export const INITIAL_TICKETS: Ticket[] = [
 
 export const storageService = {
   getMetals(): MetalGrade[] {
-    const data = localStorage.getItem(STORAGE_KEYS.METALS);
+    const data = sharedStorage.getItem(STORAGE_KEYS.METALS);
     if (!data) {
-      localStorage.setItem(STORAGE_KEYS.METALS, JSON.stringify(INITIAL_METALS));
+      sharedStorage.setItem(STORAGE_KEYS.METALS, JSON.stringify(INITIAL_METALS));
       return INITIAL_METALS;
     }
     return JSON.parse(data);
   },
 
   saveMetals(metals: MetalGrade[]): void {
-    localStorage.setItem(STORAGE_KEYS.METALS, JSON.stringify(metals));
+    sharedStorage.setItem(STORAGE_KEYS.METALS, JSON.stringify(metals));
   },
 
   getCarRates(): AutoSalvageCategoryRate[] {
-    const data = localStorage.getItem(STORAGE_KEYS.CAR_RATES);
+    const data = sharedStorage.getItem(STORAGE_KEYS.CAR_RATES);
     if (!data) {
-      localStorage.setItem(STORAGE_KEYS.CAR_RATES, JSON.stringify(INITIAL_CAR_RATES));
+      sharedStorage.setItem(STORAGE_KEYS.CAR_RATES, JSON.stringify(INITIAL_CAR_RATES));
       return INITIAL_CAR_RATES;
     }
     return JSON.parse(data);
   },
 
   saveCarRates(rates: AutoSalvageCategoryRate[]): void {
-    localStorage.setItem(STORAGE_KEYS.CAR_RATES, JSON.stringify(rates));
+    sharedStorage.setItem(STORAGE_KEYS.CAR_RATES, JSON.stringify(rates));
   },
 
   getPullParts(): PullPartItem[] {
-    const data = localStorage.getItem(STORAGE_KEYS.PULL_PARTS);
+    const data = sharedStorage.getItem(STORAGE_KEYS.PULL_PARTS);
     if (!data) {
-      localStorage.setItem(STORAGE_KEYS.PULL_PARTS, JSON.stringify(INITIAL_PULL_PARTS));
+      sharedStorage.setItem(STORAGE_KEYS.PULL_PARTS, JSON.stringify(INITIAL_PULL_PARTS));
       return INITIAL_PULL_PARTS;
     }
     return JSON.parse(data);
   },
 
   savePullParts(parts: PullPartItem[]): void {
-    localStorage.setItem(STORAGE_KEYS.PULL_PARTS, JSON.stringify(parts));
+    sharedStorage.setItem(STORAGE_KEYS.PULL_PARTS, JSON.stringify(parts));
   },
 
   getPullYardVehicles(): PullYardVehicle[] {
-    const data = localStorage.getItem(STORAGE_KEYS.PULL_YARD_VEHICLES);
+    const data = sharedStorage.getItem(STORAGE_KEYS.PULL_YARD_VEHICLES);
     if (!data) {
-      localStorage.setItem(STORAGE_KEYS.PULL_YARD_VEHICLES, JSON.stringify(INITIAL_PULL_VEHICLES));
+      sharedStorage.setItem(STORAGE_KEYS.PULL_YARD_VEHICLES, JSON.stringify(INITIAL_PULL_VEHICLES));
       return INITIAL_PULL_VEHICLES;
     }
     return JSON.parse(data);
@@ -888,14 +889,14 @@ export const storageService = {
     } else {
       vehicles.unshift(veh);
     }
-    localStorage.setItem(STORAGE_KEYS.PULL_YARD_VEHICLES, JSON.stringify(vehicles));
+    sharedStorage.setItem(STORAGE_KEYS.PULL_YARD_VEHICLES, JSON.stringify(vehicles));
     return veh;
   },
 
   getCoreReturns(): CoreReturnLog[] {
-    const data = localStorage.getItem(STORAGE_KEYS.CORE_RETURNS);
+    const data = sharedStorage.getItem(STORAGE_KEYS.CORE_RETURNS);
     if (!data) {
-      localStorage.setItem(STORAGE_KEYS.CORE_RETURNS, JSON.stringify(INITIAL_CORE_RETURNS));
+      sharedStorage.setItem(STORAGE_KEYS.CORE_RETURNS, JSON.stringify(INITIAL_CORE_RETURNS));
       return INITIAL_CORE_RETURNS;
     }
     return JSON.parse(data);
@@ -904,7 +905,7 @@ export const storageService = {
   saveCoreReturn(log: CoreReturnLog): CoreReturnLog {
     const logs = this.getCoreReturns();
     logs.unshift(log);
-    localStorage.setItem(STORAGE_KEYS.CORE_RETURNS, JSON.stringify(logs));
+    sharedStorage.setItem(STORAGE_KEYS.CORE_RETURNS, JSON.stringify(logs));
 
     this.addCashDrawerEntry({
       type: 'PAYOUT_DISBURSEMENT',
@@ -917,9 +918,9 @@ export const storageService = {
   },
 
   getAdmissionPasses(): AdmissionPass[] {
-    const data = localStorage.getItem(STORAGE_KEYS.ADMISSION_PASSES);
+    const data = sharedStorage.getItem(STORAGE_KEYS.ADMISSION_PASSES);
     if (!data) {
-      localStorage.setItem(STORAGE_KEYS.ADMISSION_PASSES, JSON.stringify(INITIAL_ADMISSION_PASSES));
+      sharedStorage.setItem(STORAGE_KEYS.ADMISSION_PASSES, JSON.stringify(INITIAL_ADMISSION_PASSES));
       return INITIAL_ADMISSION_PASSES;
     }
     return JSON.parse(data);
@@ -928,7 +929,7 @@ export const storageService = {
   saveAdmissionPass(pass: AdmissionPass): AdmissionPass {
     const passes = this.getAdmissionPasses();
     passes.unshift(pass);
-    localStorage.setItem(STORAGE_KEYS.ADMISSION_PASSES, JSON.stringify(passes));
+    sharedStorage.setItem(STORAGE_KEYS.ADMISSION_PASSES, JSON.stringify(passes));
 
     this.addCashDrawerEntry({
       type: 'VAULT_REPLENISHMENT',
@@ -941,9 +942,9 @@ export const storageService = {
   },
 
   getCatCodes(): CatalyticConverterCode[] {
-    const data = localStorage.getItem(STORAGE_KEYS.CATALYTIC_CODES);
+    const data = sharedStorage.getItem(STORAGE_KEYS.CATALYTIC_CODES);
     if (!data) {
-      localStorage.setItem(STORAGE_KEYS.CATALYTIC_CODES, JSON.stringify(INITIAL_CAT_CODES));
+      sharedStorage.setItem(STORAGE_KEYS.CATALYTIC_CODES, JSON.stringify(INITIAL_CAT_CODES));
       return INITIAL_CAT_CODES;
     }
     return JSON.parse(data);
@@ -957,13 +958,13 @@ export const storageService = {
     } else {
       codes.unshift(codeObj);
     }
-    localStorage.setItem(STORAGE_KEYS.CATALYTIC_CODES, JSON.stringify(codes));
+    sharedStorage.setItem(STORAGE_KEYS.CATALYTIC_CODES, JSON.stringify(codes));
   },
 
   getContainerDrops(): ContainerDrop[] {
-    const data = localStorage.getItem(STORAGE_KEYS.CONTAINER_DROPS);
+    const data = sharedStorage.getItem(STORAGE_KEYS.CONTAINER_DROPS);
     if (!data) {
-      localStorage.setItem(STORAGE_KEYS.CONTAINER_DROPS, JSON.stringify(INITIAL_CONTAINER_DROPS));
+      sharedStorage.setItem(STORAGE_KEYS.CONTAINER_DROPS, JSON.stringify(INITIAL_CONTAINER_DROPS));
       return INITIAL_CONTAINER_DROPS;
     }
     return JSON.parse(data);
@@ -977,14 +978,14 @@ export const storageService = {
     } else {
       drops.unshift(drop);
     }
-    localStorage.setItem(STORAGE_KEYS.CONTAINER_DROPS, JSON.stringify(drops));
+    sharedStorage.setItem(STORAGE_KEYS.CONTAINER_DROPS, JSON.stringify(drops));
     return drop;
   },
 
   getCashDrawerLogs(): CashDrawerLog[] {
-    const data = localStorage.getItem(STORAGE_KEYS.CASH_DRAWER);
+    const data = sharedStorage.getItem(STORAGE_KEYS.CASH_DRAWER);
     if (!data) {
-      localStorage.setItem(STORAGE_KEYS.CASH_DRAWER, JSON.stringify(INITIAL_CASH_DRAWER));
+      sharedStorage.setItem(STORAGE_KEYS.CASH_DRAWER, JSON.stringify(INITIAL_CASH_DRAWER));
       return INITIAL_CASH_DRAWER;
     }
     return JSON.parse(data);
@@ -1004,27 +1005,27 @@ export const storageService = {
     };
 
     logs.unshift(newLog);
-    localStorage.setItem(STORAGE_KEYS.CASH_DRAWER, JSON.stringify(logs));
+    sharedStorage.setItem(STORAGE_KEYS.CASH_DRAWER, JSON.stringify(logs));
     return newLog;
   },
 
   getYardBays(): YardBayLocation[] {
-    const data = localStorage.getItem(STORAGE_KEYS.YARD_BAYS);
+    const data = sharedStorage.getItem(STORAGE_KEYS.YARD_BAYS);
     if (!data) {
-      localStorage.setItem(STORAGE_KEYS.YARD_BAYS, JSON.stringify(INITIAL_YARD_BAYS));
+      sharedStorage.setItem(STORAGE_KEYS.YARD_BAYS, JSON.stringify(INITIAL_YARD_BAYS));
       return INITIAL_YARD_BAYS;
     }
     return JSON.parse(data);
   },
 
   saveYardBays(bays: YardBayLocation[]): void {
-    localStorage.setItem(STORAGE_KEYS.YARD_BAYS, JSON.stringify(bays));
+    sharedStorage.setItem(STORAGE_KEYS.YARD_BAYS, JSON.stringify(bays));
   },
 
   getCustomers(): Customer[] {
-    const data = localStorage.getItem(STORAGE_KEYS.CUSTOMERS);
+    const data = sharedStorage.getItem(STORAGE_KEYS.CUSTOMERS);
     if (!data) {
-      localStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(INITIAL_CUSTOMERS));
+      sharedStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(INITIAL_CUSTOMERS));
       return INITIAL_CUSTOMERS;
     }
     return JSON.parse(data);
@@ -1038,14 +1039,14 @@ export const storageService = {
     } else {
       customers.unshift(customer);
     }
-    localStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(customers));
+    sharedStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(customers));
     return customer;
   },
 
   getTickets(): Ticket[] {
-    const data = localStorage.getItem(STORAGE_KEYS.TICKETS);
+    const data = sharedStorage.getItem(STORAGE_KEYS.TICKETS);
     if (!data) {
-      localStorage.setItem(STORAGE_KEYS.TICKETS, JSON.stringify(INITIAL_TICKETS));
+      sharedStorage.setItem(STORAGE_KEYS.TICKETS, JSON.stringify(INITIAL_TICKETS));
       return INITIAL_TICKETS;
     }
     return JSON.parse(data);
@@ -1059,7 +1060,7 @@ export const storageService = {
     } else {
       tickets.unshift(ticket);
     }
-    localStorage.setItem(STORAGE_KEYS.TICKETS, JSON.stringify(tickets));
+    sharedStorage.setItem(STORAGE_KEYS.TICKETS, JSON.stringify(tickets));
 
     if (ticket.ticketType === 'CAR_SALVAGE' && ticket.carRecord && ticket.carRecord.assignedRow) {
       const c = ticket.carRecord;
@@ -1121,7 +1122,7 @@ export const storageService = {
   },
 
   getNMVTISLogs(): NMVTISReportLog[] {
-    const data = localStorage.getItem(STORAGE_KEYS.NMVTIS_LOGS);
+    const data = sharedStorage.getItem(STORAGE_KEYS.NMVTIS_LOGS);
     if (!data) {
       return [
         {
@@ -1141,7 +1142,7 @@ export const storageService = {
   saveNMVTISLog(log: NMVTISReportLog): void {
     const logs = this.getNMVTISLogs();
     logs.unshift(log);
-    localStorage.setItem(STORAGE_KEYS.NMVTIS_LOGS, JSON.stringify(logs));
+    sharedStorage.setItem(STORAGE_KEYS.NMVTIS_LOGS, JSON.stringify(logs));
   },
 
   markTicketsAsNMVTISReported(ticketIds: string[], batchId: string): void {
@@ -1165,36 +1166,36 @@ export const storageService = {
         }
       }
     });
-    localStorage.setItem(STORAGE_KEYS.TICKETS, JSON.stringify(tickets));
+    sharedStorage.setItem(STORAGE_KEYS.TICKETS, JSON.stringify(tickets));
   },
 
   getSettings(): YardSettings {
-    const data = localStorage.getItem(STORAGE_KEYS.SETTINGS);
+    const data = sharedStorage.getItem(STORAGE_KEYS.SETTINGS);
     if (!data) {
-      localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(INITIAL_SETTINGS));
+      sharedStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(INITIAL_SETTINGS));
       return INITIAL_SETTINGS;
     }
     return JSON.parse(data);
   },
 
   saveSettings(settings: YardSettings): void {
-    localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settings));
+    sharedStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settings));
   },
 
   resetToDefaults(): void {
-    localStorage.setItem(STORAGE_KEYS.METALS, JSON.stringify(INITIAL_METALS));
-    localStorage.setItem(STORAGE_KEYS.CAR_RATES, JSON.stringify(INITIAL_CAR_RATES));
-    localStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(INITIAL_CUSTOMERS));
-    localStorage.setItem(STORAGE_KEYS.TICKETS, JSON.stringify(INITIAL_TICKETS));
-    localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(INITIAL_SETTINGS));
-    localStorage.setItem(STORAGE_KEYS.CATALYTIC_CODES, JSON.stringify(INITIAL_CAT_CODES));
-    localStorage.setItem(STORAGE_KEYS.CONTAINER_DROPS, JSON.stringify(INITIAL_CONTAINER_DROPS));
-    localStorage.setItem(STORAGE_KEYS.CASH_DRAWER, JSON.stringify(INITIAL_CASH_DRAWER));
-    localStorage.setItem(STORAGE_KEYS.YARD_BAYS, JSON.stringify(INITIAL_YARD_BAYS));
-    localStorage.setItem(STORAGE_KEYS.PULL_PARTS, JSON.stringify(INITIAL_PULL_PARTS));
-    localStorage.setItem(STORAGE_KEYS.PULL_YARD_VEHICLES, JSON.stringify(INITIAL_PULL_VEHICLES));
-    localStorage.setItem(STORAGE_KEYS.CORE_RETURNS, JSON.stringify(INITIAL_CORE_RETURNS));
-    localStorage.setItem(STORAGE_KEYS.ADMISSION_PASSES, JSON.stringify(INITIAL_ADMISSION_PASSES));
-    localStorage.removeItem(STORAGE_KEYS.NMVTIS_LOGS);
+    sharedStorage.setItem(STORAGE_KEYS.METALS, JSON.stringify(INITIAL_METALS));
+    sharedStorage.setItem(STORAGE_KEYS.CAR_RATES, JSON.stringify(INITIAL_CAR_RATES));
+    sharedStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(INITIAL_CUSTOMERS));
+    sharedStorage.setItem(STORAGE_KEYS.TICKETS, JSON.stringify(INITIAL_TICKETS));
+    sharedStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(INITIAL_SETTINGS));
+    sharedStorage.setItem(STORAGE_KEYS.CATALYTIC_CODES, JSON.stringify(INITIAL_CAT_CODES));
+    sharedStorage.setItem(STORAGE_KEYS.CONTAINER_DROPS, JSON.stringify(INITIAL_CONTAINER_DROPS));
+    sharedStorage.setItem(STORAGE_KEYS.CASH_DRAWER, JSON.stringify(INITIAL_CASH_DRAWER));
+    sharedStorage.setItem(STORAGE_KEYS.YARD_BAYS, JSON.stringify(INITIAL_YARD_BAYS));
+    sharedStorage.setItem(STORAGE_KEYS.PULL_PARTS, JSON.stringify(INITIAL_PULL_PARTS));
+    sharedStorage.setItem(STORAGE_KEYS.PULL_YARD_VEHICLES, JSON.stringify(INITIAL_PULL_VEHICLES));
+    sharedStorage.setItem(STORAGE_KEYS.CORE_RETURNS, JSON.stringify(INITIAL_CORE_RETURNS));
+    sharedStorage.setItem(STORAGE_KEYS.ADMISSION_PASSES, JSON.stringify(INITIAL_ADMISSION_PASSES));
+    sharedStorage.removeItem(STORAGE_KEYS.NMVTIS_LOGS);
   },
 };

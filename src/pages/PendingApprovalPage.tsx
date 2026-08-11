@@ -11,18 +11,24 @@ export default function PendingApprovalPage() {
   const { user, logout, refreshUsers } = useAuth();
   const navigate = useNavigate();
 
-  const handleCheckStatus = () => {
-    refreshUsers();
+  React.useEffect(() => {
     if (user?.status === "approved") {
-      toast.success("Account approved!", { description: "Welcome to ScrapFlow Local." });
+      toast.success("Account approved!", { description: "Welcome to ScrapFlow." });
       navigate("/");
-    } else {
-      toast.info("Account status still pending Admin review.");
+    }
+  }, [navigate, user?.status]);
+
+  const handleCheckStatus = async () => {
+    try {
+      await refreshUsers();
+      toast.info("Account status refreshed from the shared database.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to check account status");
     }
   };
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
+    await logout();
     navigate("/login");
   };
 

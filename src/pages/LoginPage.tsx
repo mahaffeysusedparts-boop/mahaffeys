@@ -9,24 +9,24 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Scale, ShieldCheck, UserPlus, LogIn, Lock, Sparkles, AlertCircle, Wrench, ShieldAlert } from "lucide-react";
+import { Scale, ShieldCheck, UserPlus, LogIn, Lock, Sparkles, AlertCircle, Wrench, ShieldAlert, Database } from "lucide-react";
 import { toast } from "sonner";
 
 export default function LoginPage() {
-  const { hasAdminInSystem, login, register, setupAdmin, isAuthenticated, isApproved } = useAuth();
+  const { hasAdminInSystem, login, register, setupAdmin, isAuthenticated, isApproved, isLoading, serverError } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
   const from = (location.state as any)?.from?.pathname || "/";
 
-  // If already authenticated and approved, redirect home
   React.useEffect(() => {
+    if (isLoading) return;
     if (isAuthenticated && isApproved) {
       navigate(from, { replace: true });
     } else if (isAuthenticated && !isApproved) {
       navigate("/pending-approval", { replace: true });
     }
-  }, [isAuthenticated, isApproved, navigate, from]);
+  }, [isAuthenticated, isApproved, isLoading, navigate, from]);
 
   // First-Time Setup State
   const [setupFullName, setSetupFullName] = useState("");
@@ -45,26 +45,26 @@ export default function LoginPage() {
   const [regEmail, setRegEmail] = useState("");
   const [regRole, setRegRole] = useState<UserRole>("scale_operator");
 
-  const handleSetupAdmin = (e: React.FormEvent) => {
+  const handleSetupAdmin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!setupFullName.trim() || !setupUsername.trim() || !setupPassword) {
       toast.error("All required fields must be filled");
       return;
     }
-    if (setupPassword.length < 4) {
-      toast.error("Password must be at least 4 characters");
+    if (setupPassword.length < 8) {
+      toast.error("Password must be at least 8 characters");
       return;
     }
 
     try {
-      setupAdmin({
+      await setupAdmin({
         fullName: setupFullName,
         username: setupUsername,
         password: setupPassword,
         email: setupEmail,
       });
       toast.success("Primary Administrator account created!", {
-        description: "System initialized. Welcome to ScrapFlow Local.",
+        description: "The shared database is initialized and ready.",
       });
       navigate("/", { replace: true });
     } catch (err: any) {
@@ -72,7 +72,7 @@ export default function LoginPage() {
     }
   };
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!loginUsername.trim() || !loginPassword) {
       toast.error("Username and password are required");
@@ -80,7 +80,7 @@ export default function LoginPage() {
     }
 
     try {
-      login(loginUsername, loginPassword);
+      await login(loginUsername, loginPassword);
       toast.success("Sign in successful!");
       navigate(from, { replace: true });
     } catch (err: any) {
@@ -88,15 +88,19 @@ export default function LoginPage() {
     }
   };
 
-  const handleRegister = (e: React.FormEvent) => {
+  const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!regFullName.trim() || !regUsername.trim() || !regPassword) {
       toast.error("Please fill in all required fields");
       return;
     }
+    if (regPassword.length < 8) {
+      toast.error("Password must be at least 8 characters");
+      return;
+    }
 
     try {
-      register({
+      await register({
         fullName: regFullName,
         username: regUsername,
         password: regPassword,
@@ -111,6 +115,24 @@ export default function LoginPage() {
       toast.error(err.message || "Registration failed");
     }
   };
+
+  if (isLoading || serverError) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-100 grid place-items-center p-4">
+        <Card className="w-full max-w-md rounded-3xl border-slate-800 bg-slate-900 text-white shadow-2xl">
+          <CardContent className="p-8 text-center space-y-4">
+            <div className={`mx-auto grid h-14 w-14 place-items-center rounded-2xl ${serverError ? "bg-red-500/15 text-red-400" : "bg-emerald-500/15 text-emerald-400"}`}>
+              {serverError ? <ShieldAlert className="h-7 w-7" /> : <Database className="h-7 w-7 animate-pulse" />}
+            </div>
+            <div>
+              <h1 className="text-xl font-extrabold">{serverError ? "Database server unavailable" : "Connecting to your database"}</h1>
+              <p className="mt-2 text-sm text-slate-400">{serverError || "Checking the secure session on this workstation…"}</p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-center items-center p-4 relative font-sans overflow-hidden">
@@ -145,7 +167,7 @@ export default function LoginPage() {
                 <Sparkles className="w-5 h-5 text-amber-400" /> Create Administrator Account
               </CardTitle>
               <CardDescription className="text-xs text-slate-400 mt-1">
-                No Admin account detected in local database. Set up your primary administrator credentials to manage users and system settings.
+                No administrator exists in the shared PC database. Create the primary account once, then use it from every authorized device.
               </CardDescription>
             </CardHeader>
 

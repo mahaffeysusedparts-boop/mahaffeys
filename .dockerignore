@@ -1,0 +1,8 @@
+node_modules
+.output
+dist
+data
+.git
+.env
+.env.*
+.dyad

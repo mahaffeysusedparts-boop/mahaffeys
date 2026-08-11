@@ -1,7 +1,8 @@
-import React, { useState, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { YardSettings } from '@/types/scrap';
 import { storageService } from '@/services/storageService';
 import { authService } from '@/services/authService';
+import { ConnectionStatus, sharedStorage } from '@/services/sharedStorage';
 import { Navbar } from '@/components/layout/Navbar';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -9,12 +10,15 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Settings, Save, Scale, FileText, Database, RotateCcw, Download, Upload } from 'lucide-react';
+import { Settings, Save, Scale, FileText, Database, RotateCcw, Download, Upload, Server, Wifi, WifiOff } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<YardSettings>(storageService.getSettings());
+  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>(sharedStorage.getStatus());
   const importFileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => sharedStorage.subscribe(setConnectionStatus), []);
 
   const handleChange = (field: keyof YardSettings, value: any) => {
     setSettings((prev) => ({ ...prev, [field]: value }));
@@ -58,28 +62,29 @@ export default function SettingsPage() {
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (evt) => {
+    reader.onload = async (evt) => {
       try {
         const data = JSON.parse(evt.target?.result as string);
-        if (data.metals) localStorage.setItem('scrapflow_metals', JSON.stringify(data.metals));
-        if (data.carRates) localStorage.setItem('scrapflow_car_rates', JSON.stringify(data.carRates));
-        if (data.customers) localStorage.setItem('scrapflow_customers', JSON.stringify(data.customers));
-        if (data.tickets) localStorage.setItem('scrapflow_tickets', JSON.stringify(data.tickets));
-        if (data.settings) localStorage.setItem('scrapflow_settings', JSON.stringify(data.settings));
-        if (data.users) localStorage.setItem('scrapflow_users', JSON.stringify(data.users));
-        if (data.catCodes) localStorage.setItem('scrapflow_cat_codes', JSON.stringify(data.catCodes));
-        if (data.containerDrops) localStorage.setItem('scrapflow_container_drops', JSON.stringify(data.containerDrops));
-        if (data.cashDrawer) localStorage.setItem('scrapflow_cash_drawer', JSON.stringify(data.cashDrawer));
-        if (data.yardBays) localStorage.setItem('scrapflow_yard_bays', JSON.stringify(data.yardBays));
-        if (data.pullParts) localStorage.setItem('scrapflow_pull_parts', JSON.stringify(data.pullParts));
-        if (data.pullVehicles) localStorage.setItem('scrapflow_pull_yard_vehicles', JSON.stringify(data.pullVehicles));
-        if (data.coreReturns) localStorage.setItem('scrapflow_core_returns', JSON.stringify(data.coreReturns));
-        if (data.admissionPasses) localStorage.setItem('scrapflow_admission_passes', JSON.stringify(data.admissionPasses));
-
-        toast.success("Database and Admin account restored successfully!");
-        setTimeout(() => window.location.reload(), 1000);
-      } catch {
-        toast.error("Failed to parse backup file. Please select a valid JSON backup.");
+        const state = {
+          scrapflow_metals: data.metals,
+          scrapflow_car_rates: data.carRates,
+          scrapflow_customers: data.customers,
+          scrapflow_tickets: data.tickets,
+          scrapflow_settings: data.settings,
+          scrapflow_cat_codes: data.catCodes,
+          scrapflow_container_drops: data.containerDrops,
+          scrapflow_cash_drawer: data.cashDrawer,
+          scrapflow_yard_bays: data.yardBays,
+          scrapflow_pull_parts: data.pullParts,
+          scrapflow_pull_yard_vehicles: data.pullVehicles,
+          scrapflow_core_returns: data.coreReturns,
+          scrapflow_admission_passes: data.admissionPasses,
+        };
+        await sharedStorage.importState(Object.fromEntries(Object.entries(state).filter(([, value]) => value !== undefined)));
+        toast.success("Backup imported into the shared PC database");
+        setTimeout(() => window.location.reload(), 800);
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "Failed to import this backup file");
       }
     };
     reader.readAsText(file);
@@ -271,17 +276,27 @@ export default function SettingsPage() {
         {/* Section 3: Data Management */}
         <Card className="bg-slate-900 border-slate-800 text-white shadow-lg">
           <CardHeader className="py-3 px-4 bg-slate-950/60 border-b border-slate-800">
-            <CardTitle className="text-sm font-bold tracking-wide uppercase text-slate-300 flex items-center gap-2">
-              <Database className="w-4 h-4 text-emerald-400" /> Local Network Database Management
+            <CardTitle className="text-sm font-bold tracking-wide uppercase text-slate-300 flex items-center justify-between gap-2">
+              <span className="flex items-center gap-2">
+                <Database className="w-4 h-4 text-emerald-400" /> PC-Hosted Database Management
+              </span>
+              <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] ${connectionStatus === 'connected' ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : 'border-red-500/30 bg-red-500/10 text-red-300'}`}>
+                {connectionStatus === 'connected' ? <Wifi className="h-3 w-3" /> : <WifiOff className="h-3 w-3" />}
+                {connectionStatus === 'connected' ? 'DATABASE CONNECTED' : connectionStatus.toUpperCase()}
+              </span>
             </CardTitle>
           </CardHeader>
 
           <CardContent className="p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
-            <div className="text-xs text-slate-400">
-              Export or import a complete JSON backup of user accounts, tickets, customer profiles, metal prices, and yard settings.
+            <div className="flex items-start gap-3 text-xs text-slate-400">
+              <Server className="mt-0.5 h-5 w-5 shrink-0 text-sky-400" />
+              <div>
+                <p className="font-semibold text-slate-200">Shared records are stored on your Linux PC.</p>
+                <p className="mt-1">JSON imports migrate yard records only. User passwords remain protected and must be created through secure account registration.</p>
+              </div>
             </div>
 
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
               <Button
                 onClick={handleExportBackup}
                 variant="outline"

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Ticket } from '@/types/scrap';
 import { storageService } from '@/services/storageService';
+import { sharedStorage } from '@/services/sharedStorage';
 import { Navbar } from '@/components/layout/Navbar';
 import { ReceiptModal } from '@/components/receipts/ReceiptModal';
 import { calculateComplianceScore } from '@/utils/complianceUtils';
@@ -46,7 +47,7 @@ export default function TicketsPage() {
   const handleVoidTicket = (id: string) => {
     const updated = tickets.map((t) => (t.id === id ? { ...t, status: 'VOIDED' as const } : t));
     setTickets(updated);
-    localStorage.setItem('scrapflow_tickets', JSON.stringify(updated));
+    sharedStorage.setItem('scrapflow_tickets', JSON.stringify(updated));
     toast.info(`Ticket #${id} marked as VOIDED`);
   };
 

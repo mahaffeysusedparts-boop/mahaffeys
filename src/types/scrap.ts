@@ -13,7 +13,6 @@ export interface UserAccount {
   fullName: string;
   username: string;
   email?: string;
-  passwordHash: string;
   role: UserRole;
   status: AccountStatus;
   createdAt: string;

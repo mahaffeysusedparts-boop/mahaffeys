@@ -1,218 +1,120 @@
-import { UserAccount, UserRole, AccountStatus } from "@/types/scrap";
+import { AccountStatus, UserAccount, UserRole } from "@/types/scrap";
+import { apiRequest } from "./apiClient";
 
-const STORAGE_KEYS = {
-  USERS: "scrapflow_users",
-  CURRENT_USER: "scrapflow_session_user",
-};
+let currentUser: UserAccount | null = null;
+let usersCache: UserAccount[] = [];
+let hasAdminCache = false;
 
-// Simple hashing function for local offline environment
-function hashPassword(password: string): string {
-  let hash = 0;
-  const salted = `scrapflow_salt_2025_${password}`;
-  for (let i = 0; i < salted.length; i++) {
-    const char = salted.charCodeAt(i);
-    hash = (hash << 5) - hash + char;
-    hash |= 0;
-  }
-  return hash.toString(16);
+interface StatusResponse {
+  user: UserAccount | null;
+  hasAdmin: boolean;
 }
 
 export const authService = {
   getUsers(): UserAccount[] {
-    const data = localStorage.getItem(STORAGE_KEYS.USERS);
-    if (!data) return [];
-    return JSON.parse(data);
-  },
-
-  saveUsers(users: UserAccount[]): void {
-    localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
+    return usersCache;
   },
 
   hasAdmin(): boolean {
-    const users = this.getUsers();
-    return users.some((u) => u.role === "admin" && u.status === "approved");
+    return hasAdminCache;
   },
 
   getCurrentUser(): UserAccount | null {
-    const data = localStorage.getItem(STORAGE_KEYS.CURRENT_USER);
-    if (!data) return null;
-    try {
-      const parsed = JSON.parse(data);
-      // Re-fetch latest from storage to ensure status and role updates are reflected
-      const users = this.getUsers();
-      const latest = users.find((u) => u.id === parsed.id);
-      return latest || parsed;
-    } catch {
-      return null;
-    }
+    return currentUser;
   },
 
-  setCurrentUser(user: UserAccount | null): void {
-    if (!user) {
-      localStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
-    } else {
-      localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(user));
+  async initialize(): Promise<StatusResponse> {
+    const status = await apiRequest<StatusResponse>("/api/auth/status");
+    currentUser = status.user;
+    hasAdminCache = status.hasAdmin;
+    if (currentUser?.role === "admin" && currentUser.status === "approved") {
+      await this.refreshUsers();
     }
+    return status;
   },
 
-  setupInitialAdmin(data: {
-    fullName: string;
-    username: string;
-    password: string;
-    email?: string;
-  }): UserAccount {
-    const users = this.getUsers();
-    const adminUser: UserAccount = {
-      id: `usr-admin-${Date.now()}`,
-      fullName: data.fullName,
-      username: data.username.toLowerCase().trim(),
-      email: data.email?.toLowerCase().trim(),
-      passwordHash: hashPassword(data.password),
-      role: "admin",
-      status: "approved",
-      createdAt: new Date().toISOString(),
-      approvedAt: new Date().toISOString(),
-    };
-
-    users.push(adminUser);
-    this.saveUsers(users);
-    this.setCurrentUser(adminUser);
-    return adminUser;
+  async refreshUsers(): Promise<UserAccount[]> {
+    if (currentUser?.role !== "admin" || currentUser.status !== "approved") {
+      const status = await apiRequest<StatusResponse>("/api/auth/status");
+      currentUser = status.user;
+      hasAdminCache = status.hasAdmin;
+      usersCache = currentUser ? [currentUser] : [];
+      return usersCache;
+    }
+    const response = await apiRequest<{ users: UserAccount[] }>("/api/users");
+    usersCache = response.users;
+    currentUser = usersCache.find((user) => user.id === currentUser?.id) || currentUser;
+    return usersCache;
   },
 
-  registerUser(data: {
-    fullName: string;
-    username: string;
-    password: string;
-    role: UserRole;
-    email?: string;
-  }): UserAccount {
-    const users = this.getUsers();
-    const usernameClean = data.username.toLowerCase().trim();
-
-    if (users.some((u) => u.username === usernameClean)) {
-      throw new Error("Username already taken. Please choose another.");
-    }
-
-    const newUser: UserAccount = {
-      id: `usr-${Date.now()}`,
-      fullName: data.fullName,
-      username: usernameClean,
-      email: data.email?.toLowerCase().trim(),
-      passwordHash: hashPassword(data.password),
-      role: data.role,
-      status: "pending",
-      createdAt: new Date().toISOString(),
-    };
-
-    users.push(newUser);
-    this.saveUsers(users);
-    this.setCurrentUser(newUser);
-    return newUser;
+  async setupInitialAdmin(data: { fullName: string; username: string; password: string; email?: string }) {
+    const response = await apiRequest<{ user: UserAccount }>("/api/auth/setup", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+    currentUser = response.user;
+    hasAdminCache = true;
+    usersCache = [response.user];
+    return response.user;
   },
 
-  login(username: string, password: string): UserAccount {
-    const users = this.getUsers();
-    const cleanUsername = username.toLowerCase().trim();
-    const inputHash = hashPassword(password);
-
-    const user = users.find(
-      (u) =>
-        (u.username === cleanUsername || (u.email && u.email.toLowerCase() === cleanUsername)) &&
-        u.passwordHash === inputHash
-    );
-
-    if (!user) {
-      throw new Error("Invalid username or password.");
-    }
-
-    if (user.status === "disabled" || user.status === "rejected") {
-      throw new Error("Account access disabled or rejected by Administrator.");
-    }
-
-    this.setCurrentUser(user);
-    return user;
+  async registerUser(data: { fullName: string; username: string; password: string; role: UserRole; email?: string }) {
+    const response = await apiRequest<{ user: UserAccount }>("/api/auth/register", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+    currentUser = response.user;
+    usersCache = [response.user];
+    return response.user;
   },
 
-  logout(): void {
-    this.setCurrentUser(null);
+  async login(username: string, password: string) {
+    const response = await apiRequest<{ user: UserAccount }>("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ username, password }),
+    });
+    currentUser = response.user;
+    if (response.user.role === "admin") await this.refreshUsers();
+    return response.user;
   },
 
-  approveUser(userId: string, assignedRole?: UserRole, adminId?: string): UserAccount {
-    const users = this.getUsers();
-    const index = users.findIndex((u) => u.id === userId);
-    if (index === -1) {
-      throw new Error("User not found.");
-    }
-
-    users[index].status = "approved";
-    if (assignedRole) {
-      users[index].role = assignedRole;
-    }
-    users[index].approvedBy = adminId;
-    users[index].approvedAt = new Date().toISOString();
-    users[index].updatedAt = new Date().toISOString();
-
-    this.saveUsers(users);
-
-    // If current logged in user was approved, update session
-    const current = this.getCurrentUser();
-    if (current && current.id === userId) {
-      this.setCurrentUser(users[index]);
-    }
-
-    return users[index];
+  async logout() {
+    await apiRequest<{ ok: true }>("/api/auth/logout", { method: "POST" });
+    currentUser = null;
+    usersCache = [];
   },
 
-  rejectUser(userId: string): UserAccount {
-    const users = this.getUsers();
-    const index = users.findIndex((u) => u.id === userId);
-    if (index === -1) {
-      throw new Error("User not found.");
-    }
-
-    users[index].status = "rejected";
-    users[index].updatedAt = new Date().toISOString();
-
-    this.saveUsers(users);
-    return users[index];
+  async updateUser(userId: string, update: { role?: UserRole; status?: AccountStatus }) {
+    const response = await apiRequest<{ user: UserAccount }>(`/api/users/${encodeURIComponent(userId)}`, {
+      method: "PATCH",
+      body: JSON.stringify(update),
+    });
+    await this.refreshUsers();
+    return response.user;
   },
 
-  updateUserStatus(userId: string, status: AccountStatus): UserAccount {
-    const users = this.getUsers();
-    const index = users.findIndex((u) => u.id === userId);
-    if (index === -1) {
-      throw new Error("User not found.");
-    }
-
-    users[index].status = status;
-    users[index].updatedAt = new Date().toISOString();
-
-    this.saveUsers(users);
-    return users[index];
+  approveUser(userId: string, assignedRole?: UserRole) {
+    return this.updateUser(userId, { status: "approved", role: assignedRole });
   },
 
-  updateUserRole(userId: string, role: UserRole): UserAccount {
-    const users = this.getUsers();
-    const index = users.findIndex((u) => u.id === userId);
-    if (index === -1) {
-      throw new Error("User not found.");
-    }
-
-    users[index].role = role;
-    users[index].updatedAt = new Date().toISOString();
-
-    this.saveUsers(users);
-    return users[index];
+  rejectUser(userId: string) {
+    return this.updateUser(userId, { status: "rejected" });
   },
 
-  deleteUser(userId: string): void {
-    let users = this.getUsers();
-    users = users.filter((u) => u.id !== userId);
-    this.saveUsers(users);
+  updateUserStatus(userId: string, status: AccountStatus) {
+    return this.updateUser(userId, { status });
+  },
+
+  updateUserRole(userId: string, role: UserRole) {
+    return this.updateUser(userId, { role });
+  },
+
+  async deleteUser(userId: string) {
+    await apiRequest<{ ok: true }>(`/api/users/${encodeURIComponent(userId)}`, { method: "DELETE" });
+    await this.refreshUsers();
   },
 
   getPendingUsers(): UserAccount[] {
-    return this.getUsers().filter((u) => u.status === "pending");
+    return usersCache.filter((user) => user.status === "pending");
   },
 };
