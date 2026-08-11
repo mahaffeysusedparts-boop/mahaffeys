@@ -43,6 +43,7 @@ import {
   UserCheck,
   Bell,
   Lock,
+  Shield,
 } from 'lucide-react';
 
 export const Navbar: React.FC = () => {
@@ -78,6 +79,7 @@ export const Navbar: React.FC = () => {
     { label: 'Cash Drawer', path: '/cash-drawer', icon: Banknote },
     { label: 'Yard Map', path: '/yard-map', icon: Map },
     { label: 'Customers', path: '/customers', icon: Users },
+    ...(isAdmin ? [{ label: 'User Access', path: '/users', icon: Shield, badge: pendingUsersCount }] : []),
     { label: 'System Status', path: '/system-status', icon: Server },
     { label: 'Settings', path: '/settings', icon: Settings },
   ];
@@ -147,7 +149,14 @@ export const Navbar: React.FC = () => {
                             <Icon className={`w-4 h-4 ${isActive ? 'text-emerald-400' : 'text-slate-400'}`} />
                             <span>{item.label}</span>
                           </div>
-                          <ChevronRight className="w-3.5 h-3.5 text-slate-600" />
+
+                          {item.badge && item.badge > 0 ? (
+                            <Badge className="bg-amber-500 text-slate-950 font-bold text-[10px] px-1.5 py-0">
+                              {item.badge}
+                            </Badge>
+                          ) : (
+                            <ChevronRight className="w-3.5 h-3.5 text-slate-600" />
+                          )}
                         </Link>
                       );
                     })}
@@ -196,7 +205,7 @@ export const Navbar: React.FC = () => {
                   <Link
                     key={item.path}
                     to={item.path}
-                    className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors shrink-0 ${
+                    className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors shrink-0 relative ${
                       isActive
                         ? 'bg-slate-800 text-amber-400 border border-slate-700/80 shadow-sm'
                         : 'text-slate-300 hover:bg-slate-800/60 hover:text-white'
@@ -204,6 +213,11 @@ export const Navbar: React.FC = () => {
                   >
                     <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-amber-400' : 'text-slate-400'}`} />
                     <span>{item.label}</span>
+                    {item.badge && item.badge > 0 ? (
+                      <span className="bg-amber-500 text-slate-950 font-extrabold text-[9px] px-1 rounded-full ml-0.5 animate-bounce">
+                        {item.badge}
+                      </span>
+                    ) : null}
                   </Link>
                 );
               })}
@@ -237,7 +251,7 @@ export const Navbar: React.FC = () => {
 
               {/* Admin Pending Requests Notification Badge */}
               {isAdmin && pendingUsersCount > 0 && (
-                <Link to="/settings" title="Pending User Requests">
+                <Link to="/users" title="Pending User Requests">
                   <Button size="icon" variant="outline" className="h-9 w-9 bg-amber-950/60 border-amber-500/50 text-amber-400 relative">
                     <Bell className="w-4 h-4 animate-bounce" />
                     <span className="absolute -top-1 -right-1 bg-amber-500 text-slate-950 font-bold text-[10px] w-4 h-4 rounded-full flex items-center justify-center">
@@ -263,7 +277,7 @@ export const Navbar: React.FC = () => {
                       </div>
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="bg-slate-900 border-slate-800 text-slate-100 text-xs w-48">
+                  <DropdownMenuContent align="end" className="bg-slate-900 border-slate-800 text-slate-100 text-xs w-52">
                     <DropdownMenuLabel className="text-slate-400 font-mono text-[10px] uppercase">
                       User Account
                     </DropdownMenuLabel>
@@ -276,8 +290,8 @@ export const Navbar: React.FC = () => {
                     </div>
                     <DropdownMenuSeparator className="bg-slate-800" />
                     {isAdmin && (
-                      <DropdownMenuItem onClick={() => navigate("/settings")} className="cursor-pointer text-xs">
-                        <Users className="w-3.5 h-3.5 mr-2 text-emerald-400" /> User Access Management
+                      <DropdownMenuItem onClick={() => navigate("/users")} className="cursor-pointer text-xs">
+                        <Shield className="w-3.5 h-3.5 mr-2 text-emerald-400" /> User Access Management
                       </DropdownMenuItem>
                     )}
                     <DropdownMenuItem onClick={() => navigate("/settings")} className="cursor-pointer text-xs">

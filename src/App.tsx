@@ -19,6 +19,7 @@ import CashDrawerPage from "./pages/CashDrawerPage";
 import YardMapPage from "./pages/YardMapPage";
 import PullAPartPage from "./pages/PullAPartPage";
 import SystemHealthPage from "./pages/SystemHealthPage";
+import UserManagementPage from "./pages/UserManagementPage";
 import LoginPage from "./pages/LoginPage";
 import PendingApprovalPage from "./pages/PendingApprovalPage";
 import NotFound from "./pages/NotFound";
@@ -27,10 +28,10 @@ const queryClient = new QueryClient();
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner position="top-right" />
-      <AuthProvider>
+    <AuthProvider>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner position="top-right" />
         <BrowserRouter>
           <Routes>
             {/* PUBLIC AUTH ROUTES */}
@@ -130,6 +131,14 @@ const App = () => (
               }
             />
             <Route
+              path="/users"
+              element={
+                <ProtectedRoute requireAdmin>
+                  <UserManagementPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
               path="/system-status"
               element={
                 <ProtectedRoute>
@@ -150,8 +159,8 @@ const App = () => (
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>
-      </AuthProvider>
-    </TooltipProvider>
+      </TooltipProvider>
+    </AuthProvider>
   </QueryClientProvider>
 );
 

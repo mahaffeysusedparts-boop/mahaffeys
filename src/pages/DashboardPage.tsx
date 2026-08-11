@@ -3,6 +3,7 @@ import { Navbar } from "@/components/layout/Navbar";
 import { storageService } from "@/services/storageService";
 import { scaleService } from "@/services/scaleService";
 import { Ticket, ScaleStatus, YardSettings } from "@/types/scrap";
+import { useAuth } from "@/context/AuthContext";
 import { Link } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -10,42 +11,30 @@ import { Badge } from "@/components/ui/badge";
 import {
   AreaChart,
   Area,
-  BarChart,
-  Bar,
+  ResponsiveContainer,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
 } from "recharts";
 import {
   Scale,
   Car,
   DollarSign,
   TrendingUp,
-  Users,
   ShieldCheck,
   Receipt,
-  Truck,
   Wrench,
   Activity,
   ArrowUpRight,
-  Sparkles,
   Zap,
   Banknote,
   Map,
   Plus,
-  Clock,
-  CheckCircle2,
-  AlertTriangle,
-  HardDrive,
-  Package,
-  Layers,
-  ChevronRight,
   RotateCcw,
+  Users,
+  Shield,
+  ChevronRight,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -53,6 +42,7 @@ export default function DashboardPage() {
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [scaleStatus, setScaleStatus] = useState<ScaleStatus>(scaleService.getStatus());
   const [settings, setSettings] = useState<YardSettings>(storageService.getSettings());
+  const { isAdmin, pendingUsersCount } = useAuth();
 
   useEffect(() => {
     setTickets(storageService.getTickets());
@@ -82,18 +72,8 @@ export default function DashboardPage() {
     return acc;
   }, 0);
 
-  const totalLifetimeLbs = completedTickets.reduce((acc, t) => {
-    if (t.ticketType === "CAR_SALVAGE" && t.carRecord) {
-      return acc + t.carRecord.vehicleWeightLbs;
-    } else if (t.scrapLines) {
-      return acc + t.scrapLines.reduce((lAcc, l) => lAcc + l.billableWeight, 0);
-    }
-    return acc;
-  }, 0);
-
   const carsStagedToday = todayTickets.filter((t) => t.ticketType === "CAR_SALVAGE").length;
   const vehiclesCount = storageService.getPullYardVehicles().length;
-  const customersCount = storageService.getCustomers().length;
   const cashLogs = storageService.getCashDrawerLogs();
   const currentCashBalance = cashLogs.length > 0 ? cashLogs[0].balanceAfter : 5000;
 
@@ -106,14 +86,6 @@ export default function DashboardPage() {
     { day: "Fri", scrapLbs: 31200, payout: 4600 },
     { day: "Sat", scrapLbs: 38900, payout: 5900 },
     { day: "Today", scrapLbs: totalScrapLbsToday || 14200, payout: totalTodayPayout || 1850 },
-  ];
-
-  // Chart 2: Material Mix Breakdown
-  const materialCategoryData = [
-    { name: "Non-Ferrous (Copper/Brass)", value: 42, color: "#10b981" },
-    { name: "Auto Salvage Vehicles", value: 35, color: "#f59e0b" },
-    { name: "Ferrous Heavy Steel", value: 18, color: "#38bdf8" },
-    { name: "E-Waste & Batteries", value: 5, color: "#c084fc" },
   ];
 
   const handleZeroScale = () => {
@@ -367,6 +339,9 @@ export default function DashboardPage() {
                 { title: "Compliance & NMVTIS Hub", path: "/compliance", icon: ShieldCheck, color: "text-purple-400" },
                 { title: "Cash Drawer Station", path: "/cash-drawer", icon: Banknote, color: "text-emerald-400" },
                 { title: "Yard Storage Grid Map", path: "/yard-map", icon: Map, color: "text-blue-400" },
+                ...(isAdmin
+                  ? [{ title: `User Access (${pendingUsersCount} pending)`, path: "/users", icon: Shield, color: "text-amber-400" }]
+                  : []),
               ].map((item, i) => {
                 const Icon = item.icon;
                 return (
