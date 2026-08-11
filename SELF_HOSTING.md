@@ -29,7 +29,17 @@ Add the following line, replacing `YOUR_SECRET_PASSWORD` with a strong, unique p
 POSTGRES_PASSWORD=YOUR_SECRET_PASSWORD
 ```
 
-### 3. Build and Run
+### 3. Install and build Mahaffeys
+
+```bash
+sudo git clone https://github.com/mahaffeysusedparts-boop/mahaffeys /var/www/mahaffeys
+sudo chown -R "$(id -un):$(id -gn)" /var/www/mahaffeys
+cd /var/www/mahaffeys
+npm ci
+npm run build
+```
+
+### 4. Build and Run
 
 From the project root directory, build and start all services in the background:
 
@@ -153,7 +163,7 @@ curl http://127.0.0.1:3000/api/health
 
 `scripts/reinstall.sh` performs a PostgreSQL backup, stops the service, replaces the app with a fresh clone, rebuilds it, restarts systemd, reloads Nginx, and checks application health.
 
-Before using it, set `REPO_URL` and, if needed, `BRANCH` near the top of the script. The initial PostgreSQL, environment, systemd, and Nginx setup above must already exist.
+The initial PostgreSQL, environment, systemd, and Nginx setup above must already exist.
 
 ```bash
 cd /var/www/mahaffeys
