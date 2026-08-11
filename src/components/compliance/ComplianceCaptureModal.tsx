@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -25,10 +25,10 @@ import {
   ShieldCheck,
   UserCheck,
   Trash2,
+  Video,
+  RefreshCw,
 } from "lucide-react";
-import {
-  ComplianceCaptures,
-} from "@/types/scrap";
+import { ComplianceCaptures } from "@/types/scrap";
 import {
   DLScanResult,
   SAMPLE_DL_PROFILES,
@@ -64,10 +64,105 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
   const [activeTab, setActiveTab] = useState<string>("id");
   const [scannedProfile, setScannedProfile] = useState<DLScanResult | undefined>();
   const [isCapturing, setIsCapturing] = useState(false);
+  const [useLiveCamera, setUseLiveCamera] = useState(false);
+
+  // References for iPad Camera & File inputs
+  const cameraInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const [currentUploadTarget, setCurrentUploadTarget] = useState<keyof ComplianceCaptures | null>(null);
 
   const complianceStats = calculateComplianceScore(captures);
+
+  // Cleanup camera stream when modal closes
+  useEffect(() => {
+    if (!isOpen) {
+      stopCameraStream();
+    }
+  }, [isOpen]);
+
+  const stopCameraStream = () => {
+    if (videoRef.current && videoRef.current.srcObject) {
+      const stream = videoRef.current.srcObject as MediaStream;
+      stream.getTracks().forEach((track) => track.stop());
+      videoRef.current.srcObject = null;
+    }
+    setUseLiveCamera(false);
+  };
+
+  // Launch live iPad Web Camera Stream
+  const handleStartLiveCamera = async (targetKey: keyof ComplianceCaptures) => {
+    setCurrentUploadTarget(targetKey);
+    setUseLiveCamera(true);
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } },
+        audio: false,
+      });
+
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+      }
+    } catch (err) {
+      console.warn("Camera stream fallback to native file input:", err);
+      toast.info("Opening iPad native camera...");
+      handleTriggerCameraInput(targetKey);
+    }
+  };
+
+  // Capture frame from iPad live camera video element
+  const handleCaptureVideoFrame = () => {
+    if (videoRef.current && canvasRef.current && currentUploadTarget) {
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      canvas.width = video.videoWidth || 640;
+      canvas.height = video.videoHeight || 480;
+
+      const ctx = canvas.getContext("2d");
+      if (ctx) {
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+
+        setCaptures((prev) => ({
+          ...prev,
+          [currentUploadTarget]: dataUrl,
+        }));
+
+        toast.success("Photo captured from iPad camera!");
+        stopCameraStream();
+      }
+    }
+  };
+
+  // Open native iPad device camera picker directly
+  const handleTriggerCameraInput = (key: keyof ComplianceCaptures) => {
+    setCurrentUploadTarget(key);
+    cameraInputRef.current?.click();
+  };
+
+  const handleTriggerUpload = (key: keyof ComplianceCaptures) => {
+    setCurrentUploadTarget(key);
+    fileInputRef.current?.click();
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file && currentUploadTarget) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const result = event.target?.result as string;
+        setCaptures((prev) => ({
+          ...prev,
+          [currentUploadTarget]: result,
+        }));
+        toast.success("Photo uploaded successfully");
+      };
+      reader.readAsDataURL(file);
+    }
+  };
 
   const handleGenerateSample = (key: keyof ComplianceCaptures, type: 'person' | 'id' | 'vehicle' | 'plate' | 'load') => {
     setIsCapturing(true);
@@ -79,7 +174,7 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
       }));
       setIsCapturing(false);
       toast.success(`${type.toUpperCase()} snapshot captured successfully!`);
-    }, 300);
+    }, 250);
   };
 
   const handleScanDlProfile = (profile: DLScanResult) => {
@@ -100,7 +195,7 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
       toast.success(`DL Barcode Scanned: ${profile.fullName} (${profile.idNumber})`, {
         description: "Customer fields and license plate auto-filled!",
       });
-    }, 400);
+    }, 300);
   };
 
   const handleClearCapture = (key: keyof ComplianceCaptures) => {
@@ -125,41 +220,33 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
       setCaptures(updated);
       setScannedProfile(randomProfile);
       setIsCapturing(false);
-      toast.success("100% Full Studio Photo Capture Completed!", {
+      toast.success("100% Studio Photo Capture Completed!", {
         description: `Verified for ${randomProfile.fullName} (${randomProfile.idNumber})`,
       });
-    }, 500);
-  };
-
-  const handleTriggerUpload = (key: keyof ComplianceCaptures) => {
-    setCurrentUploadTarget(key);
-    fileInputRef.current?.click();
-  };
-
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file && currentUploadTarget) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const result = event.target?.result as string;
-        setCaptures((prev) => ({
-          ...prev,
-          [currentUploadTarget]: result,
-        }));
-        toast.success("Photo uploaded successfully");
-      };
-      reader.readAsDataURL(file);
-    }
+    }, 400);
   };
 
   const handleSave = () => {
+    stopCameraStream();
     onSaveCaptures(captures, scannedProfile);
     onClose();
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl max-h-[92vh] overflow-y-auto bg-slate-950 text-slate-100 border-slate-800 p-6">
+    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) stopCameraStream(); onClose(); }}>
+      <DialogContent className="max-w-4xl max-h-[94vh] overflow-y-auto bg-slate-950 text-slate-100 border-slate-800 p-4 sm:p-6">
+        
+        {/* iPad Camera Native Input */}
+        <input
+          type="file"
+          ref={cameraInputRef}
+          onChange={handleFileUpload}
+          accept="image/*"
+          capture="environment"
+          className="hidden"
+        />
+
+        {/* Regular Upload Input */}
         <input
           type="file"
           ref={fileInputRef}
@@ -168,15 +255,17 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
           className="hidden"
         />
 
-        <DialogHeader className="space-y-2 border-b border-slate-800 pb-4">
+        <canvas ref={canvasRef} className="hidden" />
+
+        <DialogHeader className="space-y-2 border-b border-slate-800 pb-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2.5">
-              <div className="p-2.5 rounded-xl bg-blue-600/20 text-blue-400 border border-blue-500/30">
+              <div className="p-2.5 rounded-xl bg-blue-600/20 text-blue-400 border border-blue-500/30 shrink-0">
                 <ShieldCheck className="w-6 h-6" />
               </div>
               <div>
-                <DialogTitle className="text-xl font-bold tracking-tight text-white flex items-center gap-2">
-                  Legal Compliance & 5-Point Photo Studio
+                <DialogTitle className="text-lg sm:text-xl font-bold tracking-tight text-white flex items-center gap-2">
+                  iPad 5-Point Photo & ID Compliance Studio
                 </DialogTitle>
                 <DialogDescription className="text-slate-400 text-xs mt-0.5">
                   State Scrap Theft Statute & NMVTIS Anti-Fraud Digital Audit Suite
@@ -190,9 +279,7 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
                 className={`px-3 py-1.5 text-xs font-semibold rounded-full border ${
                   complianceStats.score === 100
                     ? "bg-emerald-950/80 text-emerald-400 border-emerald-500/50"
-                    : complianceStats.score > 0
-                    ? "bg-amber-950/80 text-amber-400 border-amber-500/50"
-                    : "bg-rose-950/80 text-rose-400 border-rose-500/50"
+                    : "bg-amber-950/80 text-amber-400 border-amber-500/50"
                 }`}
               >
                 {complianceStats.score === 100 ? (
@@ -200,25 +287,48 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
                 ) : (
                   <AlertCircle className="w-3.5 h-3.5 mr-1.5 text-amber-400 inline" />
                 )}
-                {complianceStats.score}% Compliant ({5 - complianceStats.missingItems.length}/5 Photos)
+                {complianceStats.score}% Compliant
               </Badge>
 
               <Button
                 size="sm"
-                variant="outline"
                 onClick={handleOneClickStudioScan}
                 disabled={isCapturing}
-                className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white border-none shadow-md shadow-blue-900/30 font-medium text-xs gap-1.5"
+                className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white border-none shadow-md text-xs font-bold gap-1.5 min-h-[40px] px-4"
               >
-                <Zap className="w-3.5 h-3.5 fill-amber-300 text-amber-300" />
-                Auto-Capture Studio (1-Click)
+                <Zap className="w-4 h-4 fill-amber-300 text-amber-300" />
+                Auto-Studio (1-Click)
               </Button>
             </div>
           </div>
         </DialogHeader>
 
-        {/* Live Thumbnails Bar */}
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 my-4 p-3 bg-slate-900/90 rounded-xl border border-slate-800">
+        {/* Live iPad Web Camera Stream overlay if active */}
+        {useLiveCamera && (
+          <div className="p-4 bg-slate-900 border-2 border-emerald-500/50 rounded-2xl space-y-3">
+            <div className="flex items-center justify-between text-xs font-bold text-emerald-400">
+              <span className="flex items-center gap-1.5">
+                <Video className="w-4 h-4 animate-pulse" /> Live iPad Camera Viewfinder
+              </span>
+              <Button size="sm" variant="ghost" onClick={stopCameraStream} className="h-7 text-slate-400">
+                Close Viewfinder
+              </Button>
+            </div>
+            <div className="relative aspect-video bg-black rounded-xl overflow-hidden border border-slate-800 flex items-center justify-center">
+              <video ref={videoRef} className="w-full h-full object-cover" playsInline muted />
+              <div className="absolute inset-0 border-2 border-dashed border-emerald-400/40 pointer-events-none rounded-xl" />
+            </div>
+            <Button
+              onClick={handleCaptureVideoFrame}
+              className="w-full h-12 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-sm gap-2 shadow-lg shadow-emerald-950"
+            >
+              <Camera className="w-5 h-5" /> Snap Photo Now
+            </Button>
+          </div>
+        )}
+
+        {/* Live Thumbnails Bar - Optimized 48px touch targets for iPad */}
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 my-3 p-2.5 bg-slate-900 rounded-xl border border-slate-800">
           {[
             { id: 'idPhotoUrl', title: 'DL / State ID', icon: CreditCard, val: captures.idPhotoUrl, tab: 'id' },
             { id: 'personPhotoUrl', title: 'Seller Face', icon: UserCheck, val: captures.personPhotoUrl, tab: 'person' },
@@ -232,13 +342,13 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
               <div
                 key={item.id}
                 onClick={() => setActiveTab(item.tab)}
-                className={`relative group cursor-pointer p-2 rounded-lg border text-center transition-all ${
+                className={`relative group cursor-pointer p-2 rounded-xl border text-center transition-all ${
                   isDone
-                    ? "bg-slate-800/80 border-emerald-500/50 hover:border-emerald-400"
-                    : "bg-slate-950/60 border-slate-800/80 hover:border-slate-700"
+                    ? "bg-slate-800/90 border-emerald-500/60 hover:border-emerald-400"
+                    : "bg-slate-950/80 border-slate-800 hover:border-slate-700"
                 }`}
               >
-                <div className="aspect-video bg-slate-900 rounded overflow-hidden relative flex items-center justify-center mb-1">
+                <div className="aspect-video bg-slate-950 rounded-lg overflow-hidden relative flex items-center justify-center mb-1 border border-slate-800/80">
                   {item.val ? (
                     <img src={item.val} alt={item.title} className="w-full h-full object-cover" />
                   ) : (
@@ -246,46 +356,46 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
                   )}
                   {isDone && (
                     <span className="absolute top-1 right-1 bg-emerald-500 text-slate-950 p-0.5 rounded-full">
-                      <CheckCircle2 className="w-3 h-3 stroke-[3]" />
+                      <CheckCircle2 className="w-3.5 h-3.5 stroke-[3]" />
                     </span>
                   )}
                 </div>
-                <div className="text-[11px] font-medium text-slate-300 truncate">{item.title}</div>
+                <div className="text-[11px] font-bold text-slate-200 truncate">{item.title}</div>
                 <div className="text-[9px] font-semibold text-slate-500">
-                  {isDone ? "VERIFIED" : "PENDING"}
+                  {isDone ? "VERIFIED" : "TAP TO CAPTURE"}
                 </div>
               </div>
             );
           })}
         </div>
 
-        {/* Studio Workspace Tabs */}
+        {/* Workspace Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid grid-cols-2 sm:grid-cols-5 bg-slate-900 border border-slate-800 p-1 rounded-xl">
-            <TabsTrigger value="id" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white text-xs gap-1.5">
-              <CreditCard className="w-3.5 h-3.5" /> ID Scan
+          <TabsList className="grid grid-cols-2 sm:grid-cols-5 bg-slate-900 border border-slate-800 p-1 rounded-xl h-auto">
+            <TabsTrigger value="id" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white text-xs gap-1.5 h-10 font-bold">
+              <CreditCard className="w-4 h-4" /> ID Scan
             </TabsTrigger>
-            <TabsTrigger value="person" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white text-xs gap-1.5">
-              <UserCheck className="w-3.5 h-3.5" /> Seller Face
+            <TabsTrigger value="person" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white text-xs gap-1.5 h-10 font-bold">
+              <UserCheck className="w-4 h-4" /> Seller Face
             </TabsTrigger>
-            <TabsTrigger value="vehicle" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white text-xs gap-1.5">
-              <Car className="w-3.5 h-3.5" /> Vehicle
+            <TabsTrigger value="vehicle" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white text-xs gap-1.5 h-10 font-bold">
+              <Car className="w-4 h-4" /> Vehicle
             </TabsTrigger>
-            <TabsTrigger value="plate" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white text-xs gap-1.5">
-              <Scan className="w-3.5 h-3.5" /> Plate
+            <TabsTrigger value="plate" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white text-xs gap-1.5 h-10 font-bold">
+              <Scan className="w-4 h-4" /> Plate
             </TabsTrigger>
-            <TabsTrigger value="load" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white text-xs gap-1.5">
-              <Package className="w-3.5 h-3.5" /> Cargo Load
+            <TabsTrigger value="load" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white text-xs gap-1.5 h-10 font-bold">
+              <Package className="w-4 h-4" /> Cargo
             </TabsTrigger>
           </TabsList>
 
           {/* TAB 1: ID BARCODE / OCR SCANNER */}
-          <TabsContent value="id" className="mt-4 space-y-4">
+          <TabsContent value="id" className="mt-3 space-y-4">
             <Card className="bg-slate-900 border-slate-800 text-slate-100">
               <CardHeader className="pb-3 border-b border-slate-800">
                 <CardTitle className="text-sm font-semibold flex items-center justify-between">
                   <span className="flex items-center gap-2 text-blue-400">
-                    <CreditCard className="w-4 h-4" /> Driver License / State ID Scanner (OCR & Barcode)
+                    <CreditCard className="w-4 h-4" /> Driver License / State ID Scanner
                   </span>
                   {captures.idPhotoUrl && (
                     <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30">ID Verified</Badge>
@@ -299,11 +409,11 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
                       <>
                         <img src={captures.idPhotoUrl} alt="ID Scan" className="w-full h-full object-contain rounded" />
                         <div className="absolute inset-0 bg-slate-950/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-                          <Button size="sm" variant="secondary" onClick={() => handleTriggerUpload('idPhotoUrl')}>
-                            <Upload className="w-3.5 h-3.5 mr-1" /> Replace
+                          <Button size="sm" variant="secondary" onClick={() => handleTriggerCameraInput('idPhotoUrl')}>
+                            <Camera className="w-3.5 h-3.5 mr-1" /> Re-Snap
                           </Button>
                           <Button size="sm" variant="destructive" onClick={() => handleClearCapture('idPhotoUrl')}>
-                            <Trash2 className="w-3.5 h-3.5 mr-1" /> Remove
+                            <Trash2 className="w-3.5 h-3.5 mr-1" /> Clear
                           </Button>
                         </div>
                       </>
@@ -312,79 +422,55 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
                         <div className="w-12 h-12 mx-auto rounded-full bg-blue-500/10 border border-blue-500/30 flex items-center justify-center text-blue-400">
                           <Scan className="w-6 h-6 animate-pulse" />
                         </div>
-                        <p className="text-xs text-slate-400">Place DL / State ID under scanner or select a test profile</p>
+                        <p className="text-xs text-slate-400">Point iPad camera at DL or tap camera button below</p>
                       </div>
                     )}
                   </div>
 
                   <div className="space-y-3">
-                    <div className="text-xs font-semibold text-slate-300 flex items-center justify-between">
-                      <span>Simulate Barcode/OCR DL Scanner:</span>
-                      <span className="text-[10px] text-blue-400 font-mono">2D PDF417 BARCODE</span>
-                    </div>
-                    <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
-                      {SAMPLE_DL_PROFILES.map((profile, i) => (
-                        <div
-                          key={i}
-                          onClick={() => handleScanDlProfile(profile)}
-                          className={`p-2.5 rounded-lg border text-xs cursor-pointer transition-all flex items-center justify-between ${
-                            scannedProfile?.idNumber === profile.idNumber
-                              ? "bg-blue-950/70 border-blue-500 text-white"
-                              : "bg-slate-950/60 border-slate-800 hover:border-slate-700 text-slate-300"
-                          }`}
-                        >
-                          <div>
-                            <div className="font-semibold text-slate-100">{profile.fullName}</div>
-                            <div className="text-[11px] text-slate-400 font-mono">{profile.idNumber} ({profile.idState})</div>
-                          </div>
-                          <Button size="sm" variant="ghost" className="h-7 text-xs text-blue-400 hover:text-blue-300 hover:bg-blue-900/30">
-                            Scan ID
-                          </Button>
-                        </div>
-                      ))}
+                    <div className="grid grid-cols-2 gap-2">
+                      <Button
+                        onClick={() => handleTriggerCameraInput('idPhotoUrl')}
+                        className="h-11 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs gap-1.5"
+                      >
+                        <Camera className="w-4 h-4" /> iPad Camera
+                      </Button>
+                      <Button
+                        onClick={() => handleStartLiveCamera('idPhotoUrl')}
+                        className="h-11 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs gap-1.5"
+                      >
+                        <Video className="w-4 h-4" /> Live Video
+                      </Button>
                     </div>
 
-                    <div className="flex gap-2 pt-2">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleGenerateSample('idPhotoUrl', 'id')}
-                        className="flex-1 text-xs border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-200"
-                      >
-                        <Camera className="w-3.5 h-3.5 mr-1.5 text-blue-400" /> Snap ID Photo
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleTriggerUpload('idPhotoUrl')}
-                        className="text-xs border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-200"
-                      >
-                        <Upload className="w-3.5 h-3.5 mr-1" /> Upload File
-                      </Button>
+                    <div className="space-y-1.5">
+                      <span className="text-[11px] font-semibold text-slate-300 block">Simulate Barcode Scan:</span>
+                      <div className="space-y-1.5 max-h-44 overflow-y-auto pr-1">
+                        {SAMPLE_DL_PROFILES.map((profile, i) => (
+                          <div
+                            key={i}
+                            onClick={() => handleScanDlProfile(profile)}
+                            className="p-2.5 rounded-lg border bg-slate-950/80 border-slate-800 hover:border-blue-500 cursor-pointer text-xs flex items-center justify-between"
+                          >
+                            <div>
+                              <div className="font-bold text-slate-100">{profile.fullName}</div>
+                              <div className="text-[10px] text-slate-400 font-mono">{profile.idNumber} ({profile.idState})</div>
+                            </div>
+                            <Button size="sm" variant="ghost" className="h-7 text-xs text-blue-400">
+                              Scan
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   </div>
                 </div>
-
-                {scannedProfile && (
-                  <div className="p-3 bg-blue-950/40 border border-blue-500/30 rounded-lg text-xs space-y-1 font-mono text-blue-200">
-                    <div className="text-white font-semibold flex items-center gap-1.5">
-                      <Sparkles className="w-3.5 h-3.5 text-blue-400" /> OCR Extracted Details:
-                    </div>
-                    <div className="grid grid-cols-2 gap-2 text-[11px] pt-1">
-                      <div><strong className="text-slate-400">Name:</strong> {scannedProfile.fullName}</div>
-                      <div><strong className="text-slate-400">ID Number:</strong> {scannedProfile.idNumber}</div>
-                      <div><strong className="text-slate-400">State:</strong> {scannedProfile.idState}</div>
-                      <div><strong className="text-slate-400">Plate Ref:</strong> {scannedProfile.vehicleLicensePlate}</div>
-                      <div className="col-span-2"><strong className="text-slate-400">Address:</strong> {scannedProfile.address}</div>
-                    </div>
-                  </div>
-                )}
               </CardContent>
             </Card>
           </TabsContent>
 
           {/* TAB 2: SELLER FACE SHOT */}
-          <TabsContent value="person" className="mt-4 space-y-4">
+          <TabsContent value="person" className="mt-3 space-y-4">
             <Card className="bg-slate-900 border-slate-800 text-slate-100">
               <CardHeader className="pb-3 border-b border-slate-800">
                 <CardTitle className="text-sm font-semibold flex items-center justify-between">
@@ -403,39 +489,36 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
                       <>
                         <img src={captures.personPhotoUrl} alt="Seller Face" className="w-full h-full object-cover rounded" />
                         <div className="absolute inset-0 bg-slate-950/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-                          <Button size="sm" variant="secondary" onClick={() => handleTriggerUpload('personPhotoUrl')}>
-                            <Upload className="w-3.5 h-3.5 mr-1" /> Replace
+                          <Button size="sm" variant="secondary" onClick={() => handleTriggerCameraInput('personPhotoUrl')}>
+                            <Camera className="w-3.5 h-3.5 mr-1" /> Re-Snap
                           </Button>
                           <Button size="sm" variant="destructive" onClick={() => handleClearCapture('personPhotoUrl')}>
-                            <Trash2 className="w-3.5 h-3.5 mr-1" /> Remove
+                            <Trash2 className="w-3.5 h-3.5 mr-1" /> Clear
                           </Button>
                         </div>
                       </>
                     ) : (
                       <div className="text-center space-y-2">
                         <UserCheck className="w-10 h-10 mx-auto text-slate-600" />
-                        <p className="text-xs text-slate-400">Direct camera at seller for facial verification</p>
+                        <p className="text-xs text-slate-400">Direct iPad front/rear camera at seller</p>
                       </div>
                     )}
                   </div>
 
-                  <div className="space-y-3 text-xs text-slate-300">
-                    <p className="text-slate-400 leading-relaxed">
-                      State anti-scrap statutes require a clear headshot photo of the individual presenting scrap materials or delivering salvage vehicles.
-                    </p>
-                    <div className="space-y-2">
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-2 gap-2">
                       <Button
-                        onClick={() => handleGenerateSample('personPhotoUrl', 'person')}
-                        className="w-full bg-blue-600 hover:bg-blue-500 text-white text-xs gap-1.5"
+                        onClick={() => handleTriggerCameraInput('personPhotoUrl')}
+                        className="h-12 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs gap-1.5"
                       >
-                        <Camera className="w-4 h-4" /> Trigger Camera Face Shot
+                        <Camera className="w-4 h-4" /> iPad Camera
                       </Button>
                       <Button
                         variant="outline"
-                        onClick={() => handleTriggerUpload('personPhotoUrl')}
-                        className="w-full text-xs border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-200"
+                        onClick={() => handleGenerateSample('personPhotoUrl', 'person')}
+                        className="h-12 border-slate-700 bg-slate-800 text-slate-200 text-xs font-bold"
                       >
-                        <Upload className="w-3.5 h-3.5 mr-1.5" /> Upload Photo File
+                        <Sparkles className="w-4 h-4 text-amber-400" /> Sample Image
                       </Button>
                     </div>
                   </div>
@@ -445,7 +528,7 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
           </TabsContent>
 
           {/* TAB 3: VEHICLE SHOT */}
-          <TabsContent value="vehicle" className="mt-4 space-y-4">
+          <TabsContent value="vehicle" className="mt-3 space-y-4">
             <Card className="bg-slate-900 border-slate-800 text-slate-100">
               <CardHeader className="pb-3 border-b border-slate-800">
                 <CardTitle className="text-sm font-semibold flex items-center justify-between">
@@ -464,41 +547,29 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
                       <>
                         <img src={captures.vehiclePhotoUrl} alt="Vehicle" className="w-full h-full object-cover rounded" />
                         <div className="absolute inset-0 bg-slate-950/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-                          <Button size="sm" variant="secondary" onClick={() => handleTriggerUpload('vehiclePhotoUrl')}>
-                            <Upload className="w-3.5 h-3.5 mr-1" /> Replace
+                          <Button size="sm" variant="secondary" onClick={() => handleTriggerCameraInput('vehiclePhotoUrl')}>
+                            <Camera className="w-3.5 h-3.5 mr-1" /> Re-Snap
                           </Button>
                           <Button size="sm" variant="destructive" onClick={() => handleClearCapture('vehiclePhotoUrl')}>
-                            <Trash2 className="w-3.5 h-3.5 mr-1" /> Remove
+                            <Trash2 className="w-3.5 h-3.5 mr-1" /> Clear
                           </Button>
                         </div>
                       </>
                     ) : (
                       <div className="text-center space-y-2">
                         <Car className="w-10 h-10 mx-auto text-slate-600" />
-                        <p className="text-xs text-slate-400">Capture overall vehicle condition showing make, model & color</p>
+                        <p className="text-xs text-slate-400">Snap vehicle overall body condition</p>
                       </div>
                     )}
                   </div>
 
-                  <div className="space-y-3 text-xs text-slate-300">
-                    <p className="text-slate-400 leading-relaxed">
-                      Required for NMVTIS salvage record auditing to verify vehicle body structure and completeness.
-                    </p>
-                    <div className="space-y-2">
-                      <Button
-                        onClick={() => handleGenerateSample('vehiclePhotoUrl', 'vehicle')}
-                        className="w-full bg-blue-600 hover:bg-blue-500 text-white text-xs gap-1.5"
-                      >
-                        <Camera className="w-4 h-4" /> Trigger Yard Camera #2 (Vehicle)
-                      </Button>
-                      <Button
-                        variant="outline"
-                        onClick={() => handleTriggerUpload('vehiclePhotoUrl')}
-                        className="w-full text-xs border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-200"
-                      >
-                        <Upload className="w-3.5 h-3.5 mr-1.5" /> Upload Photo File
-                      </Button>
-                    </div>
+                  <div className="space-y-3">
+                    <Button
+                      onClick={() => handleTriggerCameraInput('vehiclePhotoUrl')}
+                      className="w-full h-12 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs gap-1.5"
+                    >
+                      <Camera className="w-4 h-4" /> Snap Vehicle with iPad Camera
+                    </Button>
                   </div>
                 </div>
               </CardContent>
@@ -506,7 +577,7 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
           </TabsContent>
 
           {/* TAB 4: LICENSE PLATE SHOT */}
-          <TabsContent value="plate" className="mt-4 space-y-4">
+          <TabsContent value="plate" className="mt-3 space-y-4">
             <Card className="bg-slate-900 border-slate-800 text-slate-100">
               <CardHeader className="pb-3 border-b border-slate-800">
                 <CardTitle className="text-sm font-semibold flex items-center justify-between">
@@ -525,49 +596,37 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
                       <>
                         <img src={captures.licensePlatePhotoUrl} alt="License Plate" className="w-full h-full object-cover rounded" />
                         <div className="absolute inset-0 bg-slate-950/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-                          <Button size="sm" variant="secondary" onClick={() => handleTriggerUpload('licensePlatePhotoUrl')}>
-                            <Upload className="w-3.5 h-3.5 mr-1" /> Replace
+                          <Button size="sm" variant="secondary" onClick={() => handleTriggerCameraInput('licensePlatePhotoUrl')}>
+                            <Camera className="w-3.5 h-3.5 mr-1" /> Re-Snap
                           </Button>
                           <Button size="sm" variant="destructive" onClick={() => handleClearCapture('licensePlatePhotoUrl')}>
-                            <Trash2 className="w-3.5 h-3.5 mr-1" /> Remove
+                            <Trash2 className="w-3.5 h-3.5 mr-1" /> Clear
                           </Button>
                         </div>
                       </>
                     ) : (
                       <div className="text-center space-y-2">
                         <Scan className="w-10 h-10 mx-auto text-slate-600" />
-                        <p className="text-xs text-slate-400">Capture close-up of vehicle rear license plate tag</p>
+                        <p className="text-xs text-slate-400">Snap close-up of vehicle rear tag</p>
                       </div>
                     )}
                   </div>
 
-                  <div className="space-y-3 text-xs text-slate-300">
-                    <p className="text-slate-400 leading-relaxed">
-                      Automatically cross-referenced against law enforcement stolen vehicle databases and state registries.
-                    </p>
-                    <div className="space-y-2">
-                      <Button
-                        onClick={() => handleGenerateSample('licensePlatePhotoUrl', 'plate')}
-                        className="w-full bg-blue-600 hover:bg-blue-500 text-white text-xs gap-1.5"
-                      >
-                        <Camera className="w-4 h-4" /> Trigger LPR Plate Camera
-                      </Button>
-                      <Button
-                        variant="outline"
-                        onClick={() => handleTriggerUpload('licensePlatePhotoUrl')}
-                        className="w-full text-xs border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-200"
-                      >
-                        <Upload className="w-3.5 h-3.5 mr-1.5" /> Upload File
-                      </Button>
-                    </div>
+                  <div className="space-y-3">
+                    <Button
+                      onClick={() => handleTriggerCameraInput('licensePlatePhotoUrl')}
+                      className="w-full h-12 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs gap-1.5"
+                    >
+                      <Camera className="w-4 h-4" /> Snap Tag with iPad Camera
+                    </Button>
                   </div>
                 </div>
               </CardContent>
             </Card>
           </TabsContent>
 
-          {/* TAB 5: CARGO / SCRAP LOAD SHOT */}
-          <TabsContent value="load" className="mt-4 space-y-4">
+          {/* TAB 5: CARGO LOAD SHOT */}
+          <TabsContent value="load" className="mt-3 space-y-4">
             <Card className="bg-slate-900 border-slate-800 text-slate-100">
               <CardHeader className="pb-3 border-b border-slate-800">
                 <CardTitle className="text-sm font-semibold flex items-center justify-between">
@@ -586,41 +645,29 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
                       <>
                         <img src={captures.loadPhotoUrl} alt="Cargo Load" className="w-full h-full object-cover rounded" />
                         <div className="absolute inset-0 bg-slate-950/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-                          <Button size="sm" variant="secondary" onClick={() => handleTriggerUpload('loadPhotoUrl')}>
-                            <Upload className="w-3.5 h-3.5 mr-1" /> Replace
+                          <Button size="sm" variant="secondary" onClick={() => handleTriggerCameraInput('loadPhotoUrl')}>
+                            <Camera className="w-3.5 h-3.5 mr-1" /> Re-Snap
                           </Button>
                           <Button size="sm" variant="destructive" onClick={() => handleClearCapture('loadPhotoUrl')}>
-                            <Trash2 className="w-3.5 h-3.5 mr-1" /> Remove
+                            <Trash2 className="w-3.5 h-3.5 mr-1" /> Clear
                           </Button>
                         </div>
                       </>
                     ) : (
                       <div className="text-center space-y-2">
                         <Package className="w-10 h-10 mx-auto text-slate-600" />
-                        <p className="text-xs text-slate-400">Overhead or scale view of scrap material load</p>
+                        <p className="text-xs text-slate-400">Snap overhead or scale bed view</p>
                       </div>
                     )}
                   </div>
 
-                  <div className="space-y-3 text-xs text-slate-300">
-                    <p className="text-slate-400 leading-relaxed">
-                      Provides photo verification of high-value metals (copper wire, brass, catalytic converters) before payment disbursement.
-                    </p>
-                    <div className="space-y-2">
-                      <Button
-                        onClick={() => handleGenerateSample('loadPhotoUrl', 'load')}
-                        className="w-full bg-blue-600 hover:bg-blue-500 text-white text-xs gap-1.5"
-                      >
-                        <Camera className="w-4 h-4" /> Trigger Scale Overhead Camera
-                      </Button>
-                      <Button
-                        variant="outline"
-                        onClick={() => handleTriggerUpload('loadPhotoUrl')}
-                        className="w-full text-xs border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-200"
-                      >
-                        <Upload className="w-3.5 h-3.5 mr-1.5" /> Upload File
-                      </Button>
-                    </div>
+                  <div className="space-y-3">
+                    <Button
+                      onClick={() => handleTriggerCameraInput('loadPhotoUrl')}
+                      className="w-full h-12 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs gap-1.5"
+                    >
+                      <Camera className="w-4 h-4" /> Snap Cargo Bed with iPad
+                    </Button>
                   </div>
                 </div>
               </CardContent>
@@ -629,23 +676,16 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
         </Tabs>
 
         {/* Footer actions */}
-        <DialogFooter className="mt-6 pt-4 border-t border-slate-800 flex items-center justify-between sm:justify-between">
-          <div className="text-xs text-slate-400 flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block animate-ping" />
-            <span>Digital Audit Trail Encrypted (SHA-256)</span>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <Button variant="ghost" onClick={onClose} className="text-slate-400 hover:text-white text-xs">
-              Cancel
-            </Button>
-            <Button
-              onClick={handleSave}
-              className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold px-5 gap-1.5"
-            >
-              <CheckCircle2 className="w-4 h-4" /> Apply Compliance Captures
-            </Button>
-          </div>
+        <DialogFooter className="mt-4 pt-3 border-t border-slate-800 flex items-center justify-between">
+          <Button variant="ghost" onClick={() => { stopCameraStream(); onClose(); }} className="text-slate-400 text-xs">
+            Cancel
+          </Button>
+          <Button
+            onClick={handleSave}
+            className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-extrabold px-6 h-11 gap-1.5 shadow-lg shadow-emerald-950"
+          >
+            <CheckCircle2 className="w-4 h-4" /> Apply Photo Suite
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
