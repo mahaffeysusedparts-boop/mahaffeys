@@ -295,7 +295,7 @@ export default function PullAPartPage() {
           <Card className="bg-slate-900 border-slate-800 text-white">
             <CardContent className="p-4 flex items-center justify-between">
               <div>
-                <p className="text-xs text-slate-400 font-medium">Fresh Set Vehicles (<7 Days)</p>
+                <p className="text-xs text-slate-400 font-medium">Fresh Set Vehicles (&lt;7 Days)</p>
                 <p className="text-2xl font-black text-emerald-400 font-mono mt-0.5">{freshSetCount}</p>
                 <p className="text-[11px] text-slate-500 mt-0.5">High component availability</p>
               </div>
