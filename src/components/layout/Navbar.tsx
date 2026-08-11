@@ -29,12 +29,13 @@ import {
   Server,
   Menu,
   ChevronRight,
+  LayoutDashboard,
 } from 'lucide-react';
 
 export const Navbar: React.FC = () => {
   const location = useLocation();
   const [scaleStatus, setScaleStatus] = useState<ScaleStatus>(scaleService.getStatus());
-  const [settings, setSettings] = useState<YardSettings>(storageService.getSettings());
+  const [settings] = useState<YardSettings>(storageService.getSettings());
   const [configOpen, setConfigOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -46,18 +47,19 @@ export const Navbar: React.FC = () => {
   }, []);
 
   const navItems = [
-    { label: 'Intake Station', path: '/', icon: Scale },
+    { label: 'Dashboard', path: '/', icon: LayoutDashboard },
+    { label: 'Intake Station', path: '/intake', icon: Scale },
     { label: 'Public Inventory', path: '/inventory', icon: Car },
     { label: 'Pull-A-Part Suite', path: '/pull-a-part', icon: Wrench },
     { label: 'Compliance & NMVTIS', path: '/compliance', icon: ShieldCheck },
     { label: 'Ticket Ledger', path: '/tickets', icon: Receipt },
-    { label: 'Metal & Auto Rates', path: '/pricing', icon: DollarSign },
+    { label: 'Metal Rates', path: '/pricing', icon: DollarSign },
     { label: 'Containers', path: '/containers', icon: Truck },
     { label: 'Cash Drawer', path: '/cash-drawer', icon: Banknote },
     { label: 'Yard Map', path: '/yard-map', icon: Map },
-    { label: 'Customers & VINs', path: '/customers', icon: Users },
+    { label: 'Customers', path: '/customers', icon: Users },
     { label: 'System Status', path: '/system-status', icon: Server },
-    { label: 'Yard Settings', path: '/settings', icon: Settings },
+    { label: 'Settings', path: '/settings', icon: Settings },
   ];
 
   return (
@@ -103,7 +105,7 @@ export const Navbar: React.FC = () => {
                   <div className="flex-1 overflow-y-auto p-3 space-y-1">
                     {navItems.map((item) => {
                       const Icon = item.icon;
-                      const isActive = location.pathname === item.path;
+                      const isActive = location.pathname === item.path || (item.path === '/' && location.pathname === '/dashboard');
                       return (
                         <Link
                           key={item.path}
@@ -152,7 +154,7 @@ export const Navbar: React.FC = () => {
                       ScrapFlow
                     </span>
                     <Badge variant="outline" className="hidden sm:inline-flex border-emerald-500/40 text-emerald-400 text-[10px] px-1.5 py-0 bg-emerald-950/40">
-                      YARD SUITE
+                      COMMAND
                     </Badge>
                   </div>
                   <p className="text-[11px] text-slate-400 font-medium truncate max-w-[110px] sm:max-w-[180px]">
@@ -166,7 +168,7 @@ export const Navbar: React.FC = () => {
             <nav className="hidden xl:flex items-center space-x-1 overflow-x-auto py-1">
               {navItems.map((item) => {
                 const Icon = item.icon;
-                const isActive = location.pathname === item.path;
+                const isActive = location.pathname === item.path || (item.path === '/' && location.pathname === '/dashboard');
                 return (
                   <Link
                     key={item.path}
@@ -184,7 +186,7 @@ export const Navbar: React.FC = () => {
               })}
             </nav>
 
-            {/* Right: Scale Live Status & Touch Quick Toggle */}
+            {/* Right: Scale Live Status & Quick Toggle */}
             <div className="flex items-center space-x-2">
               <button
                 onClick={() => setConfigOpen(true)}
@@ -219,16 +221,23 @@ export const Navbar: React.FC = () => {
                   </div>
                 </div>
               </button>
+
+              <Badge
+                variant="secondary"
+                className="hidden xl:inline-flex bg-slate-800 text-slate-300 border-slate-700 text-xs font-normal"
+              >
+                Op: {settings.operatorName}
+              </Badge>
             </div>
 
           </div>
         </div>
 
-        {/* Quick Horizontal Scrollbar for iPads and Tablets (Medium screen range) */}
+        {/* Quick Horizontal Scrollbar for iPads and Tablets */}
         <div className="hidden md:flex xl:hidden items-center space-x-1 bg-slate-950 border-t border-slate-800/80 px-3 py-1.5 text-xs overflow-x-auto">
           {navItems.map((item) => {
             const Icon = item.icon;
-            const isActive = location.pathname === item.path;
+            const isActive = location.pathname === item.path || (item.path === '/' && location.pathname === '/dashboard');
             return (
               <Link
                 key={item.path}
