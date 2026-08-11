@@ -52,130 +52,32 @@ The application will now be running and accessible at `http://192.168.1.210`.
 
 ## Option B: Traditional systemd Deployment
 
-This method installs the application components directly onto the host server.
+This method uses the `fresh-install.sh` script to install all application components directly onto the host server.
 
-### Deployment layout
+**Warning:** This script is destructive and will permanently delete any existing Mahaffeys deployment and database on the server.
 
-- Public/LAN traffic: Nginx on ports `80` and `443`
-- Mahaffeys: Nitro on `127.0.0.1:3000` (not exposed directly)
-- Database: PostgreSQL on the same server (not exposed to the internet)
-- App directory: `/var/www/mahaffeys`
-- Private environment file: `/etc/mahaffeys/mahaffeys.env`
+### Automated Installation
 
-Reserve a static address for this server in the router's DHCP settings. This deployment uses:
+1.  Ensure you are running the script from a fresh copy of the project source code, not from within the final `/var/www/mahaffeys` installation directory.
+2.  Make the script executable and run it with `sudo`:
 
-- Server LAN IP: `192.168.1.210`
-- Linux login username: `jhilliard`
-- Domain: `app.mahaffeysusedparts.com`
+    ```bash
+    chmod +x scripts/fresh-install.sh
+    sudo ./scripts/fresh-install.sh
+    ```
 
-Also record the Git repository URL.
+The installer will guide you through the process, which includes:
+-   Prompting for the `jhilliard` Linux user password.
+-   Confirming the data wipe.
+-   Installing system dependencies (Nginx, PostgreSQL, Node.js).
+-   Configuring the database, application, `pm2` service manager, and Nginx.
+-   Attempting to secure the site with a free Let's Encrypt HTTPS certificate.
 
-### 1. Prepare the server
+Once complete, the application will be running at `http://192.168.1.210` and, if successful, `https://app.mahaffeysusedparts.com`.
 
-The following examples target Ubuntu 22.04/24.04 or a current Debian release.
+### Post-Installation
 
-```bash
-sudo apt update && sudo apt upgrade -y
-sudo apt install -y curl git build-essential nginx postgresql postgresql-client ufw
-
-curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
-sudo apt install -y nodejs
-node --version
-npm --version
-```
-
-### 2. Create the PostgreSQL database
-
-Generate a long password, then open PostgreSQL's administrative console:
-
-```bash
-openssl rand -hex 24
-sudo -u postgres psql
-```
-
-Inside the PostgreSQL console, replace `PASTE_GENERATED_PASSWORD` and create the local database:
-
-```sql
-CREATE USER mahaffeys WITH ENCRYPTED PASSWORD 'PASTE_GENERATED_PASSWORD';
-CREATE DATABASE mahaffeys OWNER mahaffeys;
-\q
-```
-
-Create the protected runtime configuration. Replace the password with the same generated value:
-
-```bash
-sudo install -d -m 750 /etc/mahaffeys
-sudo nano /etc/mahaffeys/mahaffeys.env
-```
-
-File contents:
-
-```ini
-NITRO_HOST=127.0.0.1
-NITRO_PORT=3000
-NITRO_DATABASE_URL=postgresql://mahaffeys:PASTE_GENERATED_PASSWORD@127.0.0.1:5432/mahaffeys
-```
-
-Protect it from other local users while allowing your current deployment account to read it:
-
-```bash
-sudo chown root:"$(id -gn)" /etc/mahaffeys/mahaffeys.env
-sudo chmod 640 /etc/mahaffeys/mahaffeys.env
-```
-
-Use a URL-safe database password. The hexadecimal password generated above is URL-safe. Never commit this environment file to Git.
-
-### 3. Install and build Mahaffeys
-
-```bash
-sudo git clone YOUR_REPOSITORY_URL /var/www/mahaffeys
-sudo chown -R "$(id -un):$(id -gn)" /var/www/mahaffeys
-cd /var/www/mahaffeys
-npm ci
-npm run build
-```
-
-The production build includes the browser assets and Nitro server output in `.output/`.
-
-### 4. Install the systemd service
-
-The included service template is configured to run under the `jhilliard` Linux account:
-
-```bash
-cd /var/www/mahaffeys
-sudo cp deploy/mahaffeys.service.example /etc/systemd/system/mahaffeys.service
-sudo systemctl daemon-reload
-sudo systemctl enable --now mahaffeys
-sudo systemctl status mahaffeys
-```
-
-Check the local API health endpoint:
-
-```bash
-curl http://127.0.0.1:3000/api/health
-```
-
-Do not expose port `3000` through the firewall or router. Nginx is the public entry point.
-
-### 5. Configure Nginx
-
-Copy the supplied configuration:
-
-```bash
-sudo cp nginx.conf.example /etc/nginx/sites-available/mahaffeys
-sudo nano /etc/nginx/sites-available/mahaffeys
-```
-
-Enable it and remove Ubuntu's default page:
-
-```bash
-sudo ln -sf /etc/nginx/sites-available/mahaffeys /etc/nginx/sites-enabled/mahaffeys
-sudo rm -f /etc/nginx/sites-enabled/default
-sudo nginx -t
-sudo systemctl reload nginx
-```
-
-The app should now open over the LAN at `http://192.168.1.210`.
+After the initial installation, you can manage the application using the `reinstall.sh` and `configure-lan-ssh.sh` scripts as described below.
 
 ### 6. Configure LAN-only SSH and the firewall
 
