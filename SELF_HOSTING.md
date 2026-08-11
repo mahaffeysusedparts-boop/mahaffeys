@@ -132,18 +132,22 @@ sudo systemctl reload nginx
 
 The app should now open over the LAN at `http://SERVER_LAN_IP`.
 
-## 6. Configure the firewall
+## 6. Configure LAN-only SSH and the firewall
 
-Allow SSH before enabling the firewall so remote administration remains available:
+The included SSH setup accepts a trusted public key, disables password and root login, binds SSH to `192.168.1.210`, and permits port 22 only from `192.168.1.0/24`:
 
 ```bash
-sudo ufw allow OpenSSH
+cd /var/www/mahaffeys
+chmod +x scripts/configure-lan-ssh.sh
+sudo ./scripts/configure-lan-ssh.sh
 sudo ufw allow 'Nginx Full'
 sudo ufw enable
 sudo ufw status
 ```
 
-Only ports `22`, `80`, and `443` should be reachable as needed. Do not expose PostgreSQL port `5432` or Nitro port `3000` to the internet.
+Do not expose SSH, PostgreSQL port `5432`, or Nitro port `3000` to the internet. The `jhilliard` password is not accepted by SSH after this key-only setup.
+
+Approved application administrators can use **Server Admin** in the Mahaffeys navigation to view service health, disk and memory usage, recent PM2 logs, and request a guarded production restart.
 
 ## 7. Make the app available from anywhere
 

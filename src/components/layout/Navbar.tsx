@@ -81,6 +81,7 @@ export const Navbar: React.FC = () => {
     { label: 'Customers', path: '/customers', icon: Users },
     ...(isAdmin ? [
       { label: 'User Access', path: '/users', icon: Shield, badge: pendingUsersCount },
+      { label: 'Server Admin', path: '/server-admin', icon: Lock },
       { label: 'Settings', path: '/settings', icon: Settings },
     ] : []),
     { label: 'System Status', path: '/system-status', icon: Server },
