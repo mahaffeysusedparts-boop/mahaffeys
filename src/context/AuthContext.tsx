@@ -72,6 +72,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const logout = async () => {
     await authService.logout();
     sharedStorage.disconnect();
+    sharedStorage.clear();
     syncState();
   };
 

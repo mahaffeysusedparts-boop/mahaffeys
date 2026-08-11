@@ -85,7 +85,7 @@ export default function DashboardPage() {
     { day: "Thu", scrapLbs: 26400, payout: 3820 },
     { day: "Fri", scrapLbs: 31200, payout: 4600 },
     { day: "Sat", scrapLbs: 38900, payout: 5900 },
-    { day: "Today", scrapLbs: totalScrapLbsToday || 14200, payout: totalTodayPayout || 1850 },
+    { day: "Today", scrapLbs: totalScrapLbsToday, payout: totalTodayPayout },
   ];
 
   const handleZeroScale = () => {
@@ -230,16 +230,16 @@ export default function DashboardPage() {
             </CardContent>
           </Card>
 
-          {/* Card 3: Pull-A-Part Staged Vehicles */}
+          {/* Card 3: Vehicles Processed Today */}
           <Card className="bg-slate-900 border-slate-800 text-white shadow-xl">
             <CardContent className="p-5 flex items-center justify-between">
               <div>
-                <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">Vehicles Staged On Lot</p>
+                <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">Vehicles Processed Today</p>
                 <p className="text-3xl font-black text-sky-400 font-mono mt-1">
-                  {vehiclesCount} <span className="text-sm font-normal text-slate-400">Cars</span>
+                  {carsStagedToday} <span className="text-sm font-normal text-slate-400">Cars</span>
                 </p>
-                <p className="text-[11px] text-slate-400 mt-1">
-                  +{carsStagedToday} Intake Today
+                <p className="text-[11px] text-slate-400 font-mono mt-1">
+                  {vehiclesCount.toLocaleString()} Total on Lot
                 </p>
               </div>
               <div className="p-3 rounded-2xl bg-sky-500/10 text-sky-400 border border-sky-500/20">

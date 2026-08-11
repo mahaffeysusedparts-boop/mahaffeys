@@ -81,6 +81,12 @@ export const sharedStorage = {
     localStorage.removeItem(key);
   },
 
+  clear() {
+    for (const key of SHARED_KEYS) {
+      localStorage.removeItem(key);
+    }
+  },
+
   async hydrate() {
     setStatus("connecting");
     const response = await apiRequest<{ state: Record<string, unknown> }>("/api/state");
