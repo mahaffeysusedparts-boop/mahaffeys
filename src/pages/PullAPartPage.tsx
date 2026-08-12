@@ -46,7 +46,9 @@ import {
   FileText,
   Flame,
   Check,
+  FileSpreadsheet,
 } from "lucide-react";
+import { BulkVehicleUploadModal } from "@/components/inventory/BulkVehicleUploadModal";
 import { toast } from "sonner";
 
 export default function PullAPartPage() {
@@ -63,6 +65,7 @@ export default function PullAPartPage() {
   // Vehicle Add / Edit Modal
   const [vehModalOpen, setVehModalOpen] = useState(false);
   const [editingVeh, setEditingVeh] = useState<PullYardVehicle | null>(null);
+  const [bulkUploadOpen, setBulkUploadOpen] = useState(false);
 
   const [vehRow, setVehRow] = useState("Row 104");
   const [vehSpace, setVehSpace] = useState("Space 12");
@@ -353,12 +356,19 @@ export default function PullAPartPage() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <Button
+              onClick={() => setBulkUploadOpen(true)}
+              className="bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs gap-1.5 shadow-md"
+            >
+              <FileSpreadsheet className="w-4 h-4 text-amber-300" /> Bulk Add Spreadsheet (CSV)
+            </Button>
             <Button
               onClick={handleOpenAddVeh}
-              className="bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs gap-1.5"
+              variant="outline"
+              className="border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs gap-1.5"
             >
-              <Plus className="w-4 h-4" /> Add Car to Yard
+              <Plus className="w-4 h-4 text-emerald-400" /> Single Car
             </Button>
             <Button
               onClick={() => setPassModalOpen(true)}
@@ -516,10 +526,18 @@ export default function PullAPartPage() {
                   </div>
                   <Button
                     size="sm"
-                    onClick={handleOpenAddVeh}
+                    onClick={() => setBulkUploadOpen(true)}
                     className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold gap-1 shrink-0"
                   >
-                    <Plus className="w-3.5 h-3.5" /> Add Car
+                    <FileSpreadsheet className="w-3.5 h-3.5 text-amber-300" /> Bulk Add CSV
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleOpenAddVeh}
+                    className="border-slate-700 bg-slate-900 hover:bg-slate-800 text-slate-200 text-xs font-bold gap-1 shrink-0"
+                  >
+                    <Plus className="w-3.5 h-3.5 text-emerald-400" /> Single Car
                   </Button>
                 </div>
               </CardHeader>
@@ -1379,6 +1397,13 @@ export default function PullAPartPage() {
           </DialogContent>
         </Dialog>
       )}
+
+      {/* Bulk Spreadsheet Upload Modal */}
+      <BulkVehicleUploadModal
+        isOpen={bulkUploadOpen}
+        onClose={() => setBulkUploadOpen(false)}
+        onUploadSuccess={loadData}
+      />
     </div>
   );
 }
