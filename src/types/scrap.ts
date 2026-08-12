@@ -1,3 +1,5 @@
+"use client";
+
 export type IntakeType = 'CAR_SALVAGE' | 'SCRAP_METAL';
 
 export type ScaleConnectionMode = 'WEB_SERIAL' | 'WEBSOCKET';
@@ -112,8 +114,22 @@ export interface VehicleDismantlingLog {
   wheelsRemoved: number;
   gasDrained: boolean;
   oilDrained: boolean;
+  coolantDrained?: boolean;
+  batteryPulled?: boolean;
   notes?: string;
   updatedAt?: string;
+  updatedBy?: string;
+}
+
+export interface VehicleRelocationLog {
+  id: string;
+  vehicleId: string;
+  vehicleDesc: string;
+  fromLocation: string;
+  toLocation: string;
+  operatorName: string;
+  timestamp: string;
+  reason?: string;
 }
 
 export interface PullYardVehicle {
@@ -132,6 +148,7 @@ export interface PullYardVehicle {
   status: PullYardVehicleStatus;
   partsRemaining: string[];
   dismantlingLog: VehicleDismantlingLog;
+  relocationHistory?: VehicleRelocationLog[];
   photoUrl?: string;
   purchasePrice?: number;
   originSource?: string;

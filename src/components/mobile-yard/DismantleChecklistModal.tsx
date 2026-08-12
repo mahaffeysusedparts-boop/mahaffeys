@@ -1,3 +1,5 @@
+"use client";
+
 import React, { useState } from "react";
 import { PullYardVehicle, PullYardVehicleStatus } from "@/types/scrap";
 import { storageService } from "@/services/storageService";
@@ -9,19 +11,20 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
+import { Badge } from "@/components/ui/badge";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Wrench,
   Droplets,
-  CheckCircle2,
   Flame,
-  Minus,
-  Plus,
-  Car,
-  ShieldCheck,
+  CheckCircle2,
+  Clock,
+  Sparkles,
+  AlertTriangle,
+  Zap,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -29,7 +32,7 @@ interface DismantleChecklistModalProps {
   vehicle: PullYardVehicle | null;
   isOpen: boolean;
   onClose: () => void;
-  onSuccess?: () => void;
+  onSuccess: () => void;
 }
 
 export const DismantleChecklistModal: React.FC<DismantleChecklistModalProps> = ({
@@ -40,54 +43,39 @@ export const DismantleChecklistModal: React.FC<DismantleChecklistModalProps> = (
 }) => {
   if (!vehicle) return null;
 
-  const [catsRemoved, setCatsRemoved] = useState<number>(
-    vehicle.dismantlingLog?.catalyticConvertersRemoved || 0
-  );
-  const [wheelsRemoved, setWheelsRemoved] = useState<number>(
-    vehicle.dismantlingLog?.wheelsRemoved || 0
-  );
-  const [gasDrained, setGasDrained] = useState<boolean>(
-    vehicle.dismantlingLog?.gasDrained || false
-  );
-  const [oilDrained, setOilDrained] = useState<boolean>(
-    vehicle.dismantlingLog?.oilDrained || false
-  );
-  const [processorNotes, setProcessorNotes] = useState<string>(
-    vehicle.dismantlingLog?.notes || ""
-  );
+  const [catsRemoved, setCatsRemoved] = useState<number>(vehicle.dismantlingLog.catalyticConvertersRemoved || 0);
+  const [wheelsRemoved, setWheelsRemoved] = useState<number>(vehicle.dismantlingLog.wheelsRemoved || 0);
+  const [gasDrained, setGasDrained] = useState<boolean>(vehicle.dismantlingLog.gasDrained || false);
+  const [oilDrained, setOilDrained] = useState<boolean>(vehicle.dismantlingLog.oilDrained || false);
+  const [coolantDrained, setCoolantDrained] = useState<boolean>(vehicle.dismantlingLog.coolantDrained || false);
+  const [batteryPulled, setBatteryPulled] = useState<boolean>(vehicle.dismantlingLog.batteryPulled || false);
+  const [status, setStatus] = useState<PullYardVehicleStatus>(vehicle.status);
+  const [notes, setNotes] = useState<string>(vehicle.dismantlingLog.notes || "");
 
-  const [autoAdvanceStatus, setAutoAdvanceStatus] = useState<boolean>(true);
+  const currentOp = storageService.getSettings().operatorName;
 
   const handleSaveChecklist = () => {
-    const operatorName = storageService.getSettings().operatorName;
-    const isFullyPrepped = gasDrained && oilDrained;
-
-    let targetStatus: PullYardVehicleStatus = vehicle.status;
-    if (autoAdvanceStatus && isFullyPrepped && vehicle.status === "PENDING") {
-      targetStatus = "AVAILABLE";
-    }
-
-    const updated: PullYardVehicle = {
+    storageService.savePullYardVehicle({
       ...vehicle,
-      status: targetStatus,
+      status,
       dismantlingLog: {
         catalyticConvertersRemoved: Math.max(0, catsRemoved),
         wheelsRemoved: Math.min(8, Math.max(0, wheelsRemoved)),
         gasDrained,
         oilDrained,
-        notes: processorNotes.trim() ? `[Dismantler: ${operatorName}] ${processorNotes}` : undefined,
+        coolantDrained,
+        batteryPulled,
+        notes: notes.trim() || undefined,
         updatedAt: new Date().toISOString(),
+        updatedBy: currentOp,
       },
-    };
-
-    storageService.savePullYardVehicle(updated);
-    toast.success(`Dismantling Checklist Saved for ${vehicle.year} ${vehicle.make} ${vehicle.model}!`, {
-      description: targetStatus === "AVAILABLE" && vehicle.status === "PENDING"
-        ? "Environmental prep verified! Vehicle status advanced to AVAILABLE on yard."
-        : `Cats: ${catsRemoved} | Gas Drained: ${gasDrained ? 'YES' : 'NO'}`,
     });
 
-    if (onSuccess) onSuccess();
+    toast.success(
+      `Updated Environmental Prep for ${vehicle.year} ${vehicle.make} ${vehicle.model}!`,
+      { description: `Status set to ${status}` }
+    );
+    onSuccess();
     onClose();
   };
 
@@ -99,128 +87,103 @@ export const DismantleChecklistModal: React.FC<DismantleChecklistModalProps> = (
             <div className="flex items-center gap-2">
               <Droplets className="w-5 h-5 text-emerald-400" />
               <DialogTitle className="text-base font-bold text-white font-mono">
-                Field Environmental Prep & Dismantling Checklist
+                Field Environmental Prep & Fluid Checklist
               </DialogTitle>
             </div>
             <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-500/40 text-xs font-mono">
-              EPA PREP
+              EPA COMPLIANT
             </Badge>
           </div>
         </DialogHeader>
 
         <div className="space-y-4 py-2 text-xs">
           
-          {/* Target Vehicle Specs Banner */}
-          <div className="p-3 bg-slate-900 rounded-xl border border-slate-800 flex items-center justify-between">
-            <div>
+          {/* Target Vehicle Header Box */}
+          <div className="p-3 bg-slate-900 rounded-xl border border-slate-800 space-y-1">
+            <div className="flex items-center justify-between">
               <span className="font-extrabold text-white text-sm">
                 {vehicle.year} {vehicle.make} {vehicle.model}
               </span>
-              <p className="text-[11px] text-slate-400 font-mono mt-0.5">
-                Location: <span className="text-amber-300 font-bold">{vehicle.rowNumber || "Row 12"} ({vehicle.spaceNumber || "Spot 01"})</span>
-              </p>
+              <Badge variant="outline" className="text-[10px] border-slate-700 text-slate-300 font-mono">
+                {vehicle.section}
+              </Badge>
             </div>
-            <Badge variant="outline" className="border-slate-700 text-slate-300 text-[10px]">
-              {vehicle.status}
-            </Badge>
+            <p className="text-[11px] text-slate-400 font-mono">
+              Location: {vehicle.rowNumber || "Row 01"} - {vehicle.spaceNumber || "Spot 01"} | VIN: {vehicle.vin}
+            </p>
           </div>
 
-          {/* Environmental Fluids Checklist Switches */}
-          <div className="space-y-3 p-3.5 bg-slate-900 rounded-xl border border-slate-800">
-            <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider block border-b border-slate-800 pb-1.5">
-              1. Environmental Fluid Depollution
+          {/* Touch-Friendly Toggles */}
+          <div className="space-y-2 bg-slate-900 p-3.5 rounded-2xl border border-slate-800">
+            <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wider block mb-2">
+              Environmental Fluid & Part Removal Checklist:
             </span>
 
-            <div className="flex items-center justify-between py-1">
-              <div>
-                <span className="text-xs font-bold text-white block">Gasoline / Diesel Tank Drained</span>
-                <span className="text-[10px] text-slate-400">Fuel evacuated to safe holding vault</span>
-              </div>
+            <div className="flex items-center justify-between p-2 rounded-lg bg-slate-950 border border-slate-800">
+              <span className="font-bold text-white text-xs">Gasoline / Fuel Tank Drained</span>
               <Switch checked={gasDrained} onCheckedChange={setGasDrained} />
             </div>
 
-            <div className="flex items-center justify-between py-1 border-t border-slate-800/80">
-              <div>
-                <span className="text-xs font-bold text-white block">Engine & Transmission Oil Drained</span>
-                <span className="text-[10px] text-slate-400">Crankcase and oil pan drained</span>
-              </div>
+            <div className="flex items-center justify-between p-2 rounded-lg bg-slate-950 border border-slate-800">
+              <span className="font-bold text-white text-xs">Engine & Transmission Oil Drained</span>
               <Switch checked={oilDrained} onCheckedChange={setOilDrained} />
             </div>
-          </div>
 
-          {/* Component Removal Counters */}
-          <div className="space-y-3 p-3.5 bg-slate-900 rounded-xl border border-slate-800">
-            <span className="text-xs font-bold text-amber-400 uppercase tracking-wider block border-b border-slate-800 pb-1.5">
-              2. High-Value Component Removals
-            </span>
-
-            {/* Cats counter */}
-            <div className="flex items-center justify-between py-1">
-              <div>
-                <span className="text-xs font-bold text-white block">Catalytic Converters Removed</span>
-                <span className="text-[10px] text-slate-400">Logged to precious metal vault</span>
-              </div>
-              <div className="flex items-center gap-2 bg-slate-950 p-1 rounded-lg border border-slate-800">
-                <Button
-                  type="button"
-                  size="icon"
-                  variant="ghost"
-                  onClick={() => setCatsRemoved((c) => Math.max(0, c - 1))}
-                  className="h-7 w-7 text-slate-300 hover:text-white"
-                >
-                  <Minus className="w-3.5 h-3.5" />
-                </Button>
-                <span className="font-mono font-bold text-amber-300 text-sm w-6 text-center">{catsRemoved}</span>
-                <Button
-                  type="button"
-                  size="icon"
-                  variant="ghost"
-                  onClick={() => setCatsRemoved((c) => c + 1)}
-                  className="h-7 w-7 text-slate-300 hover:text-white"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                </Button>
-              </div>
+            <div className="flex items-center justify-between p-2 rounded-lg bg-slate-950 border border-slate-800">
+              <span className="font-bold text-white text-xs">Radiator Coolant Drained</span>
+              <Switch checked={coolantDrained} onCheckedChange={setCoolantDrained} />
             </div>
 
-            {/* Wheels counter */}
-            <div className="flex items-center justify-between py-1 border-t border-slate-800/80">
-              <div>
-                <span className="text-xs font-bold text-white block">Alloy / Steel Wheels Removed</span>
-                <span className="text-[10px] text-slate-400">Tires & rims unbolted</span>
-              </div>
-              <div className="flex items-center gap-2 bg-slate-950 p-1 rounded-lg border border-slate-800">
-                <Button
-                  type="button"
-                  size="icon"
-                  variant="ghost"
-                  onClick={() => setWheelsRemoved((w) => Math.max(0, w - 1))}
-                  className="h-7 w-7 text-slate-300 hover:text-white"
-                >
-                  <Minus className="w-3.5 h-3.5" />
-                </Button>
-                <span className="font-mono font-bold text-sky-300 text-sm w-6 text-center">{wheelsRemoved}</span>
-                <Button
-                  type="button"
-                  size="icon"
-                  variant="ghost"
-                  onClick={() => setWheelsRemoved((w) => Math.min(8, w + 1))}
-                  className="h-7 w-7 text-slate-300 hover:text-white"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                </Button>
-              </div>
+            <div className="flex items-center justify-between p-2 rounded-lg bg-slate-950 border border-slate-800">
+              <span className="font-bold text-white text-xs">12V Battery Pulled for Vault</span>
+              <Switch checked={batteryPulled} onCheckedChange={setBatteryPulled} />
             </div>
           </div>
 
-          {/* Dismantler Notes */}
+          {/* Catalytic Converters & Wheels Count Inputs */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label className="text-slate-300 font-bold">Catalytic Converters Removed</Label>
+              <Input
+                type="number"
+                value={catsRemoved}
+                onChange={(e) => setCatsRemoved(parseInt(e.target.value) || 0)}
+                className="bg-slate-900 border-slate-800 text-amber-300 font-mono font-bold text-sm mt-1 h-10"
+              />
+            </div>
+
+            <div>
+              <Label className="text-slate-300 font-bold">Wheels / Rims Removed</Label>
+              <Input
+                type="number"
+                value={wheelsRemoved}
+                onChange={(e) => setWheelsRemoved(parseInt(e.target.value) || 0)}
+                className="bg-slate-900 border-slate-800 text-sky-300 font-mono font-bold text-sm mt-1 h-10"
+              />
+            </div>
+          </div>
+
+          {/* Vehicle Status Readiness */}
           <div>
-            <Label className="text-slate-300 font-bold">Processor / Dismantler Notes</Label>
+            <Label className="text-slate-300 font-bold">Vehicle Readiness Status *</Label>
+            <select
+              value={status}
+              onChange={(e) => setStatus(e.target.value as PullYardVehicleStatus)}
+              className="w-full h-11 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white px-3 mt-1 font-mono font-bold"
+            >
+              <option value="PENDING">PENDING (Inbound Processing)</option>
+              <option value="AVAILABLE">AVAILABLE (Staged on Yard for Pullers)</option>
+              <option value="CRUSHED">CRUSHED / STRIPPED (Ready for Bailer)</option>
+            </select>
+          </div>
+
+          <div>
+            <Label className="text-slate-300 font-bold">Processor Comments / Notes</Label>
             <Textarea
               rows={2}
-              value={processorNotes}
-              onChange={(e) => setProcessorNotes(e.target.value)}
-              placeholder="e.g. Fluids drained clean, radiator removed, engine in good shape for pullers..."
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="e.g. Engine oil drained, catalytic converter removed & logged into vault..."
               className="bg-slate-900 border-slate-800 text-slate-200 text-xs mt-1"
             />
           </div>
@@ -233,9 +196,9 @@ export const DismantleChecklistModal: React.FC<DismantleChecklistModalProps> = (
           </Button>
           <Button
             onClick={handleSaveChecklist}
-            className="bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs gap-1.5 h-11 px-6 shadow-lg shadow-emerald-950"
+            className="bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs gap-1.5 shadow-lg shadow-emerald-950 h-11"
           >
-            <CheckCircle2 className="w-4 h-4" /> Save Environmental Prep Log
+            <CheckCircle2 className="w-4 h-4" /> Save Environmental Prep
           </Button>
         </DialogFooter>
       </DialogContent>

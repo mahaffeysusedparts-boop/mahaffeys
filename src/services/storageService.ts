@@ -1,3 +1,5 @@
+"use client";
+
 import {
   Customer,
   MetalGrade,
@@ -15,6 +17,8 @@ import {
   AdmissionPass,
   IpCamera,
   VehicleArrivalSubscription,
+  VehicleRelocationLog,
+  PullYardVehicleStatus,
 } from "@/types/scrap";
 import { sharedStorage } from "@/services/sharedStorage";
 import {
@@ -72,7 +76,7 @@ export const storageService = {
     cameraStorage.deleteIpCamera(cameraId);
   },
 
-  // --- Vehicles & Subscriptions ---
+  // --- Vehicles, Relocations & Subscriptions ---
   getArrivalSubscriptions(): VehicleArrivalSubscription[] {
     return vehicleStorage.getArrivalSubscriptions();
   },
@@ -95,6 +99,21 @@ export const storageService = {
 
   savePullYardVehicle(veh: PullYardVehicle): PullYardVehicle {
     return vehicleStorage.savePullYardVehicle(veh);
+  },
+
+  relocateVehicle(
+    vehicleId: string,
+    newSection: PullYardVehicle["section"],
+    newRow: string,
+    newSpace: string,
+    operatorName: string,
+    reason?: string
+  ): PullYardVehicle | null {
+    return vehicleStorage.relocateVehicle(vehicleId, newSection, newRow, newSpace, operatorName, reason);
+  },
+
+  getRelocationLogs(): VehicleRelocationLog[] {
+    return vehicleStorage.getRelocationLogs();
   },
 
   deletePullYardVehicle(vehicleId: string): void {
@@ -267,6 +286,7 @@ export const storageService = {
     sharedStorage.setItem('mahaffeys_ip_cameras', JSON.stringify(INITIAL_IP_CAMERAS));
     sharedStorage.removeItem('mahaffeys_nmvtis_logs');
     sharedStorage.removeItem('mahaffeys_arrival_subscriptions');
+    sharedStorage.removeItem('mahaffeys_vehicle_relocations');
   },
 };
 

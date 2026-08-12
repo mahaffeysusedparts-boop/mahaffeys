@@ -1,7 +1,9 @@
+"use client";
+
 import React, { useState, useRef } from "react";
-import { PullYardVehicle, PullYardVehicleStatus, Ticket } from "@/types/scrap";
+import { PullYardVehicle, Ticket } from "@/types/scrap";
 import { storageService } from "@/services/storageService";
-import { analyzeVinImage, analyzeLicensePlateImage, analyzeDriverLicenseImage } from "@/services/aiVisionService";
+import { analyzeVinImage } from "@/services/aiVisionService";
 import { generateSamplePhoto } from "@/utils/complianceUtils";
 import {
   Dialog,
@@ -17,24 +19,25 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import {
   Truck,
-  Camera,
   Scan,
-  CheckCircle2,
-  Car,
+  Camera,
   Ban,
-  Upload,
-  User,
+  CheckCircle2,
+  DollarSign,
   MapPin,
+  Upload,
   Clock,
   Sparkles,
-  CreditCard,
+  Search,
+  User,
+  Hash,
 } from "lucide-react";
 import { toast } from "sonner";
 
 interface TowDropModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSuccess?: () => void;
+  onSuccess: (newVehicle: PullYardVehicle) => void;
 }
 
 export const TowDropModal: React.FC<TowDropModalProps> = ({
@@ -42,39 +45,31 @@ export const TowDropModal: React.FC<TowDropModalProps> = ({
   onClose,
   onSuccess,
 }) => {
-  const cameraInputRef = useRef<HTMLInputElement>(null);
-  const vinCameraRef = useRef<HTMLInputElement>(null);
-  const dlCameraRef = useRef<HTMLInputElement>(null);
-
-  // Form State
-  const [driverName, setDriverName] = useState<string>("Driver #1 (Sam Taylor)");
-  const [originAddress, setOriginSource] = useState<string>("");
-  const [sellerName, setSellerName] = useState<string>("");
-  const [sellerId, setSellerId] = useState<string>("");
-
+  const [towDriverName, setTowDriverName] = useState<string>("Sam Taylor (Tow Driver #1)");
+  const [receiptNumber, setReceiptNumber] = useState<string>(
+    `T-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`
+  );
+  
   const [vin, setVin] = useState<string>("");
-  const [year, setYear] = useState<number>(new Date().getFullYear() - 10);
-  const [make, setMake] = useState<string>("Ford");
-  const [model, setModel] = useState<string>("F-150");
+  const [year, setYear] = useState<number>(2012);
+  const [make, setMake] = useState<string>("");
+  const [model, setModel] = useState<string>("");
   const [color, setColor] = useState<string>("White");
-
   const [section, setSection] = useState<PullYardVehicle["section"]>("Domestic Trucks & SUVs");
-  const [rowNumber, setRowNumber] = useState<string>("Inbound Staging");
-  const [spaceNumber, setSpaceNumber] = useState<string>("Spot 01");
+  const [rowNumber, setRowNumber] = useState<string>("Row 01 (Inbound Drop)");
+  const [spaceNumber, setSpaceNumber] = useState<string>("Drop Bay 1");
   const [purchasePrice, setPurchasePrice] = useState<number>(450);
+  const [originSource, setOriginSource] = useState<string>("Impound Tow Drop");
   const [notes, setNotes] = useState<string>("");
   const [photoUrl, setPhotoUrl] = useState<string>(generateSamplePhoto("vehicle"));
 
-  const handleSkipVin = () => {
-    const fallbackVin = `NO-VIN-${Math.floor(1000 + Math.random() * 9000)}`;
-    setVin(fallbackVin);
-    toast.info(`Assigned temporary Tag: ${fallbackVin}`);
-  };
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const vinInputRef = useRef<HTMLInputElement>(null);
 
-  const handleVinPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleVinCameraCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      toast.info("AI Vision analyzing VIN photo...", { icon: "✨" });
+      toast.info("AI Vision parsing VIN barcode tag...", { icon: "✨" });
       const reader = new FileReader();
       reader.onload = async (evt) => {
         const dataUrl = evt.target?.result as string;
@@ -82,10 +77,10 @@ export const TowDropModal: React.FC<TowDropModalProps> = ({
           const res = await analyzeVinImage(dataUrl);
           if (res.vin) {
             setVin(res.vin);
-            toast.success(`AI Extracted VIN: ${res.vin}`);
+            toast.success(`AI Vision Extracted VIN: ${res.vin}`);
             decodeVin(res.vin);
           } else {
-            toast.error("Could not find clear 17-character VIN string.");
+            toast.error("Could not read VIN barcode clearly. Please verify lighting.");
           }
         } catch (err) {
           console.warn("VIN OCR error:", err);
@@ -98,8 +93,6 @@ export const TowDropModal: React.FC<TowDropModalProps> = ({
   const decodeVin = (vinStr: string) => {
     if (!vinStr || vinStr.length < 5) return;
     const clean = vinStr.toUpperCase().trim();
-    setVin(clean);
-
     if (clean.startsWith("1G")) {
       setMake("Chevrolet");
       setModel("Impala");
@@ -119,53 +112,38 @@ export const TowDropModal: React.FC<TowDropModalProps> = ({
     }
   };
 
-  const handleDlPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      toast.info("AI Vision analyzing Driver License photo...", { icon: "✨" });
-      const reader = new FileReader();
-      reader.onload = async (evt) => {
-        const dataUrl = evt.target?.result as string;
-        try {
-          const res = await analyzeDriverLicenseImage(dataUrl);
-          if (res.fullName) setSellerName(res.fullName);
-          if (res.idNumber) setSellerId(res.idNumber);
-          toast.success(`AI Extracted DL: ${res.fullName} (${res.idNumber})`);
-        } catch (err) {
-          console.warn("DL OCR error:", err);
-        }
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
   const handleVehiclePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
       reader.onload = (evt) => {
         if (evt.target?.result) {
-          const url = evt.target.result as string;
-          setPhotoUrl(url);
-          toast.success("Vehicle photo captured");
+          setPhotoUrl(evt.target.result as string);
+          toast.success("Vehicle drop photo attached");
         }
       };
       reader.readAsDataURL(file);
     }
   };
 
+  const handleSkipVin = () => {
+    const noVinTag = `NO-VIN-${Math.floor(1000 + Math.random() * 9000)}`;
+    setVin(noVinTag);
+    toast.info(`Assigned VIN placeholder: ${noVinTag}`);
+  };
+
   const handleSaveDrop = () => {
     if (!make.trim() || !model.trim()) {
-      toast.error("Vehicle Make and Model are required");
+      toast.error("Make and Model are required");
       return;
     }
 
-    const operatorName = storageService.getSettings().operatorName;
-    const ticketId = `T-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
+    const currentOp = storageService.getSettings().operatorName;
+    const stockNumber = `STK-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`;
 
     const newVehicle: PullYardVehicle = {
-      id: `veh-${Date.now()}`,
-      stockNumber: `STK-${new Date().getFullYear()}-${Math.floor(10 + Math.random() * 90)}`,
+      id: `veh-tow-${Date.now()}`,
+      stockNumber,
       section,
       rowNumber,
       spaceNumber,
@@ -176,12 +154,12 @@ export const TowDropModal: React.FC<TowDropModalProps> = ({
       vin: vin.toUpperCase().trim() || `NO-VIN-${Math.floor(1000 + Math.random() * 9000)}`,
       dateSetInYard: new Date().toISOString(),
       status: "PENDING",
-      partsRemaining: ["Engine", "Transmission", "Doors", "Wheels", "Fenders"],
+      partsRemaining: ["Engine Assembly", "Transmission", "Doors", "Wheels", "Fenders"],
       purchasePrice,
-      originSource: originAddress.trim() || "Tow Drop-Off",
-      notes: notes.trim() ? `[Tow Driver: ${driverName}] ${notes}` : `Tow drop by ${driverName}`,
+      originSource: originSource.trim() || "Tow Drop",
+      notes: notes.trim() ? `Tow Driver: ${towDriverName} | ${notes.trim()}` : `Tow Driver: ${towDriverName}`,
       photoUrl,
-      intakeOperator: operatorName,
+      intakeOperator: currentOp,
       dismantlingLog: {
         catalyticConvertersRemoved: 0,
         wheelsRemoved: 0,
@@ -190,32 +168,31 @@ export const TowDropModal: React.FC<TowDropModalProps> = ({
       },
     };
 
-    // Save vehicle to yard inventory
+    // Save vehicle
     storageService.savePullYardVehicle(newVehicle);
 
-    // Also create pending intake ticket in ticket ledger
+    // Also save a pending intake ticket for scale operator
     const newTicket: Ticket = {
-      id: ticketId,
-      ticketType: "CAR_SALVAGE",
+      id: receiptNumber.trim(),
+      ticketType: 'CAR_SALVAGE',
       createdAt: new Date().toISOString(),
-      status: "PENDING",
-      customerName: sellerName.trim() || `Tow Drop: ${originAddress || driverName}`,
-      customerIdNumber: sellerId.trim() || undefined,
-      vehicleLicensePlate: "",
+      status: 'PENDING',
+      customerName: `Tow Drop: ${towDriverName}`,
+      customerIdNumber: "TOW-DRIVER-ID",
       carRecord: {
         vin: newVehicle.vin,
         year: newVehicle.year,
         make: newVehicle.make,
         model: newVehicle.model,
         color: newVehicle.color,
-        titleStatus: "Salvage Title",
+        titleStatus: 'Salvage Title',
         hasCatalyticConverter: true,
-        catCondition: "Original OEM",
+        catCondition: 'Original OEM',
         hasEngineAndTrans: true,
         hasBattery: true,
         hasAluminumRims: true,
         fluidsDrained: false,
-        pricingMode: "FLAT_RATE",
+        pricingMode: 'FLAT_RATE',
         vehicleWeightLbs: 3500,
         ratePerTon: 0,
         flatRate: purchasePrice,
@@ -225,7 +202,7 @@ export const TowDropModal: React.FC<TowDropModalProps> = ({
         deductions: 0,
         totalPayout: purchasePrice,
         purchasePrice,
-        originSource: originAddress.trim() || driverName,
+        originSource: originSource.trim() || 'Tow Inbound Drop',
         notes: newVehicle.notes,
         photoUrl,
       },
@@ -235,18 +212,14 @@ export const TowDropModal: React.FC<TowDropModalProps> = ({
       grossTotal: purchasePrice,
       totalDeductions: 0,
       finalPayout: purchasePrice,
-      payoutMethod: "Cash",
-      operatorName,
+      payoutMethod: 'Cash',
+      operatorName: currentOp,
       notes: newVehicle.notes,
     };
 
     storageService.saveTicket(newTicket);
-
-    toast.success(`Tow Drop Completed & Saved! Ticket #${ticketId}`, {
-      description: `${newVehicle.year} ${newVehicle.make} ${newVehicle.model} placed in ${rowNumber}`,
-    });
-
-    if (onSuccess) onSuccess();
+    toast.success(`Tow Drop Logged! Ticket #${newTicket.id} saved to Pending Group.`);
+    onSuccess(newVehicle);
     onClose();
   };
 
@@ -256,24 +229,17 @@ export const TowDropModal: React.FC<TowDropModalProps> = ({
         
         <input
           type="file"
+          ref={vinInputRef}
+          onChange={handleVinCameraCapture}
+          accept="image/*"
+          capture="environment"
+          className="hidden"
+        />
+
+        <input
+          type="file"
           ref={cameraInputRef}
           onChange={handleVehiclePhotoUpload}
-          accept="image/*"
-          capture="environment"
-          className="hidden"
-        />
-        <input
-          type="file"
-          ref={vinCameraRef}
-          onChange={handleVinPhotoUpload}
-          accept="image/*"
-          capture="environment"
-          className="hidden"
-        />
-        <input
-          type="file"
-          ref={dlCameraRef}
-          onChange={handleDlPhotoUpload}
           accept="image/*"
           className="hidden"
         />
@@ -283,77 +249,80 @@ export const TowDropModal: React.FC<TowDropModalProps> = ({
             <div className="flex items-center gap-2">
               <Truck className="w-5 h-5 text-amber-400" />
               <DialogTitle className="text-base font-bold text-white font-mono">
-                Tow Truck Driver Field Drop-Off
+                Rapid Tow Driver Vehicle Drop Station
               </DialogTitle>
             </div>
             <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/40 text-xs font-mono">
-              MOBILE INTAKE
+              TOW INBOUND
             </Badge>
           </div>
         </DialogHeader>
 
         <div className="space-y-4 py-2 text-xs">
           
-          {/* Driver & Origin Header */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-900 p-3 rounded-xl border border-slate-800">
+          {/* Tow Driver & Receipt Row */}
+          <div className="grid grid-cols-2 gap-3 bg-slate-900 p-3 rounded-xl border border-slate-800">
             <div>
-              <Label className="text-slate-300 flex items-center gap-1 font-bold">
-                <Truck className="w-3.5 h-3.5 text-amber-400" /> Tow Driver Name *
+              <Label className="text-slate-300 flex items-center gap-1 text-[11px]">
+                <User className="w-3.5 h-3.5 text-emerald-400" /> Tow Driver Name / Unit *
               </Label>
               <Input
-                value={driverName}
-                onChange={(e) => setDriverName(e.target.value)}
-                placeholder="e.g. Sam Taylor"
-                className="bg-slate-950 border-slate-800 text-amber-300 font-bold text-xs mt-1 h-10"
+                value={towDriverName}
+                onChange={(e) => setTowDriverName(e.target.value)}
+                placeholder="e.g. Sam Taylor (Unit #4)"
+                className="bg-slate-950 border-slate-800 text-white font-bold text-xs mt-1 h-10"
               />
             </div>
 
             <div>
-              <Label className="text-slate-300 flex items-center gap-1 font-bold">
-                <MapPin className="w-3.5 h-3.5 text-rose-400" /> Origin Address / Shop
+              <Label className="text-slate-300 flex items-center gap-1 text-[11px]">
+                <Hash className="w-3.5 h-3.5 text-amber-400" /> Ticket / Voucher # *
               </Label>
               <Input
-                value={originAddress}
-                onChange={(e) => setOriginSource(e.target.value)}
-                placeholder="e.g. 1428 Industrial Pkwy"
-                className="bg-slate-950 border-slate-800 text-white text-xs mt-1 h-10"
+                value={receiptNumber}
+                onChange={(e) => setReceiptNumber(e.target.value)}
+                className="bg-slate-950 border-slate-800 text-amber-300 font-mono font-bold text-xs mt-1 h-10"
               />
             </div>
           </div>
 
-          {/* Camera VIN Scan & Specs */}
-          <div className="space-y-2">
+          {/* VIN Barcode Camera OCR */}
+          <div className="space-y-1">
             <div className="flex items-center justify-between">
-              <Label className="text-slate-300 font-bold">VIN Tag OCR Scan *</Label>
+              <Label className="text-slate-300 font-bold">17-Digit VIN Number</Label>
               <Button
                 type="button"
                 size="sm"
                 variant="ghost"
                 onClick={handleSkipVin}
-                className="h-6 text-[11px] text-rose-400 hover:text-rose-300 p-0 font-semibold gap-1"
+                className="h-6 text-[11px] text-rose-400 hover:text-rose-300 gap-1 p-0"
               >
-                <Ban className="w-3.5 h-3.5" /> Skip VIN
+                <Ban className="w-3 h-3" /> Skip / No VIN
               </Button>
             </div>
 
             <div className="flex gap-2">
               <Input
                 value={vin}
-                onChange={(e) => setVin(e.target.value.toUpperCase())}
-                placeholder="1FTRF12W88KA10291"
-                className="bg-slate-900 border-slate-800 text-amber-300 font-mono font-bold text-xs h-11 flex-1 tracking-wider"
+                onChange={(e) => {
+                  setVin(e.target.value.toUpperCase());
+                  decodeVin(e.target.value);
+                }}
+                placeholder="1FTRF12W88KA10291 or tap AI Scan"
+                className="bg-slate-900 border-slate-800 text-amber-300 font-mono font-bold text-xs flex-1 h-10"
               />
               <Button
                 type="button"
-                onClick={() => vinCameraRef.current?.click()}
-                className="bg-purple-600 hover:bg-purple-500 text-white font-extrabold text-xs gap-1.5 h-11 shrink-0"
+                size="sm"
+                onClick={() => vinInputRef.current?.click()}
+                className="bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs gap-1.5 shrink-0 h-10"
               >
-                <Scan className="w-4 h-4 text-amber-300" /> Camera VIN Scan
+                <Scan className="w-4 h-4 text-amber-300" /> AI Scan VIN Tag
               </Button>
             </div>
           </div>
 
-          {/* Vehicle Year, Make, Model, Color */}
+          {/* Specs: Year, Make, Model, Color */}
           <div className="grid grid-cols-4 gap-2">
             <div>
               <Label className="text-slate-300 text-[11px]">Year</Label>
@@ -361,7 +330,7 @@ export const TowDropModal: React.FC<TowDropModalProps> = ({
                 type="number"
                 value={year}
                 onChange={(e) => setYear(parseInt(e.target.value) || 2012)}
-                className="bg-slate-900 border-slate-800 text-white font-mono text-xs mt-1 h-10"
+                className="bg-slate-900 border-slate-800 text-white font-mono text-xs mt-1 h-9"
               />
             </div>
 
@@ -371,7 +340,7 @@ export const TowDropModal: React.FC<TowDropModalProps> = ({
                 value={make}
                 onChange={(e) => setMake(e.target.value)}
                 placeholder="Ford"
-                className="bg-slate-900 border-slate-800 text-white text-xs mt-1 h-10 font-bold"
+                className="bg-slate-900 border-slate-800 text-white text-xs mt-1 h-9 font-bold"
               />
             </div>
 
@@ -381,7 +350,7 @@ export const TowDropModal: React.FC<TowDropModalProps> = ({
                 value={model}
                 onChange={(e) => setModel(e.target.value)}
                 placeholder="F-150"
-                className="bg-slate-900 border-slate-800 text-white text-xs mt-1 h-10 font-bold"
+                className="bg-slate-900 border-slate-800 text-white text-xs mt-1 h-9 font-bold"
               />
             </div>
 
@@ -391,19 +360,19 @@ export const TowDropModal: React.FC<TowDropModalProps> = ({
                 value={color}
                 onChange={(e) => setColor(e.target.value)}
                 placeholder="White"
-                className="bg-slate-900 border-slate-800 text-white text-xs mt-1 h-10"
+                className="bg-slate-900 border-slate-800 text-white text-xs mt-1 h-9"
               />
             </div>
           </div>
 
-          {/* Staging Drop Location & Section */}
-          <div className="grid grid-cols-3 gap-2 p-3 bg-slate-900 rounded-xl border border-slate-800">
+          {/* Drop Location Row */}
+          <div className="grid grid-cols-3 gap-2 bg-slate-900 p-3 rounded-xl border border-slate-800">
             <div>
-              <Label className="text-slate-300 text-[11px]">Yard Section</Label>
+              <Label className="text-slate-300 text-[11px]">Drop Section *</Label>
               <select
                 value={section}
                 onChange={(e) => setSection(e.target.value as any)}
-                className="w-full h-10 bg-slate-950 border border-slate-800 rounded-md text-xs text-white px-2 mt-1"
+                className="w-full h-9 bg-slate-950 border border-slate-800 rounded-md text-xs text-white px-2 mt-1"
               >
                 <option value="Domestic Trucks & SUVs">Domestic Trucks & SUVs</option>
                 <option value="Ford & Lincoln">Ford & Lincoln</option>
@@ -415,83 +384,75 @@ export const TowDropModal: React.FC<TowDropModalProps> = ({
             </div>
 
             <div>
-              <Label className="text-slate-300 text-[11px]">Drop Row *</Label>
+              <Label className="text-slate-300 text-[11px]">Drop Row</Label>
               <Input
                 value={rowNumber}
                 onChange={(e) => setRowNumber(e.target.value)}
-                placeholder="Inbound Staging"
-                className="bg-slate-950 border-slate-800 text-amber-300 font-bold text-xs mt-1 h-10"
+                placeholder="Row 01 (Inbound)"
+                className="bg-slate-950 border-slate-800 text-white text-xs mt-1 h-9 font-mono"
               />
             </div>
 
             <div>
-              <Label className="text-slate-300 text-[11px]">Spot #</Label>
+              <Label className="text-slate-300 text-[11px]">Drop Bay / Spot</Label>
               <Input
                 value={spaceNumber}
                 onChange={(e) => setSpaceNumber(e.target.value)}
-                placeholder="Spot 01"
-                className="bg-slate-950 border-slate-800 text-white text-xs mt-1 h-10"
+                placeholder="Drop Bay 1"
+                className="bg-slate-950 border-slate-800 text-white text-xs mt-1 h-9 font-mono"
               />
             </div>
           </div>
 
-          {/* Seller / Driver DL Photo OCR */}
-          <div className="p-3 bg-slate-900 rounded-xl border border-slate-800 space-y-2">
-            <div className="flex items-center justify-between">
-              <Label className="text-slate-300 font-bold flex items-center gap-1.5">
-                <User className="w-3.5 h-3.5 text-blue-400" /> Seller Name & DL OCR (Optional)
-              </Label>
+          {/* Purchase Price & Tow Address */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label className="text-slate-300 text-[11px]">Agreed Purchase Price ($)</Label>
+              <Input
+                type="number"
+                value={purchasePrice}
+                onChange={(e) => setPurchasePrice(parseFloat(e.target.value) || 0)}
+                className="bg-slate-900 border-slate-800 text-emerald-400 font-mono font-bold text-xs mt-1 h-10"
+              />
+            </div>
+
+            <div>
+              <Label className="text-slate-300 text-[11px]">Tow Origin Address</Label>
+              <Input
+                value={originSource}
+                onChange={(e) => setOriginSource(e.target.value)}
+                placeholder="1428 Industrial Pkwy / Impound"
+                className="bg-slate-900 border-slate-800 text-white text-xs mt-1 h-10"
+              />
+            </div>
+          </div>
+
+          {/* Photo Snapshot preview */}
+          <div className="flex items-center gap-3 bg-slate-900 p-3 rounded-xl border border-slate-800">
+            <div className="w-16 h-12 rounded bg-slate-950 overflow-hidden border border-slate-800 shrink-0 flex items-center justify-center">
+              <img src={photoUrl} alt="Vehicle drop preview" className="w-full h-full object-cover" />
+            </div>
+            <div className="flex-1 space-y-1">
+              <span className="text-[11px] font-bold text-slate-200 block">Vehicle Condition Photo</span>
               <Button
                 type="button"
                 size="sm"
-                onClick={() => dlCameraRef.current?.click()}
-                className="h-7 text-[10px] bg-blue-600 hover:bg-blue-500 text-white font-bold gap-1 px-2"
-              >
-                <CreditCard className="w-3 h-3 text-amber-300" /> Scan DL
-              </Button>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <Input
-                value={sellerName}
-                onChange={(e) => setSellerName(e.target.value)}
-                placeholder="Seller Name"
-                className="bg-slate-950 border-slate-800 text-white text-xs h-9"
-              />
-              <Input
-                value={sellerId}
-                onChange={(e) => setSellerId(e.target.value)}
-                placeholder="DL / ID Number"
-                className="bg-slate-950 border-slate-800 text-amber-300 font-mono text-xs h-9"
-              />
-            </div>
-          </div>
-
-          {/* Vehicle Photo Snap */}
-          <div className="space-y-1.5">
-            <Label className="text-slate-300">Vehicle Photo (45° Angle)</Label>
-            <div className="flex items-center gap-3">
-              <div className="w-16 h-12 rounded-lg bg-slate-950 border border-slate-800 overflow-hidden flex items-center justify-center shrink-0">
-                <img src={photoUrl} alt="Vehicle preview" className="w-full h-full object-cover" />
-              </div>
-              <Button
-                type="button"
+                variant="outline"
                 onClick={() => cameraInputRef.current?.click()}
-                className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-xs gap-1.5 h-10"
+                className="border-slate-700 bg-slate-950 text-amber-400 hover:text-white text-xs h-8 gap-1"
               >
-                <Camera className="w-4 h-4" /> Snap Vehicle Photo
+                <Camera className="w-3.5 h-3.5" /> Snap Photo
               </Button>
             </div>
           </div>
 
-          {/* Condition Notes */}
           <div>
-            <Label className="text-slate-300">Tow Driver Condition Notes</Label>
+            <Label className="text-slate-300 text-[11px]">Condition Notes / Driver Comments</Label>
             <Textarea
               rows={2}
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="e.g. Front bumper crushed, key in ignition, catalytic converter intact..."
+              placeholder="e.g. Missing key, catalytic converter intact, front bumper smashed..."
               className="bg-slate-900 border-slate-800 text-slate-200 text-xs mt-1"
             />
           </div>
@@ -504,9 +465,9 @@ export const TowDropModal: React.FC<TowDropModalProps> = ({
           </Button>
           <Button
             onClick={handleSaveDrop}
-            className="bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs gap-2 h-11 px-6 shadow-lg shadow-emerald-950"
+            className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-xs gap-1.5 shadow-lg shadow-amber-950 h-11"
           >
-            <CheckCircle2 className="w-4 h-4" /> Confirm Tow Drop-Off
+            <CheckCircle2 className="w-4 h-4" /> Save Tow Drop to Pending Group
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -1,5 +1,7 @@
+"use client";
+
 import React, { useState } from "react";
-import { PullYardVehicle, PullYardVehicleStatus } from "@/types/scrap";
+import { PullYardVehicle } from "@/types/scrap";
 import { storageService } from "@/services/storageService";
 import {
   Dialog,
@@ -15,11 +17,11 @@ import { Badge } from "@/components/ui/badge";
 import {
   MapPin,
   Car,
+  ArrowRight,
   CheckCircle2,
-  MoveRight,
-  Warehouse,
-  AlertTriangle,
-  Flame,
+  User,
+  RotateCcw,
+  Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -27,7 +29,7 @@ interface YardRelocateModalProps {
   vehicle: PullYardVehicle | null;
   isOpen: boolean;
   onClose: () => void;
-  onSuccess?: () => void;
+  onSuccess: () => void;
 }
 
 export const YardRelocateModal: React.FC<YardRelocateModalProps> = ({
@@ -38,34 +40,32 @@ export const YardRelocateModal: React.FC<YardRelocateModalProps> = ({
 }) => {
   if (!vehicle) return null;
 
-  const [section, setSection] = useState<PullYardVehicle["section"]>(vehicle.section);
-  const [rowNumber, setRowNumber] = useState<string>(vehicle.rowNumber || "Row 12");
-  const [spaceNumber, setSpaceNumber] = useState<string>(vehicle.spaceNumber || "Space 04");
-  const [status, setStatus] = useState<PullYardVehicleStatus>(vehicle.status);
-  const [relocateNotes, setRelocateNotes] = useState<string>("");
+  const [newSection, setNewSection] = useState<PullYardVehicle["section"]>(vehicle.section);
+  const [newRow, setNewRow] = useState<string>(vehicle.rowNumber || "Row 12");
+  const [newSpace, setNewSpace] = useState<string>(vehicle.spaceNumber || "Space 01");
+  const [relocReason, setRelocReason] = useState<string>("Forklift Staging to Parts Row");
+
+  const currentOp = storageService.getSettings().operatorName;
 
   const handleSaveRelocation = () => {
-    const operatorName = storageService.getSettings().operatorName;
-    const currentNotes = vehicle.notes || "";
-    const updateTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    const appendNote = ` [Moved to ${rowNumber} ${spaceNumber} at ${updateTime} by ${operatorName}]`;
+    const updated = storageService.relocateVehicle(
+      vehicle.id,
+      newSection,
+      newRow.trim() || "Row 12",
+      newSpace.trim() || "Space 01",
+      currentOp,
+      relocReason
+    );
 
-    const updated: PullYardVehicle = {
-      ...vehicle,
-      section,
-      rowNumber,
-      spaceNumber,
-      status,
-      notes: relocateNotes.trim() ? `${currentNotes}${appendNote} Note: ${relocateNotes}` : `${currentNotes}${appendNote}`,
-    };
-
-    storageService.savePullYardVehicle(updated);
-    toast.success(`Relocated ${vehicle.year} ${vehicle.make} ${vehicle.model}!`, {
-      description: `New Location: ${section} • ${rowNumber} (${spaceNumber})`,
-    });
-
-    if (onSuccess) onSuccess();
-    onClose();
+    if (updated) {
+      toast.success(
+        `Relocated ${vehicle.year} ${vehicle.make} ${vehicle.model} to ${newSection} (${newRow} - ${newSpace})!`
+      );
+      onSuccess();
+      onClose();
+    } else {
+      toast.error("Could not update vehicle location.");
+    }
   };
 
   return (
@@ -76,82 +76,55 @@ export const YardRelocateModal: React.FC<YardRelocateModalProps> = ({
             <div className="flex items-center gap-2">
               <MapPin className="w-5 h-5 text-amber-400" />
               <DialogTitle className="text-base font-bold text-white font-mono">
-                Relocate Vehicle Grid Spot
+                Yard Vehicle Spotter & Relocator
               </DialogTitle>
             </div>
             <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/40 text-xs font-mono">
-              YARD SPOTTER
+              RELOCATE
             </Badge>
           </div>
         </DialogHeader>
 
         <div className="space-y-4 py-2 text-xs">
           
-          {/* Target Vehicle Summary */}
+          {/* Target Vehicle Header Box */}
           <div className="p-3 bg-slate-900 rounded-xl border border-slate-800 space-y-1">
             <div className="flex items-center justify-between">
               <span className="font-extrabold text-white text-sm">
                 {vehicle.year} {vehicle.make} {vehicle.model}
               </span>
-              <Badge variant="outline" className="border-slate-700 text-slate-300 text-[10px]">
-                {vehicle.color || "White"}
+              <Badge variant="outline" className="text-[10px] border-slate-700 text-slate-300 font-mono">
+                {vehicle.status}
               </Badge>
             </div>
             <p className="text-[11px] text-slate-400 font-mono">
-              VIN: {vehicle.vin} | Current: <span className="text-amber-300 font-bold">{vehicle.rowNumber || "Staging"} ({vehicle.spaceNumber || "Spot 01"})</span>
+              VIN: {vehicle.vin} | Color: {vehicle.color || "White"}
             </p>
           </div>
 
-          {/* Quick Target Preset Launchers */}
-          <div className="space-y-1.5">
-            <Label className="text-slate-300 font-bold block text-[11px]">Quick Location Presets:</Label>
-            <div className="grid grid-cols-3 gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setRowNumber("Inbound Staging");
-                  setSpaceNumber("Spot 01");
-                  setStatus("PENDING");
-                }}
-                className="p-2 rounded-lg bg-slate-900 border border-slate-800 hover:border-amber-500 text-slate-300 text-[11px] font-bold text-center"
-              >
-                Inbound Staging
-              </button>
+          {/* Location Transfer Visual */}
+          <div className="grid grid-cols-2 gap-3 p-3 bg-slate-950 rounded-xl border border-slate-800 text-center font-mono">
+            <div className="space-y-1 border-r border-slate-800 pr-2">
+              <span className="text-[10px] text-slate-500 font-bold block uppercase">CURRENT LOCATION</span>
+              <span className="text-amber-400 font-bold block text-xs truncate">{vehicle.section}</span>
+              <span className="text-slate-300 text-[11px] block">{vehicle.rowNumber || "Row 01"} - {vehicle.spaceNumber || "Drop Bay"}</span>
+            </div>
 
-              <button
-                type="button"
-                onClick={() => {
-                  setRowNumber("Row 12");
-                  setSpaceNumber("Spot 05");
-                  setStatus("AVAILABLE");
-                }}
-                className="p-2 rounded-lg bg-slate-900 border border-slate-800 hover:border-emerald-500 text-slate-300 text-[11px] font-bold text-center"
-              >
-                Parts Yard Rows
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setRowNumber("Crush Bay 01");
-                  setSpaceNumber("Queue");
-                  setStatus("CRUSHED");
-                }}
-                className="p-2 rounded-lg bg-slate-900 border border-slate-800 hover:border-rose-500 text-rose-300 text-[11px] font-bold text-center"
-              >
-                Crush Queue
-              </button>
+            <div className="space-y-1 pl-2">
+              <span className="text-[10px] text-emerald-400 font-bold block uppercase">NEW TARGET LOCATION</span>
+              <span className="text-emerald-300 font-bold block text-xs truncate">{newSection}</span>
+              <span className="text-white text-[11px] block">{newRow} - {newSpace}</span>
             </div>
           </div>
 
-          {/* Destination Form */}
-          <div className="grid grid-cols-2 gap-3 p-3 bg-slate-900 rounded-xl border border-slate-800">
-            <div className="col-span-2">
-              <Label className="text-slate-300 font-bold">Yard Section *</Label>
+          {/* New Location Selectors */}
+          <div className="space-y-3 pt-1">
+            <div>
+              <Label className="text-slate-300 font-bold">Select Target Section *</Label>
               <select
-                value={section}
-                onChange={(e) => setSection(e.target.value as any)}
-                className="w-full h-10 bg-slate-950 border border-slate-800 rounded-md text-xs text-white px-2 mt-1"
+                value={newSection}
+                onChange={(e) => setNewSection(e.target.value as any)}
+                className="w-full h-11 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white px-3 mt-1 font-semibold"
               >
                 <option value="Domestic Trucks & SUVs">Domestic Trucks & SUVs</option>
                 <option value="Ford & Lincoln">Ford & Lincoln</option>
@@ -162,49 +135,37 @@ export const YardRelocateModal: React.FC<YardRelocateModalProps> = ({
               </select>
             </div>
 
-            <div>
-              <Label className="text-slate-300 font-bold">Target Row *</Label>
-              <Input
-                value={rowNumber}
-                onChange={(e) => setRowNumber(e.target.value)}
-                placeholder="Row 14"
-                className="bg-slate-950 border-slate-800 text-amber-300 font-bold text-xs mt-1 h-10"
-              />
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <Label className="text-slate-300 font-bold">New Row Number *</Label>
+                <Input
+                  value={newRow}
+                  onChange={(e) => setNewRow(e.target.value)}
+                  placeholder="Row 14"
+                  className="bg-slate-900 border-slate-800 text-white font-mono text-xs mt-1 h-10 font-bold"
+                />
+              </div>
+
+              <div>
+                <Label className="text-slate-300 font-bold">New Space # *</Label>
+                <Input
+                  value={newSpace}
+                  onChange={(e) => setNewSpace(e.target.value)}
+                  placeholder="Space 08"
+                  className="bg-slate-900 border-slate-800 text-white font-mono text-xs mt-1 h-10 font-bold"
+                />
+              </div>
             </div>
 
             <div>
-              <Label className="text-slate-300 font-bold">Target Spot *</Label>
+              <Label className="text-slate-300 font-bold">Reason for Movement</Label>
               <Input
-                value={spaceNumber}
-                onChange={(e) => setSpaceNumber(e.target.value)}
-                placeholder="Spot B"
-                className="bg-slate-950 border-slate-800 text-white font-bold text-xs mt-1 h-10"
+                value={relocReason}
+                onChange={(e) => setRelocReason(e.target.value)}
+                placeholder="Forklift staging / Row organizing..."
+                className="bg-slate-900 border-slate-800 text-slate-200 text-xs mt-1 h-10"
               />
             </div>
-          </div>
-
-          {/* Status Shift */}
-          <div>
-            <Label className="text-slate-300 font-bold">Vehicle Yard Status</Label>
-            <select
-              value={status}
-              onChange={(e) => setStatus(e.target.value as any)}
-              className="w-full h-10 bg-slate-900 border border-slate-800 rounded-md text-xs text-white px-2 mt-1 font-mono font-bold"
-            >
-              <option value="PENDING">PENDING (Inbound Processing)</option>
-              <option value="AVAILABLE">AVAILABLE (Staged on Parts Lot)</option>
-              <option value="CRUSHED">CRUSHED (Archived / Bailer Queue)</option>
-            </select>
-          </div>
-
-          <div>
-            <Label className="text-slate-300">Spotter Move Notes</Label>
-            <Input
-              value={relocateNotes}
-              onChange={(e) => setRelocateNotes(e.target.value)}
-              placeholder="e.g. Moved with Forklift #2 to make room for truck drop"
-              className="bg-slate-900 border-slate-800 text-white text-xs mt-1 h-10"
-            />
           </div>
 
         </div>
@@ -215,9 +176,9 @@ export const YardRelocateModal: React.FC<YardRelocateModalProps> = ({
           </Button>
           <Button
             onClick={handleSaveRelocation}
-            className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-xs gap-1.5 h-10 shadow"
+            className="bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs gap-1.5 shadow-lg shadow-emerald-950 h-11"
           >
-            <MoveRight className="w-4 h-4" /> Save Spot Relocation
+            <CheckCircle2 className="w-4 h-4" /> Save Forklift Relocation
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -1,9 +1,12 @@
-import { PullYardVehicle, VehicleArrivalSubscription, PullYardVehicleStatus } from "@/types/scrap";
+"use client";
+
+import { PullYardVehicle, VehicleArrivalSubscription, VehicleRelocationLog, PullYardVehicleStatus } from "@/types/scrap";
 import { sharedStorage } from "@/services/sharedStorage";
 import { INITIAL_PULL_VEHICLES } from "@/services/data/initialData";
 
 const VEH_KEY = 'mahaffeys_pull_yard_vehicles';
 const SUB_KEY = 'mahaffeys_arrival_subscriptions';
+const RELOC_LOG_KEY = 'mahaffeys_vehicle_relocations';
 
 export const vehicleStorage = {
   getArrivalSubscriptions(): VehicleArrivalSubscription[] {
@@ -62,6 +65,8 @@ export const vehicleStorage = {
         wheelsRemoved: 0,
         gasDrained: false,
         oilDrained: false,
+        coolantDrained: false,
+        batteryPulled: false,
       },
     }));
   },
@@ -76,6 +81,57 @@ export const vehicleStorage = {
     }
     sharedStorage.setItem(VEH_KEY, JSON.stringify(vehicles));
     return veh;
+  },
+
+  relocateVehicle(
+    vehicleId: string,
+    newSection: PullYardVehicle["section"],
+    newRow: string,
+    newSpace: string,
+    operatorName: string,
+    reason?: string
+  ): PullYardVehicle | null {
+    const vehicles = this.getPullYardVehicles();
+    const vehicle = vehicles.find((v) => v.id === vehicleId || v.vin === vehicleId || v.stockNumber === vehicleId);
+
+    if (!vehicle) return null;
+
+    const oldLocation = `${vehicle.section} (${vehicle.rowNumber || "Unassigned"} - ${vehicle.spaceNumber || "Spot"})`;
+    const newLocation = `${newSection} (${newRow || "Row"} - ${newSpace || "Spot"})`;
+
+    const relocationLog: VehicleRelocationLog = {
+      id: `reloc-${Date.now()}`,
+      vehicleId: vehicle.id,
+      vehicleDesc: `${vehicle.year} ${vehicle.make} ${vehicle.model}`,
+      fromLocation: oldLocation,
+      toLocation: newLocation,
+      operatorName,
+      timestamp: new Date().toISOString(),
+      reason: reason || "Yard Forklift Relocation",
+    };
+
+    const history = vehicle.relocationHistory || [];
+    history.unshift(relocationLog);
+
+    vehicle.section = newSection;
+    vehicle.rowNumber = newRow;
+    vehicle.spaceNumber = newSpace;
+    vehicle.relocationHistory = history;
+
+    this.savePullYardVehicle(vehicle);
+
+    // Save global relocation log
+    const globalLogs = this.getRelocationLogs();
+    globalLogs.unshift(relocationLog);
+    sharedStorage.setItem(RELOC_LOG_KEY, JSON.stringify(globalLogs));
+
+    return vehicle;
+  },
+
+  getRelocationLogs(): VehicleRelocationLog[] {
+    const data = sharedStorage.getItem(RELOC_LOG_KEY);
+    if (!data) return [];
+    return JSON.parse(data);
   },
 
   deletePullYardVehicle(vehicleId: string): void {
