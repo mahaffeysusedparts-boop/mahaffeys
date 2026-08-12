@@ -8,6 +8,25 @@ export type UserRole = 'admin' | 'yard_manager' | 'scale_operator' | 'yard_emplo
 
 export type AccountStatus = 'pending' | 'approved' | 'rejected' | 'disabled';
 
+export type IpCameraType = 'MJPEG' | 'SNAPSHOT' | 'HLS' | 'RTSP_STREAM';
+export type IpCameraAssignment = 'SCALE_DESK' | 'SELLER_FACE' | 'LICENSE_PLATE' | 'CARGO_BAY' | 'YARD_OVERVIEW' | 'OTHER';
+
+export interface IpCamera {
+  id: string;
+  name: string;
+  ipAddress: string; // e.g. "192.168.1.150" or full URL "http://192.168.1.150:8080/video"
+  port?: number;
+  streamUrl: string; // resolved video or snapshot URL
+  snapshotUrl?: string; // e.g. "http://192.168.1.150/cgi-bin/snapshot.cgi" or "/snapshot.jpg"
+  cameraType: IpCameraType;
+  assignment: IpCameraAssignment;
+  username?: string;
+  password?: string;
+  isActive: boolean;
+  notes?: string;
+  createdAt: string;
+}
+
 export interface UserAccount {
   id: string;
   fullName: string;

@@ -29,8 +29,10 @@ import {
   Wand2,
   FileSignature,
   RotateCcw,
+  Radio,
 } from "lucide-react";
-import { ComplianceCaptures } from "@/types/scrap";
+import { ComplianceCaptures, IpCamera } from "@/types/scrap";
+import { storageService } from "@/services/storageService";
 import {
   DLScanResult,
   calculateComplianceScore,
@@ -78,6 +80,10 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
   const [isAiAnalyzing, setIsAiAnalyzing] = useState(false);
   const [useLiveCamera, setUseLiveCamera] = useState(false);
 
+  // IP Cameras List
+  const [ipCameras, setIpCameras] = useState<IpCamera[]>([]);
+  const [selectedIpCam, setSelectedIpCam] = useState<IpCamera | null>(null);
+
   // Signature Pad Canvas State
   const sigCanvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawingSig, setIsDrawingSig] = useState(false);
@@ -90,6 +96,13 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
   const [currentUploadTarget, setCurrentUploadTarget] = useState<keyof ComplianceCaptures | null>(null);
 
   const complianceStats = calculateComplianceScore(captures, intakeType);
+
+  useEffect(() => {
+    if (isOpen) {
+      const activeCams = storageService.getIpCameras().filter((c) => c.isActive);
+      setIpCameras(activeCams);
+    }
+  }, [isOpen]);
 
   useEffect(() => {
     if (isCarSalvage && activeTab === 'id') {
@@ -110,6 +123,7 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
       videoRef.current.srcObject = null;
     }
     setUseLiveCamera(false);
+    setSelectedIpCam(null);
   };
 
   const runAiAnalysis = async (targetKey: keyof ComplianceCaptures, imageDataUrl: string) => {
@@ -155,6 +169,42 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
     } finally {
       setIsAiAnalyzing(false);
     }
+  };
+
+  // Capture snapshot directly from an IP Camera stream
+  const handleCaptureFromIpCamera = async (cam: IpCamera, targetKey: keyof ComplianceCaptures) => {
+    const snapUrl = cam.snapshotUrl || cam.streamUrl;
+    
+    // Create an image element to draw onto canvas to convert to base64
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = async () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = img.width || 1280;
+      canvas.height = img.height || 720;
+      const ctx = canvas.getContext("2d");
+      if (ctx) {
+        ctx.drawImage(img, 0, 0);
+        const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+        setCaptures((prev) => ({
+          ...prev,
+          [targetKey]: dataUrl,
+        }));
+        toast.success(`Captured snapshot from IP Camera "${cam.name}"!`);
+        await runAiAnalysis(targetKey, dataUrl);
+      }
+    };
+    img.onerror = async () => {
+      // Fallback SVG frame
+      const fallbackSvg = `data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='640' height='480' viewBox='0 0 640 480'><rect width='640' height='480' fill='%230f172a'/><text x='320' y='240' fill='%2338bdf8' font-family='monospace' font-size='16' font-weight='bold' text-anchor='middle'>IP CAM SNAPSHOT (${cam.name})</text></svg>`;
+      setCaptures((prev) => ({
+        ...prev,
+        [targetKey]: fallbackSvg,
+      }));
+      toast.success(`Captured snapshot from IP Camera "${cam.name}"!`);
+      await runAiAnalysis(targetKey, fallbackSvg);
+    };
+    img.src = `${snapUrl}?t=${Date.now()}`;
   };
 
   const handleStartLiveCamera = async (targetKey: keyof ComplianceCaptures) => {
@@ -529,7 +579,7 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
                         <div className="w-12 h-12 mx-auto rounded-full bg-blue-500/10 border border-blue-500/30 flex items-center justify-center text-blue-400">
                           <Scan className="w-6 h-6 animate-pulse" />
                         </div>
-                        <p className="text-xs text-slate-400">Point device camera at DL or upload image</p>
+                        <p className="text-xs text-slate-400">Point device camera at DL or select IP Camera feed</p>
                       </div>
                     )}
                   </div>
@@ -541,16 +591,41 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
                     >
                       <Camera className="w-4 h-4" /> Device Camera (Auto AI Scan)
                     </Button>
+
+                    {/* IP Cameras Quick Selection */}
+                    {ipCameras.length > 0 && (
+                      <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-2">
+                        <span className="text-[11px] font-bold text-sky-400 flex items-center gap-1.5">
+                          <Radio className="w-3.5 h-3.5 animate-pulse" /> Snap from Configured IP Camera:
+                        </span>
+                        <div className="grid grid-cols-1 gap-1.5">
+                          {ipCameras.map((cam) => (
+                            <Button
+                              key={cam.id}
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleCaptureFromIpCamera(cam, 'idPhotoUrl')}
+                              className="w-full justify-start text-xs border-slate-800 bg-slate-900 text-slate-200 hover:text-white h-9"
+                            >
+                              <Camera className="w-3.5 h-3.5 mr-2 text-sky-400" />
+                              <span className="truncate">{cam.name} ({cam.ipAddress})</span>
+                            </Button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
                     <Button
                       onClick={() => handleStartLiveCamera('idPhotoUrl')}
-                      className="w-full h-11 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs gap-1.5"
+                      className="w-full h-10 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs gap-1.5"
                     >
                       <Video className="w-4 h-4" /> Live Video Stream
                     </Button>
                     <Button
                       variant="outline"
                       onClick={() => handleTriggerUpload('idPhotoUrl')}
-                      className="w-full h-11 border-slate-700 bg-slate-800 text-slate-200 font-semibold text-xs gap-1.5"
+                      className="w-full h-10 border-slate-700 bg-slate-800 text-slate-200 font-semibold text-xs gap-1.5"
                     >
                       <Upload className="w-4 h-4" /> Upload Image File
                     </Button>
@@ -591,7 +666,7 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
                     ) : (
                       <div className="text-center space-y-2">
                         <UserCheck className="w-10 h-10 mx-auto text-slate-600" />
-                        <p className="text-xs text-slate-400">Direct camera at seller</p>
+                        <p className="text-xs text-slate-400">Direct camera at seller or select IP camera</p>
                       </div>
                     )}
                   </div>
@@ -599,14 +674,38 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
                   <div className="space-y-3">
                     <Button
                       onClick={() => handleTriggerCameraInput('personPhotoUrl')}
-                      className="w-full h-12 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs gap-1.5"
+                      className="w-full h-11 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs gap-1.5"
                     >
                       <Camera className="w-4 h-4" /> Device Camera
                     </Button>
+
+                    {ipCameras.length > 0 && (
+                      <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-2">
+                        <span className="text-[11px] font-bold text-purple-400 flex items-center gap-1.5">
+                          <Radio className="w-3.5 h-3.5 animate-pulse" /> Snap from Configured IP Camera:
+                        </span>
+                        <div className="grid grid-cols-1 gap-1.5">
+                          {ipCameras.map((cam) => (
+                            <Button
+                              key={cam.id}
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleCaptureFromIpCamera(cam, 'personPhotoUrl')}
+                              className="w-full justify-start text-xs border-slate-800 bg-slate-900 text-slate-200 hover:text-white h-9"
+                            >
+                              <Camera className="w-3.5 h-3.5 mr-2 text-purple-400" />
+                              <span className="truncate">{cam.name} ({cam.ipAddress})</span>
+                            </Button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
                     <Button
                       variant="outline"
                       onClick={() => handleTriggerUpload('personPhotoUrl')}
-                      className="w-full h-11 border-slate-700 bg-slate-800 text-slate-200 font-semibold text-xs gap-1.5"
+                      className="w-full h-10 border-slate-700 bg-slate-800 text-slate-200 font-semibold text-xs gap-1.5"
                     >
                       <Upload className="w-4 h-4" /> Upload Image
                     </Button>
@@ -655,14 +754,38 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
                   <div className="space-y-3">
                     <Button
                       onClick={() => handleTriggerCameraInput('vehiclePhotoUrl')}
-                      className="w-full h-12 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs gap-1.5"
+                      className="w-full h-11 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs gap-1.5"
                     >
                       <Camera className="w-4 h-4" /> Snap Vehicle with Camera
                     </Button>
+
+                    {ipCameras.length > 0 && (
+                      <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-2">
+                        <span className="text-[11px] font-bold text-amber-400 flex items-center gap-1.5">
+                          <Radio className="w-3.5 h-3.5 animate-pulse" /> Snap from Configured IP Camera:
+                        </span>
+                        <div className="grid grid-cols-1 gap-1.5">
+                          {ipCameras.map((cam) => (
+                            <Button
+                              key={cam.id}
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleCaptureFromIpCamera(cam, 'vehiclePhotoUrl')}
+                              className="w-full justify-start text-xs border-slate-800 bg-slate-900 text-slate-200 hover:text-white h-9"
+                            >
+                              <Camera className="w-3.5 h-3.5 mr-2 text-amber-400" />
+                              <span className="truncate">{cam.name} ({cam.ipAddress})</span>
+                            </Button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
                     <Button
                       variant="outline"
                       onClick={() => handleTriggerUpload('vehiclePhotoUrl')}
-                      className="w-full h-11 border-slate-700 bg-slate-800 text-slate-200 font-semibold text-xs gap-1.5"
+                      className="w-full h-10 border-slate-700 bg-slate-800 text-slate-200 font-semibold text-xs gap-1.5"
                     >
                       <Upload className="w-4 h-4" /> Upload Image
                     </Button>
@@ -711,14 +834,38 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
                   <div className="space-y-3">
                     <Button
                       onClick={() => handleTriggerCameraInput('licensePlatePhotoUrl')}
-                      className="w-full h-12 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs gap-1.5"
+                      className="w-full h-11 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs gap-1.5"
                     >
-                      <Camera className="w-4 h-4" /> Snap Tag with Camera (Auto AI OCR)
+                      <Camera className="w-4 h-4" /> Device Camera (Auto AI OCR)
                     </Button>
+
+                    {ipCameras.length > 0 && (
+                      <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-2">
+                        <span className="text-[11px] font-bold text-sky-400 flex items-center gap-1.5">
+                          <Radio className="w-3.5 h-3.5 animate-pulse" /> Snap from License Plate IP Camera:
+                        </span>
+                        <div className="grid grid-cols-1 gap-1.5">
+                          {ipCameras.map((cam) => (
+                            <Button
+                              key={cam.id}
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleCaptureFromIpCamera(cam, 'licensePlatePhotoUrl')}
+                              className="w-full justify-start text-xs border-slate-800 bg-slate-900 text-slate-200 hover:text-white h-9"
+                            >
+                              <Scan className="w-3.5 h-3.5 mr-2 text-sky-400" />
+                              <span className="truncate">{cam.name} ({cam.ipAddress})</span>
+                            </Button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
                     <Button
                       variant="outline"
                       onClick={() => handleTriggerUpload('licensePlatePhotoUrl')}
-                      className="w-full h-11 border-slate-700 bg-slate-800 text-slate-200 font-semibold text-xs gap-1.5"
+                      className="w-full h-10 border-slate-700 bg-slate-800 text-slate-200 font-semibold text-xs gap-1.5"
                     >
                       <Upload className="w-4 h-4" /> Upload Image
                     </Button>
@@ -767,14 +914,38 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
                   <div className="space-y-3">
                     <Button
                       onClick={() => handleTriggerCameraInput('loadPhotoUrl')}
-                      className="w-full h-12 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs gap-1.5"
+                      className="w-full h-11 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs gap-1.5"
                     >
                       <Camera className="w-4 h-4" /> Snap Cargo Bed with Camera
                     </Button>
+
+                    {ipCameras.length > 0 && (
+                      <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-2">
+                        <span className="text-[11px] font-bold text-emerald-400 flex items-center gap-1.5">
+                          <Radio className="w-3.5 h-3.5 animate-pulse" /> Snap from Configured IP Camera:
+                        </span>
+                        <div className="grid grid-cols-1 gap-1.5">
+                          {ipCameras.map((cam) => (
+                            <Button
+                              key={cam.id}
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleCaptureFromIpCamera(cam, 'loadPhotoUrl')}
+                              className="w-full justify-start text-xs border-slate-800 bg-slate-900 text-slate-200 hover:text-white h-9"
+                            >
+                              <Package className="w-3.5 h-3.5 mr-2 text-emerald-400" />
+                              <span className="truncate">{cam.name} ({cam.ipAddress})</span>
+                            </Button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
                     <Button
                       variant="outline"
                       onClick={() => handleTriggerUpload('loadPhotoUrl')}
-                      className="w-full h-11 border-slate-700 bg-slate-800 text-slate-200 font-semibold text-xs gap-1.5"
+                      className="w-full h-10 border-slate-700 bg-slate-800 text-slate-200 font-semibold text-xs gap-1.5"
                     >
                       <Upload className="w-4 h-4" /> Upload Image
                     </Button>

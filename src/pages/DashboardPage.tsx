@@ -35,6 +35,7 @@ import {
   Users,
   Shield,
   ChevronRight,
+  Camera,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -337,6 +338,7 @@ export default function DashboardPage() {
                 { title: "Public Vehicle Inventory", path: "/inventory", icon: Car, color: "text-amber-400" },
                 { title: "Pull-A-Part Row Operations", path: "/pull-a-part", icon: Wrench, color: "text-sky-400" },
                 { title: "Compliance & NMVTIS Hub", path: "/compliance", icon: ShieldCheck, color: "text-purple-400" },
+                { title: "IP Camera Feeds", path: "/cameras", icon: Camera, color: "text-sky-400" },
                 { title: "Cash Drawer Station", path: "/cash-drawer", icon: Banknote, color: "text-emerald-400" },
                 { title: "Yard Storage Grid Map", path: "/yard-map", icon: Map, color: "text-blue-400" },
                 ...(isAdmin

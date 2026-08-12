@@ -14,6 +14,7 @@ import {
   PullYardVehicle,
   CoreReturnLog,
   AdmissionPass,
+  IpCamera,
 } from "@/types/scrap";
 import { generateSamplePhoto } from "@/utils/complianceUtils";
 import { sharedStorage } from "@/services/sharedStorage";
@@ -33,7 +34,50 @@ const STORAGE_KEYS = {
   PULL_YARD_VEHICLES: 'mahaffeys_pull_yard_vehicles',
   CORE_RETURNS: 'mahaffeys_core_returns',
   ADMISSION_PASSES: 'mahaffeys_admission_passes',
+  IP_CAMERAS: 'mahaffeys_ip_cameras',
 };
+
+export const INITIAL_IP_CAMERAS: IpCamera[] = [
+  {
+    id: 'cam-101',
+    name: 'Scale Desk License Plate OCR Cam',
+    ipAddress: '192.168.1.150',
+    port: 8080,
+    streamUrl: 'http://192.168.1.150:8080/video',
+    snapshotUrl: 'http://192.168.1.150:8080/shot.jpg',
+    cameraType: 'MJPEG',
+    assignment: 'LICENSE_PLATE',
+    isActive: true,
+    notes: 'High resolution 1080p camera positioned over drive-on scale tag line',
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: 'cam-102',
+    name: 'Customer Face & ID Counter Camera',
+    ipAddress: '192.168.1.151',
+    port: 80,
+    streamUrl: 'http://192.168.1.151/mjpeg',
+    snapshotUrl: 'http://192.168.1.151/snapshot.jpg',
+    cameraType: 'SNAPSHOT',
+    assignment: 'SELLER_FACE',
+    isActive: true,
+    notes: 'Positioned above paymaster counter for seller facial verification',
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: 'cam-103',
+    name: 'Scale Bed Overhead Cargo Camera',
+    ipAddress: '192.168.1.152',
+    port: 8080,
+    streamUrl: 'http://192.168.1.152:8080/video',
+    snapshotUrl: 'http://192.168.1.152:8080/shot.jpg',
+    cameraType: 'MJPEG',
+    assignment: 'CARGO_BAY',
+    isActive: true,
+    notes: 'Overhead wide angle camera viewing truck bed and scale hopper',
+    createdAt: new Date().toISOString(),
+  },
+];
 
 export const INITIAL_PULL_PARTS: PullPartItem[] = [
   {
@@ -863,6 +907,32 @@ export const INITIAL_TICKETS: Ticket[] = [
 ];
 
 export const storageService = {
+  getIpCameras(): IpCamera[] {
+    const data = sharedStorage.getItem(STORAGE_KEYS.IP_CAMERAS);
+    if (!data) {
+      sharedStorage.setItem(STORAGE_KEYS.IP_CAMERAS, JSON.stringify(INITIAL_IP_CAMERAS));
+      return INITIAL_IP_CAMERAS;
+    }
+    return JSON.parse(data);
+  },
+
+  saveIpCamera(camera: IpCamera): IpCamera {
+    const cameras = this.getIpCameras();
+    const idx = cameras.findIndex((c) => c.id === camera.id);
+    if (idx >= 0) {
+      cameras[idx] = camera;
+    } else {
+      cameras.unshift(camera);
+    }
+    sharedStorage.setItem(STORAGE_KEYS.IP_CAMERAS, JSON.stringify(cameras));
+    return camera;
+  },
+
+  deleteIpCamera(cameraId: string): void {
+    const cameras = this.getIpCameras().filter((c) => c.id !== cameraId);
+    sharedStorage.setItem(STORAGE_KEYS.IP_CAMERAS, JSON.stringify(cameras));
+  },
+
   getMetals(): MetalGrade[] {
     const data = sharedStorage.getItem(STORAGE_KEYS.METALS);
     if (!data) {
@@ -1320,6 +1390,7 @@ export const storageService = {
     sharedStorage.setItem(STORAGE_KEYS.PULL_YARD_VEHICLES, JSON.stringify(INITIAL_PULL_VEHICLES));
     sharedStorage.setItem(STORAGE_KEYS.CORE_RETURNS, JSON.stringify(INITIAL_CORE_RETURNS));
     sharedStorage.setItem(STORAGE_KEYS.ADMISSION_PASSES, JSON.stringify(INITIAL_ADMISSION_PASSES));
+    sharedStorage.setItem(STORAGE_KEYS.IP_CAMERAS, JSON.stringify(INITIAL_IP_CAMERAS));
     sharedStorage.removeItem(STORAGE_KEYS.NMVTIS_LOGS);
   },
 };

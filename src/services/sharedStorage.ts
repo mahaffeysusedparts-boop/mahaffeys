@@ -15,6 +15,7 @@ const SHARED_KEYS = [
   "mahaffeys_pull_yard_vehicles",
   "mahaffeys_core_returns",
   "mahaffeys_admission_passes",
+  "mahaffeys_ip_cameras",
 ] as const;
 
 type ConnectionStatus = "local" | "connecting" | "connected" | "error";
