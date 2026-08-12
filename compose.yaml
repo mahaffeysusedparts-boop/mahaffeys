@@ -42,7 +42,7 @@ services:
     container_name: mahaffeys-nginx
     restart: unless-stopped
     ports:
-      - "80:80"
+      - "8080:80"
     depends_on:
       mahaffeys:
         condition: service_healthy
