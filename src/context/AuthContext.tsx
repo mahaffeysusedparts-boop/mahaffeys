@@ -12,7 +12,7 @@ interface AuthContextType {
   serverError: string | null;
   hasAdminInSystem: boolean;
   pendingUsersCount: number;
-  login: (username: string, password: string) => Promise<void>;
+  login: (username: string, password: string, remember?: boolean) => Promise<void>;
   logout: () => Promise<void>;
   register: (data: { fullName: string; username: string; password: string; role: UserRole; email?: string }) => Promise<void>;
   setupAdmin: (data: { fullName: string; username: string; password: string; email?: string }) => Promise<void>;
@@ -63,8 +63,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     void initialize();
   }, []);
 
-  const login = async (username: string, password: string) => {
-    const loggedInUser = await authService.login(username, password);
+  const login = async (username: string, password: string, remember: boolean = true) => {
+    const loggedInUser = await authService.login(username, password, remember);
     if (loggedInUser.status === "approved") await sharedStorage.hydrate();
     syncState();
   };

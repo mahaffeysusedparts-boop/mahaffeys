@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { UserRole } from "@/types/scrap";
@@ -6,11 +6,14 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Scale, ShieldCheck, UserPlus, LogIn, Lock, Sparkles, AlertCircle, Wrench, ShieldAlert, Database } from "lucide-react";
 import { toast } from "sonner";
+
+const REMEMBERED_USERNAME_KEY = "mahaffeys_remembered_username";
 
 export default function LoginPage() {
   const { hasAdminInSystem, login, register, setupAdmin, isAuthenticated, isApproved, isLoading, serverError } = useAuth();
@@ -19,7 +22,7 @@ export default function LoginPage() {
 
   const from = (location.state as any)?.from?.pathname || "/";
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (isLoading) return;
     if (!hasAdminInSystem && location.pathname !== "/setup") {
       navigate("/setup", { replace: true });
@@ -45,6 +48,15 @@ export default function LoginPage() {
   // Login State
   const [loginUsername, setLoginUsername] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
+  const [rememberMe, setRememberMe] = useState(true);
+
+  // Pre-fill remembered username
+  useEffect(() => {
+    const savedUsername = localStorage.getItem(REMEMBERED_USERNAME_KEY);
+    if (savedUsername) {
+      setLoginUsername(savedUsername);
+    }
+  }, []);
 
   // Register State
   const [regFullName, setRegFullName] = useState("");
@@ -88,7 +100,12 @@ export default function LoginPage() {
     }
 
     try {
-      await login(loginUsername, loginPassword);
+      if (rememberMe) {
+        localStorage.setItem(REMEMBERED_USERNAME_KEY, loginUsername.trim());
+      } else {
+        localStorage.removeItem(REMEMBERED_USERNAME_KEY);
+      }
+      await login(loginUsername, loginPassword, rememberMe);
       toast.success("Sign in successful!");
       navigate(from, { replace: true });
     } catch (err: any) {
@@ -269,6 +286,18 @@ export default function LoginPage() {
                       placeholder="••••••••"
                       className="bg-slate-950 border-slate-800 text-white text-xs mt-1 h-10"
                     />
+                  </div>
+
+                  <div className="flex items-center space-x-2 pt-1">
+                    <Checkbox
+                      id="remember"
+                      checked={rememberMe}
+                      onCheckedChange={(checked) => setRememberMe(!!checked)}
+                      className="border-slate-700 data-[state=checked]:bg-emerald-600 data-[state=checked]:border-emerald-600"
+                    />
+                    <Label htmlFor="remember" className="text-xs text-slate-300 cursor-pointer select-none">
+                      Remember me & Auto-login on this workstation
+                    </Label>
                   </div>
 
                   <Button
