@@ -1,10 +1,32 @@
-DROP ROLE IF EXISTS ${DB_USER};
-SQL
+rsync -a \
+  --exclude '.git' \
+  --exclude '.env' \
+  --exclude '.output' \
+  --exclude 'node_modules' \
+  "${SOURCE_DIR}/" "${INSTALL_DIR}/"
+chown -R "${APP_USER}:${APP_USER}" "${INSTALL_DIR}"
 
-DB_PASSWORD="jhilliard"
-runuser -u postgres -- psql --set ON_ERROR_STOP=1 <<SQL
-CREATE ROLE ${DB_USER} LOGIN PASSWORD '${DB_PASSWORD}';
-CREATE DATABASE ${DB_NAME} OWNER ${DB_USER};
-SQL
+runuser -u "${APP_USER}" -- bash -lc "cd '${INSTALL_DIR}' && npm ci && npm run build"
 
-rm -rf "${INSTALL_DIR}"
+cat > "${INSTALL_DIR}/ecosystem.config.cjs" <<EOF
+module.exports = {
+  apps: [{
+    name: 'app',
+    script: 'server.js',
+    cwd: '/app',
+    env: {
+      NODE_ENV: 'production',
+      PORT: 3000
+    },
+    instances: 1,
+    exec_mode: 'fork',
+    autorestart: true,
+    max_restarts: 10,
+    max_memory_restart: '1G',
+    watch: false,
+    env_production: {
+      NODE_ENV: 'production',
+      PORT: 3000
+    }
+  }]
+}
