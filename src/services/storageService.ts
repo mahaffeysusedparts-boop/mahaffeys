@@ -678,6 +678,7 @@ export const INITIAL_SETTINGS: YardSettings = {
   operatorName: 'Scale Tech Station 1',
   cashDrawerFloatLimit: 10000,
   admissionFeeUsd: 2.00,
+  customDomain: 'app.mahaffeysusedparts.com',
 };
 
 const sampleCarCaptures: ComplianceCaptures = {

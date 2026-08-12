@@ -311,4 +311,5 @@ export interface YardSettings {
   nmvtisReportingId?: string;
   cashDrawerFloatLimit?: number;
   admissionFeeUsd?: number;
+  customDomain?: string;
 }

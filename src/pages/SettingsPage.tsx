@@ -10,12 +10,32 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Settings, Save, Scale, FileText, Database, RotateCcw, Download, Upload, Server, Wifi, WifiOff } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import {
+  Settings,
+  Save,
+  Scale,
+  FileText,
+  Database,
+  RotateCcw,
+  Download,
+  Upload,
+  Server,
+  Wifi,
+  WifiOff,
+  Globe,
+  Copy,
+  ExternalLink,
+  Check,
+  Terminal,
+  ShieldCheck,
+} from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<YardSettings>(storageService.getSettings());
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>(sharedStorage.getStatus());
+  const [copiedField, setCopiedField] = useState<string | null>(null);
   const importFileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => sharedStorage.subscribe(setConnectionStatus), []);
@@ -26,8 +46,35 @@ export default function SettingsPage() {
 
   const handleSave = () => {
     storageService.saveSettings(settings);
-    toast.success('Yard settings updated successfully!');
+    toast.success('Yard & system settings updated successfully!');
   };
+
+  const currentDomain = settings.customDomain || 'app.mahaffeysusedparts.com';
+
+  const copyToClipboard = (text: string, label: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedField(label);
+    toast.success(`Copied ${label} to clipboard!`);
+    setTimeout(() => setCopiedField(null), 2500);
+  };
+
+  const sslCertbotCmd = `sudo certbot --nginx -d ${currentDomain.trim()}`;
+
+  const nginxConfigSnippet = `server {
+    listen 80;
+    server_name ${currentDomain.trim()};
+
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}`;
 
   const handleExportBackup = () => {
     const data = {
@@ -123,7 +170,7 @@ export default function SettingsPage() {
               </h1>
             </div>
             <p className="text-xs text-slate-400 mt-1">
-              Configure business profile, receipt headers, scale communication drivers, and data backups
+              Configure business profile, domain connection, receipt headers, scale drivers, and backups
             </p>
           </div>
 
@@ -135,7 +182,131 @@ export default function SettingsPage() {
           </Button>
         </div>
 
-        {/* Section 1: Business Profile */}
+        {/* Section 1: Custom Domain & Network Access */}
+        <Card className="bg-slate-900 border-2 border-indigo-500/40 text-white shadow-xl overflow-hidden">
+          <CardHeader className="py-3 px-4 bg-gradient-to-r from-indigo-950/80 to-slate-950 border-b border-indigo-500/30 flex flex-row items-center justify-between">
+            <CardTitle className="text-sm font-bold tracking-wide uppercase text-white flex items-center gap-2">
+              <Globe className="w-4 h-4 text-indigo-400" /> Custom Domain & Public Access Setup
+            </CardTitle>
+            <Badge className="bg-indigo-500/20 text-indigo-300 border-indigo-500/40 text-[10px]">
+              DOMAIN & SSL
+            </Badge>
+          </CardHeader>
+
+          <CardContent className="p-5 space-y-5">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-end">
+              <div className="sm:col-span-2">
+                <Label className="text-xs font-bold text-slate-200 block mb-1">
+                  Custom Domain Name *
+                </Label>
+                <div className="relative">
+                  <Globe className="w-4 h-4 absolute left-3 top-3 text-indigo-400" />
+                  <Input
+                    value={settings.customDomain || ''}
+                    onChange={(e) => handleChange('customDomain', e.target.value)}
+                    placeholder="e.g. app.mahaffeysusedparts.com or myyard.com"
+                    className="bg-slate-950 border-slate-800 text-indigo-300 font-mono font-bold text-sm pl-9 h-11"
+                  />
+                </div>
+                <p className="text-[10px] text-slate-400 mt-1">
+                  Enter the full domain name or subdomain pointed to this Linux server.
+                </p>
+              </div>
+
+              <div className="flex gap-2">
+                <a
+                  href={`https://${currentDomain}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full"
+                >
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full h-11 border-indigo-500/40 bg-indigo-950/30 hover:bg-indigo-900/50 text-indigo-300 font-bold text-xs gap-1.5"
+                  >
+                    <ExternalLink className="w-4 h-4" /> Test Domain Link
+                  </Button>
+                </a>
+              </div>
+            </div>
+
+            {/* Step-by-Step Domain Connection Guide */}
+            <div className="p-4 bg-slate-950 rounded-2xl border border-slate-800 space-y-4 text-xs">
+              <h3 className="font-bold text-white flex items-center gap-2 border-b border-slate-800 pb-2">
+                <ShieldCheck className="w-4 h-4 text-emerald-400" /> Steps to Connect Your Domain
+              </h3>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 font-mono">
+                
+                {/* Step 1: DNS Setup */}
+                <div className="p-3 bg-slate-900 rounded-xl border border-slate-800 space-y-1.5">
+                  <div className="flex items-center justify-between text-amber-400 font-bold">
+                    <span>1. DNS A-Record Configuration</span>
+                    <Badge variant="outline" className="text-[9px] border-amber-500/40 text-amber-300">DOMAINS</Badge>
+                  </div>
+                  <p className="text-[11px] text-slate-300 font-sans">
+                    In your domain registrar (GoDaddy, Namecheap, Cloudflare, etc.), add an <strong>A Record</strong>:
+                  </p>
+                  <div className="p-2 bg-slate-950 rounded border border-slate-800 space-y-0.5 text-[10px] text-slate-200">
+                    <p><strong className="text-slate-400">Type:</strong> A</p>
+                    <p><strong className="text-slate-400">Host / Name:</strong> {currentDomain.split('.')[0] || 'app'}</p>
+                    <p><strong className="text-slate-400">Points to:</strong> Your Linux Server Public IP (e.g. 192.168.1.210 or WAN IP)</p>
+                  </div>
+                </div>
+
+                {/* Step 2: SSL Certbot Command */}
+                <div className="p-3 bg-slate-900 rounded-xl border border-slate-800 space-y-1.5">
+                  <div className="flex items-center justify-between text-emerald-400 font-bold">
+                    <span>2. Automatic Free HTTPS SSL Certificate</span>
+                    <Badge variant="outline" className="text-[9px] border-emerald-500/40 text-emerald-300">LET'S ENCRYPT</Badge>
+                  </div>
+                  <p className="text-[11px] text-slate-300 font-sans">
+                    Run this command in terminal to enable HTTPS SSL:
+                  </p>
+                  <div className="p-2 bg-slate-950 rounded border border-slate-800 flex items-center justify-between text-[10px] text-emerald-300 font-mono overflow-x-auto">
+                    <span>{sslCertbotCmd}</span>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => copyToClipboard(sslCertbotCmd, 'Certbot SSL Command')}
+                      className="h-6 px-2 text-[10px] text-slate-400 hover:text-white shrink-0 ml-2"
+                    >
+                      {copiedField === 'Certbot SSL Command' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                    </Button>
+                  </div>
+                </div>
+
+              </div>
+
+              {/* Nginx Config Snippet Accordion / Snippet */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-300 flex items-center gap-1.5 font-sans">
+                    <Terminal className="w-3.5 h-3.5 text-sky-400" /> Generated Nginx Reverse Proxy Config (/etc/nginx/sites-available/mahaffeys):
+                  </span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => copyToClipboard(nginxConfigSnippet, 'Nginx Config')}
+                    className="h-7 text-xs text-indigo-300 hover:text-white gap-1"
+                  >
+                    {copiedField === 'Nginx Config' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                    Copy Nginx Config
+                  </Button>
+                </div>
+                <pre className="p-3 bg-slate-900 rounded-xl border border-slate-800 text-[11px] text-sky-300 font-mono overflow-x-auto">
+                  {nginxConfigSnippet}
+                </pre>
+              </div>
+
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Section 2: Business Profile */}
         <Card className="bg-slate-900 border-slate-800 text-white shadow-lg">
           <CardHeader className="py-3 px-4 bg-slate-950/60 border-b border-slate-800">
             <CardTitle className="text-sm font-bold tracking-wide uppercase text-slate-300 flex items-center gap-2">
@@ -225,7 +396,7 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
 
-        {/* Section 2: Scale Communication */}
+        {/* Section 3: Scale Communication */}
         <Card className="bg-slate-900 border-slate-800 text-white shadow-lg">
           <CardHeader className="py-3 px-4 bg-slate-950/60 border-b border-slate-800">
             <CardTitle className="text-sm font-bold tracking-wide uppercase text-slate-300 flex items-center gap-2">
@@ -273,7 +444,7 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
 
-        {/* Section 3: Data Management */}
+        {/* Section 4: Data Management */}
         <Card className="bg-slate-900 border-slate-800 text-white shadow-lg">
           <CardHeader className="py-3 px-4 bg-slate-950/60 border-b border-slate-800">
             <CardTitle className="text-sm font-bold tracking-wide uppercase text-slate-300 flex items-center justify-between gap-2">
