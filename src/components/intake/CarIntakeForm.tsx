@@ -1,7 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { CarIntakeRecord, Ticket } from '@/types/scrap';
 import { storageService } from '@/services/storageService';
-import { generateSamplePhoto } from '@/utils/complianceUtils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -23,6 +22,7 @@ import {
   Clock,
   Truck,
   FileCheck,
+  Video,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -33,8 +33,12 @@ interface CarIntakeFormProps {
 
 export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCreated }) => {
   // Vehicle Picture Capture State
-  const [photoUrl, setPhotoUrl] = useState<string>(generateSamplePhoto('vehicle'));
+  const [photoUrl, setPhotoUrl] = useState<string>('');
   
+  // References for device camera / file capture
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   // Vehicle Details
   const [vin, setVin] = useState<string>('');
   const [year, setYear] = useState<number>(new Date().getFullYear() - 12);
@@ -80,46 +84,6 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
         }
       };
       reader.readAsDataURL(file);
-    }
-  };
-
-  // Quick Camera Snapshot simulation / canvas render
-  const handleTakeSnapshot = () => {
-    const canvas = document.createElement('canvas');
-    canvas.width = 640;
-    canvas.height = 480;
-    const ctx = canvas.getContext('2d');
-    if (ctx) {
-      ctx.fillStyle = '#0f172a';
-      ctx.fillRect(0, 0, 640, 480);
-      
-      // Draw gridlines
-      ctx.strokeStyle = '#334155';
-      ctx.lineWidth = 2;
-      ctx.strokeRect(40, 40, 560, 400);
-
-      // Draw car body outline
-      ctx.fillStyle = '#38bdf8';
-      ctx.fillRect(120, 200, 400, 140);
-      ctx.fillStyle = '#0284c7';
-      ctx.fillRect(180, 120, 280, 90);
-
-      // Draw wheels
-      ctx.fillStyle = '#000000';
-      ctx.beginPath();
-      ctx.arc(200, 340, 40, 0, Math.PI * 2);
-      ctx.arc(440, 340, 40, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Timestamp watermark
-      ctx.fillStyle = '#f59e0b';
-      ctx.font = 'bold 18px monospace';
-      ctx.fillText(`TOW SNAPSHOT: ${new Date().toLocaleString()}`, 60, 80);
-      ctx.fillText(`VIN: ${vin || 'PENDING'}`, 60, 105);
-
-      const snapUrl = canvas.toDataURL('image/jpeg');
-      setPhotoUrl(snapUrl);
-      toast.success('Snapshot captured from intake camera');
     }
   };
 
@@ -199,7 +163,7 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
       id: `T-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
       ticketType: 'CAR_SALVAGE',
       createdAt: new Date().toISOString(),
-      status: 'COMPLETED',
+      status: 'PENDING',
       customerName: originSource.trim() ? `Tow Origin: ${originSource}` : 'Tow Intake',
       vehicleLicensePlate: '',
       carRecord,
@@ -216,13 +180,32 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
     };
 
     storageService.saveTicket(newTicket);
-    toast.success(`Tow Intake Complete! Ticket #${newTicket.id} created as PENDING state.`);
+    toast.success(`Tow Intake Complete! Ticket #${newTicket.id} saved to Pending Group.`);
     onTicketCreated(newTicket);
   };
 
   return (
     <div className="max-w-5xl mx-auto space-y-6 pb-12 font-sans">
       
+      {/* Device Camera Native Input */}
+      <input
+        type="file"
+        ref={cameraInputRef}
+        onChange={handleFileUpload}
+        accept="image/*"
+        capture="environment"
+        className="hidden"
+      />
+
+      {/* Regular Upload Input */}
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={handleFileUpload}
+        accept="image/*"
+        className="hidden"
+      />
+
       {/* Top Header Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-900 p-4 rounded-xl border border-slate-800 shadow-xl">
         <div className="flex items-center gap-3">
@@ -240,11 +223,11 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
                 <Truck className="w-5 h-5 text-amber-400" /> Fast Tow Driver Vehicle Intake
               </h1>
               <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/40 text-xs font-mono">
-                AUTO-PENDING STAGING
+                SAVES TO PENDING GROUP
               </Badge>
             </div>
             <p className="text-xs text-slate-400">
-              Streamlined tow drop intake: photo, purchase price, tow origin & driver notes. No driver license scan required.
+              Vehicle intake saves directly to the Pending Group for the scale computer operator to review and finalize.
             </p>
           </div>
         </div>
@@ -266,11 +249,17 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
           <Card className="bg-slate-900 border-amber-500/40 text-white shadow-xl overflow-hidden">
             <CardHeader className="py-3 px-4 bg-gradient-to-r from-amber-950/80 to-slate-950 border-b border-amber-500/30 flex flex-row items-center justify-between">
               <CardTitle className="text-sm font-bold tracking-wide uppercase text-amber-300 flex items-center gap-2">
-                <Camera className="w-4 h-4 text-amber-400" /> Vehicle Picture Capture (Upload or Snapshot)
+                <Camera className="w-4 h-4 text-amber-400" /> Vehicle Photo Capture
               </CardTitle>
-              <Badge variant="outline" className="border-amber-500/40 text-amber-300 text-[10px]">
-                REQUIRED FOR INTAKE
-              </Badge>
+              {photoUrl ? (
+                <Badge className="bg-emerald-950 text-emerald-300 border-emerald-500/40 text-[10px]">
+                  PHOTO CAPTURED
+                </Badge>
+              ) : (
+                <Badge variant="outline" className="border-amber-500/40 text-amber-300 text-[10px]">
+                  RECOMMENDED
+                </Badge>
+              )}
             </CardHeader>
 
             <CardContent className="p-4 space-y-4">
@@ -284,35 +273,36 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
                     ) : (
                       <Car className="w-10 h-10 text-slate-600" />
                     )}
-                    <div className="absolute top-2 right-2 bg-slate-950/80 backdrop-blur-md px-2 py-0.5 rounded text-[10px] font-mono text-emerald-400 border border-emerald-500/40">
-                      CAPTURED
-                    </div>
+                    {photoUrl && (
+                      <div className="absolute top-2 right-2 bg-slate-950/80 backdrop-blur-md px-2 py-0.5 rounded text-[10px] font-mono text-emerald-400 border border-emerald-500/40">
+                        VERIFIED
+                      </div>
+                    )}
                   </div>
                 </div>
 
-                {/* Upload & Snapshot Action Buttons */}
+                {/* Camera Action Buttons */}
                 <div className="sm:col-span-2 space-y-3">
                   <p className="text-xs text-slate-300">
-                    Capture a clear 45-degree front angle image of the vehicle being delivered by the tow truck.
+                    Capture a 45-degree front angle image using your device camera or select a photo file.
                   </p>
                   
                   <div className="flex flex-wrap gap-2">
-                    <label className="cursor-pointer inline-flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs px-3.5 py-2 rounded-lg transition-colors shadow">
-                      <Upload className="w-4 h-4" /> Upload Photo File
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={handleFileUpload}
-                        className="hidden"
-                      />
-                    </label>
+                    <Button
+                      type="button"
+                      onClick={() => cameraInputRef.current?.click()}
+                      className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs gap-1.5 shadow"
+                    >
+                      <Camera className="w-4 h-4" /> Device Camera
+                    </Button>
 
                     <Button
                       type="button"
-                      onClick={handleTakeSnapshot}
-                      className="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold gap-1.5"
+                      onClick={() => fileInputRef.current?.click()}
+                      variant="outline"
+                      className="bg-slate-800 border-slate-700 hover:bg-slate-700 text-slate-200 text-xs font-semibold gap-1.5"
                     >
-                      <Camera className="w-4 h-4 text-amber-400" /> Take Snapshot
+                      <Upload className="w-4 h-4 text-amber-400" /> Upload File
                     </Button>
                   </div>
                 </div>
@@ -648,7 +638,7 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
                   </span>
                 </div>
                 <p className="text-[11px] text-slate-400">
-                  Status will automatically save as <span className="text-amber-300 font-bold">PENDING</span> until parts processor inspection.
+                  Status will save as <span className="text-amber-300 font-bold">PENDING</span> in the Pending Group for finalization.
                 </p>
               </div>
 
@@ -656,7 +646,7 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
                 onClick={handleSubmitTicket}
                 className="w-full h-12 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black shadow-xl shadow-amber-950 text-sm tracking-wide"
               >
-                <CheckCircle2 className="w-5 h-5 mr-2" /> Complete Tow Intake (Save as PENDING)
+                <CheckCircle2 className="w-5 h-5 mr-2" /> Save to Pending Group
               </Button>
             </CardContent>
           </Card>
