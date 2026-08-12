@@ -9,6 +9,7 @@ import { ProtectedRoute } from "./components/auth/ProtectedRoute";
 import DashboardPage from "./pages/DashboardPage";
 import IntakePage from "./pages/IntakePage";
 import PublicInventoryPage from "./pages/PublicInventoryPage";
+import PublicVehiclesPage from "./pages/PublicVehiclesPage";
 import TicketsPage from "./pages/TicketsPage";
 import PricingPage from "./pages/PricingPage";
 import CustomersPage from "./pages/CustomersPage";
@@ -40,8 +41,9 @@ const App = () => (
             <Route path="/login" element={<LoginPage />} />
             <Route path="/pending-approval" element={<PendingApprovalPage />} />
 
-            {/* PUBLIC YARD PARTS CATALOG EXCEPTION (Guest Accessible) */}
+            {/* PUBLIC YARD PARTS & VEHICLES CATALOG (Guest Accessible) */}
             <Route path="/inventory" element={<PublicInventoryPage />} />
+            <Route path="/vehicles" element={<PublicVehiclesPage />} />
 
             {/* PROTECTED WORKSTATION ROUTES */}
             <Route

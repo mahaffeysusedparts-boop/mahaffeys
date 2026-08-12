@@ -14,10 +14,10 @@ export type IpCameraAssignment = 'SCALE_DESK' | 'SELLER_FACE' | 'LICENSE_PLATE' 
 export interface IpCamera {
   id: string;
   name: string;
-  ipAddress: string; // e.g. "192.168.1.150" or full URL "http://192.168.1.150:8080/video"
+  ipAddress: string;
   port?: number;
-  streamUrl: string; // resolved video or snapshot URL
-  snapshotUrl?: string; // e.g. "http://192.168.1.150/cgi-bin/snapshot.cgi" or "/snapshot.jpg"
+  streamUrl: string;
+  snapshotUrl?: string;
   cameraType: IpCameraType;
   assignment: IpCameraAssignment;
   username?: string;
@@ -47,7 +47,7 @@ export interface AuthSession {
 }
 
 export interface ScaleStatus {
-  weight: number; // in current weight unit (default LBS)
+  weight: number;
   unit: WeightUnit;
   isStable: boolean;
   isZero: boolean;
@@ -132,6 +132,22 @@ export interface PullYardVehicle {
   purchasePrice?: number;
   originSource?: string;
   notes?: string;
+  stockNumber?: string;
+  rowNumber?: string;
+  spaceNumber?: string;
+  operatorName?: string;
+}
+
+export interface VehicleArrivalSubscription {
+  id: string;
+  make: string;
+  model: string;
+  yearMin?: number;
+  yearMax?: number;
+  contactName: string;
+  contactPhoneOrEmail: string;
+  createdAt: string;
+  notified?: boolean;
 }
 
 export interface CoreReturnLog {

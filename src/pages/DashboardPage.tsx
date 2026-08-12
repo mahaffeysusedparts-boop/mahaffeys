@@ -36,6 +36,7 @@ import {
   Shield,
   ChevronRight,
   Camera,
+  Layers3,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -128,9 +129,9 @@ export default function DashboardPage() {
                 </Button>
               </Link>
 
-              <Link to="/pull-a-part" className="w-full sm:w-auto">
-                <Button variant="outline" className="w-full sm:w-auto border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs h-11 gap-2">
-                  <Wrench className="w-4 h-4 text-amber-400" /> Pull-A-Part Suite
+              <Link to="/vehicles" className="w-full sm:w-auto">
+                <Button variant="outline" className="w-full sm:w-auto border-amber-500/40 bg-amber-950/20 hover:bg-amber-950/50 text-amber-300 font-bold text-xs h-11 gap-2">
+                  <Car className="w-4 h-4 text-amber-400" /> Public Cars Portal
                 </Button>
               </Link>
             </div>
@@ -335,8 +336,9 @@ export default function DashboardPage() {
             <CardContent className="p-4 space-y-2">
               {[
                 { title: "Car Salvage & Scrap Intake", path: "/intake", icon: Scale, color: "text-emerald-400" },
-                { title: "Public Vehicle Inventory", path: "/inventory", icon: Car, color: "text-amber-400" },
-                { title: "Pull-A-Part Row Operations", path: "/pull-a-part", icon: Wrench, color: "text-sky-400" },
+                { title: "Public Cars On Yard", path: "/vehicles", icon: Car, color: "text-amber-400" },
+                { title: "Public Parts Catalog", path: "/inventory", icon: Wrench, color: "text-sky-400" },
+                { title: "Pull-A-Part Row Operations", path: "/pull-a-part", icon: Wrench, color: "text-amber-400" },
                 { title: "Compliance & NMVTIS Hub", path: "/compliance", icon: ShieldCheck, color: "text-purple-400" },
                 { title: "IP Camera Feeds", path: "/cameras", icon: Camera, color: "text-sky-400" },
                 { title: "Cash Drawer Station", path: "/cash-drawer", icon: Banknote, color: "text-emerald-400" },
