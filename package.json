@@ -56,7 +56,7 @@
     "next-themes": "^0.4.4",
     "nitro": "^3.0.260610-beta",
     "pg": "^8.16.3",
-    "react": "^19.2.3",
+    "react": "^19.2.8",
     "react-day-picker": "^9.13.0",
     "react-dom": "^19.2.3",
     "react-hook-form": "^7.53.0",
