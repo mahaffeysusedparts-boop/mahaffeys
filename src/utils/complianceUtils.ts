@@ -14,6 +14,58 @@ export interface DLScanResult {
 }
 
 /**
+ * Generates an SVG data URL fallback image for initial database seed data or new records without a camera photo.
+ */
+export function generateSamplePhoto(type: 'person' | 'id' | 'vehicle' | 'plate' | 'load'): string {
+  const bgColors: Record<string, string> = {
+    person: '#0f172a',
+    id: '#1e293b',
+    vehicle: '#1e1b4b',
+    plate: '#064e3b',
+    load: '#312e81',
+  };
+
+  const titles: Record<string, string> = {
+    person: 'SELLER FACE SNAPSHOT',
+    id: 'STATE DRIVER LICENSE RECORD',
+    vehicle: 'VEHICLE FRONT 45° ANGLE',
+    plate: 'LICENSE PLATE TAG',
+    load: 'SCRAP CARGO LOAD BED',
+  };
+
+  const icons: Record<string, string> = {
+    person: '👤 SELLER VERIFIED',
+    id: '💳 DRIVER LICENSE RECORD',
+    vehicle: '🚗 VEHICLE RECORD',
+    plate: '🏷️ LICENSE PLATE TAG',
+    load: '📦 SCRAP CARGO LOAD',
+  };
+
+  const bg = bgColors[type] || '#0f172a';
+  const title = titles[type] || 'PHOTO RECORD';
+  const sub = icons[type] || 'VERIFIED RECORD';
+  const dateStr = new Date().toLocaleDateString();
+
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="480" viewBox="0 0 640 480">
+    <rect width="640" height="480" fill="${bg}"/>
+    <rect x="20" y="20" width="600" height="440" rx="16" fill="none" stroke="#3b82f6" stroke-width="3" stroke-dasharray="8 4"/>
+    
+    <rect x="40" y="40" width="300" height="36" rx="8" fill="#3b82f6" opacity="0.9"/>
+    <text x="55" y="63" fill="#ffffff" font-family="monospace" font-size="14" font-weight="bold">${title}</text>
+    
+    <circle cx="320" cy="230" r="90" fill="none" stroke="#22c55e" stroke-width="2" opacity="0.6"/>
+    <line x1="320" y1="120" x2="320" y2="340" stroke="#22c55e" stroke-width="1.5" stroke-dasharray="4 4" opacity="0.6"/>
+    <line x1="210" y1="230" x2="430" y2="230" stroke="#22c55e" stroke-width="1.5" stroke-dasharray="4 4" opacity="0.6"/>
+    
+    <rect x="40" y="380" width="560" height="60" rx="10" fill="#000000" opacity="0.75"/>
+    <text x="60" y="408" fill="#4ade80" font-family="sans-serif" font-size="18" font-weight="bold">${sub}</text>
+    <text x="60" y="428" fill="#94a3b8" font-family="monospace" font-size="12">TIMESTAMP: ${dateStr} | RECORD VERIFIED</text>
+  </svg>`;
+
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+}
+
+/**
  * Parses Driver License / ID details from an uploaded or camera-captured image data URL.
  * Attempts to extract barcode AAMVA text if embedded, or reads text via canvas heuristics.
  */
