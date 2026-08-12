@@ -24,6 +24,7 @@ import ServerAdminPage from "./pages/ServerAdminPage";
 import UserManagementPage from "./pages/UserManagementPage";
 import LoginPage from "./pages/LoginPage";
 import PendingApprovalPage from "./pages/PendingApprovalPage";
+import CamerasPage from "./pages/CamerasPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -41,7 +42,7 @@ const App = () => (
             <Route path="/login" element={<LoginPage />} />
             <Route path="/pending-approval" element={<PendingApprovalPage />} />
 
-            {/* PUBLIC YARD PARTS & VEHICLES CATALOG (Guest Accessible) */}
+            {/* PUBLIC YARD PARTS & VEHICLES CATALOG EXCEPTIONS (Guest Accessible) */}
             <Route path="/inventory" element={<PublicInventoryPage />} />
             <Route path="/vehicles" element={<PublicVehiclesPage />} />
 
@@ -83,6 +84,14 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <CompliancePage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/cameras"
+              element={
+                <ProtectedRoute>
+                  <CamerasPage />
                 </ProtectedRoute>
               }
             />

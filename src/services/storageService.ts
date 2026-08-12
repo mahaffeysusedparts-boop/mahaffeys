@@ -36,7 +36,7 @@ const STORAGE_KEYS = {
   CORE_RETURNS: 'mahaffeys_core_returns',
   ADMISSION_PASSES: 'mahaffeys_admission_passes',
   IP_CAMERAS: 'mahaffeys_ip_cameras',
-  VEHICLE_SUBSCRIPTIONS: 'mahaffeys_vehicle_subscriptions',
+  NOTIFY_SUBSCRIPTIONS: 'mahaffeys_arrival_subscriptions',
 };
 
 export const INITIAL_IP_CAMERAS: IpCamera[] = [
@@ -184,7 +184,10 @@ export const INITIAL_PULL_PARTS: PullPartItem[] = [
 export const INITIAL_PULL_VEHICLES: PullYardVehicle[] = [
   {
     id: 'veh-101',
+    stockNumber: 'STK-2025-01',
     section: 'Domestic Trucks & SUVs',
+    rowNumber: 'Row 12',
+    spaceNumber: 'Space 04',
     year: 2008,
     make: 'Ford',
     model: 'F-150 SuperCrew 5.4L',
@@ -198,13 +201,13 @@ export const INITIAL_PULL_VEHICLES: PullYardVehicle[] = [
     purchasePrice: 450,
     originSource: '1428 Industrial Pkwy, Tow Origin',
     notes: 'Runs and drives, minor front dent',
-    stockNumber: 'STK-2025-101',
-    rowNumber: 'Row 4',
-    spaceNumber: 'Space 12',
   },
   {
     id: 'veh-102',
+    stockNumber: 'STK-2025-02',
     section: 'GM & Chevrolet',
+    rowNumber: 'Row 08',
+    spaceNumber: 'Space 19',
     year: 2008,
     make: 'Chevrolet',
     model: 'Impala LT 3.5L V6',
@@ -218,13 +221,13 @@ export const INITIAL_PULL_VEHICLES: PullYardVehicle[] = [
     purchasePrice: 350,
     originSource: 'Vance Auto Recovery Tow',
     notes: 'Missing key, flat tire on right rear',
-    stockNumber: 'STK-2025-102',
-    rowNumber: 'Row 2',
-    spaceNumber: 'Space 08',
   },
   {
     id: 'veh-103',
+    stockNumber: 'STK-2025-03',
     section: 'Asian Imports',
+    rowNumber: 'Row 04',
+    spaceNumber: 'Space 02',
     year: 2008,
     make: 'Nissan',
     model: 'Altima 2.5S Sedan',
@@ -238,29 +241,46 @@ export const INITIAL_PULL_VEHICLES: PullYardVehicle[] = [
     purchasePrice: 300,
     originSource: 'Decatur Highway Tow Depot',
     notes: 'Crushed and stripped shell',
-    stockNumber: 'STK-2025-103',
-    rowNumber: 'Row 8',
-    spaceNumber: 'Space 01',
   },
   {
     id: 'veh-104',
+    stockNumber: 'STK-2025-04',
     section: 'Asian Imports',
+    rowNumber: 'Row 03',
+    spaceNumber: 'Space 14',
     year: 2011,
     make: 'Toyota',
     model: 'Camry LE 2.5L',
     color: 'Classic Silver',
     vin: '4T1BF1FK1BU209182',
-    dateSetInYard: new Date(Date.now() - 1000 * 60 * 60 * 4).toISOString(),
+    dateSetInYard: new Date(Date.now() - 1000 * 60 * 60 * 6).toISOString(), // 6 hours ago
     status: 'AVAILABLE',
     partsRemaining: ['2AR-FE Engine', '6-Speed Auto Transmission', 'Alloy Wheels (4x)', 'Doors', 'Front End Assembly'],
     dismantlingLog: { catalyticConvertersRemoved: 0, wheelsRemoved: 0, gasDrained: false, oilDrained: false },
     photoUrl: generateSamplePhoto('vehicle'),
     purchasePrice: 500,
     originSource: 'Highway 78 Police Impound Tow',
-    notes: 'Key in ignition, catalytic converters intact',
-    stockNumber: 'STK-2025-104',
-    rowNumber: 'Row 1',
-    spaceNumber: 'Space 04',
+    notes: 'Tow driver note: Key in ignition, catalytic converters intact',
+  },
+  {
+    id: 'veh-105',
+    stockNumber: 'STK-2025-05',
+    section: 'Ford & Lincoln',
+    rowNumber: 'Row 14',
+    spaceNumber: 'Space 01',
+    year: 2013,
+    make: 'Ford',
+    model: 'Explorer XLT 3.5L V6',
+    color: 'Tuxedo Black',
+    vin: '1FM5K8D84DGB10982',
+    dateSetInYard: new Date(Date.now() - 1000 * 60 * 60 * 18).toISOString(), // 18 hours ago
+    status: 'AVAILABLE',
+    partsRemaining: ['Engine 3.5L V6', 'AWD Transmission', 'Leather Seats', 'Tailgate', 'Headlights', '18" Wheels'],
+    dismantlingLog: { catalyticConvertersRemoved: 0, wheelsRemoved: 0, gasDrained: true, oilDrained: true },
+    photoUrl: generateSamplePhoto('vehicle'),
+    purchasePrice: 600,
+    originSource: 'Metro Towing Drop',
+    notes: 'Clean interior, rear axle intact',
   },
 ];
 
@@ -303,31 +323,6 @@ export const INITIAL_ADMISSION_PASSES: AdmissionPass[] = [
     feePaid: 2.00,
     waiverSigned: true,
     operatorName: 'Scale Tech Station 1',
-  },
-];
-
-export const INITIAL_VEHICLE_SUBSCRIPTIONS: VehicleArrivalSubscription[] = [
-  {
-    id: 'sub-1',
-    make: 'Honda',
-    model: 'Civic',
-    yearMin: 2008,
-    yearMax: 2015,
-    contactName: 'Alex Mercer',
-    contactPhoneOrEmail: '(555) 234-5678',
-    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 2).toISOString(),
-    notified: false,
-  },
-  {
-    id: 'sub-2',
-    make: 'Ford',
-    model: 'F-150',
-    yearMin: 2004,
-    yearMax: 2012,
-    contactName: 'Dave Miller',
-    contactPhoneOrEmail: 'dave@truckrepair.com',
-    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 5).toISOString(),
-    notified: false,
   },
 ];
 
@@ -874,6 +869,75 @@ export const INITIAL_TICKETS: Ticket[] = [
     payoutMethod: 'Cash',
     operatorName: 'Scale Tech Station 1',
   },
+  {
+    id: 'T-2025-1003',
+    ticketType: 'CAR_SALVAGE',
+    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 26).toISOString(),
+    status: 'COMPLETED',
+    customerId: 'cust-103',
+    customerName: 'Sarah Jenkins',
+    customerPhone: '(555) 201-9988',
+    customerIdNumber: 'ID-881920-GA',
+    vehicleLicensePlate: 'BKN-402',
+    carRecord: {
+      vin: '1N4AL21E38C209182',
+      year: 2008,
+      make: 'Nissan',
+      model: 'Altima 2.5S',
+      color: 'Black',
+      mileage: 210000,
+      titleStatus: 'Missing Title (Affidavit)',
+      titleNumber: 'AFF-2025-091',
+      hasCatalyticConverter: false,
+      catCondition: 'Missing / Removed',
+      hasEngineAndTrans: true,
+      hasBattery: true,
+      hasAluminumRims: false,
+      fluidsDrained: true,
+      pricingMode: 'TONNAGE',
+      vehicleWeightLbs: 3100,
+      ratePerTon: 220,
+      flatRate: 0,
+      catBonus: 0,
+      engineBonus: 50,
+      batteryBonus: 15,
+      deductions: 0,
+      totalPayout: 406.00,
+      complianceCaptures: {
+        ...sampleCarCaptures,
+        nmvtisReported: false,
+      },
+    },
+    complianceCaptures: {
+      ...sampleCarCaptures,
+      nmvtisReported: false,
+    },
+    grossTotal: 406.00,
+    totalDeductions: 0,
+    finalPayout: 406.00,
+    payoutMethod: 'Check',
+    checkNumber: 'CHK-9021',
+    operatorName: 'Scale Tech Station 1',
+    notes: 'Missing title state affidavit filed on record.',
+  },
+  {
+    id: 'T-2025-1004',
+    ticketType: 'SCRAP_METAL',
+    createdAt: new Date(Date.now() - 1000 * 60 * 12).toISOString(),
+    status: 'PENDING',
+    customerId: 'cust-101',
+    customerName: 'Robert Henderson',
+    customerPhone: '(555) 382-9102',
+    customerIdNumber: 'DL-9823145-GA',
+    vehicleLicensePlate: '7ABC89',
+    complianceCaptures: sampleScrapCaptures,
+    grossTotal: 0,
+    totalDeductions: 0,
+    finalPayout: 0,
+    payoutMethod: 'Cash',
+    operatorName: 'Yard Station 1',
+    notes: 'Scanned at yard entrance. Driver waiting at Office PC scale.',
+  }
 ];
 
 export const storageService = {
@@ -903,45 +967,35 @@ export const storageService = {
     sharedStorage.setItem(STORAGE_KEYS.IP_CAMERAS, JSON.stringify(cameras));
   },
 
-  getVehicleSubscriptions(): VehicleArrivalSubscription[] {
-    const data = sharedStorage.getItem(STORAGE_KEYS.VEHICLE_SUBSCRIPTIONS);
-    if (!data) {
-      sharedStorage.setItem(STORAGE_KEYS.VEHICLE_SUBSCRIPTIONS, JSON.stringify(INITIAL_VEHICLE_SUBSCRIPTIONS));
-      return INITIAL_VEHICLE_SUBSCRIPTIONS;
-    }
+  getArrivalSubscriptions(): VehicleArrivalSubscription[] {
+    const data = sharedStorage.getItem(STORAGE_KEYS.NOTIFY_SUBSCRIPTIONS);
+    if (!data) return [];
     return JSON.parse(data);
   },
 
-  saveVehicleSubscription(sub: VehicleArrivalSubscription): VehicleArrivalSubscription {
-    const subs = this.getVehicleSubscriptions();
-    const idx = subs.findIndex((s) => s.id === sub.id);
-    if (idx >= 0) {
-      subs[idx] = sub;
-    } else {
-      subs.unshift(sub);
-    }
-    sharedStorage.setItem(STORAGE_KEYS.VEHICLE_SUBSCRIPTIONS, JSON.stringify(subs));
+  saveArrivalSubscription(sub: VehicleArrivalSubscription): VehicleArrivalSubscription {
+    const list = this.getArrivalSubscriptions();
+    list.unshift(sub);
+    sharedStorage.setItem(STORAGE_KEYS.NOTIFY_SUBSCRIPTIONS, JSON.stringify(list));
     return sub;
   },
 
-  deleteVehicleSubscription(id: string): void {
-    const subs = this.getVehicleSubscriptions().filter((s) => s.id !== id);
-    sharedStorage.setItem(STORAGE_KEYS.VEHICLE_SUBSCRIPTIONS, JSON.stringify(subs));
-  },
-
-  matchVehicleSubscriptions(make: string, model: string, year?: number): VehicleArrivalSubscription[] {
-    const subs = this.getVehicleSubscriptions();
-    const cleanMake = make.toLowerCase().trim();
-    const cleanModel = model.toLowerCase().trim();
+  checkSubscriptionsForVehicle(make: string, model: string): VehicleArrivalSubscription[] {
+    const subs = this.getArrivalSubscriptions().filter((s) => !s.isFulfilled);
+    const mMake = make.trim().toLowerCase();
+    const mModel = model.trim().toLowerCase();
 
     return subs.filter((s) => {
-      const matchMake = s.make.toLowerCase().trim() === cleanMake || cleanMake.includes(s.make.toLowerCase().trim());
-      const matchModel = s.model.toLowerCase().trim() === cleanModel || cleanModel.includes(s.model.toLowerCase().trim());
-      let matchYear = true;
-      if (year && s.yearMin) matchYear = matchYear && year >= s.yearMin;
-      if (year && s.yearMax) matchYear = matchYear && year <= s.yearMax;
-      return matchMake && matchModel && matchYear;
+      const matchMake = s.make.trim().toLowerCase() === mMake || mMake.includes(s.make.trim().toLowerCase());
+      const matchModel = s.model.trim().toLowerCase() === mModel || mModel.includes(s.model.trim().toLowerCase());
+      return matchMake && matchModel;
     });
+  },
+
+  getNewArrivals(days: number = 7): PullYardVehicle[] {
+    const vehicles = this.getPullYardVehicles();
+    const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+    return vehicles.filter((v) => new Date(v.dateSetInYard).getTime() >= cutoff);
   },
 
   getMetals(): MetalGrade[] {
@@ -1221,7 +1275,6 @@ export const storageService = {
         purchasePrice: c.purchasePrice ?? ticket.finalPayout,
         originSource: c.originSource || 'Tow Intake',
         notes: c.notes || ticket.notes,
-        stockNumber: `STK-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`,
         dismantlingLog: {
           catalyticConvertersRemoved: 0,
           wheelsRemoved: 0,
@@ -1241,6 +1294,7 @@ export const storageService = {
       });
     }
 
+    // Save/update associated customer record with phone & total payouts
     if (ticket.customerId) {
       const customers = this.getCustomers();
       const cust = customers.find((c) => c.id === ticket.customerId);
@@ -1265,6 +1319,7 @@ export const storageService = {
         this.saveCustomer(cust);
       }
     } else if (ticket.customerName && ticket.customerPhone) {
+      // Create new customer record if phone is provided but customer hasn't been saved yet
       const customers = this.getCustomers();
       const existing = customers.find(c => c.fullName.toLowerCase() === ticket.customerName.toLowerCase() || (c.phone && c.phone === ticket.customerPhone));
       if (!existing) {
@@ -1401,7 +1456,7 @@ export const storageService = {
     sharedStorage.setItem(STORAGE_KEYS.CORE_RETURNS, JSON.stringify(INITIAL_CORE_RETURNS));
     sharedStorage.setItem(STORAGE_KEYS.ADMISSION_PASSES, JSON.stringify(INITIAL_ADMISSION_PASSES));
     sharedStorage.setItem(STORAGE_KEYS.IP_CAMERAS, JSON.stringify(INITIAL_IP_CAMERAS));
-    sharedStorage.setItem(STORAGE_KEYS.VEHICLE_SUBSCRIPTIONS, JSON.stringify(INITIAL_VEHICLE_SUBSCRIPTIONS));
     sharedStorage.removeItem(STORAGE_KEYS.NMVTIS_LOGS);
+    sharedStorage.removeItem(STORAGE_KEYS.NOTIFY_SUBSCRIPTIONS);
   },
 };
