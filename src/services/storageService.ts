@@ -147,8 +147,9 @@ export const INITIAL_PULL_VEHICLES: PullYardVehicle[] = [
     color: 'Oxford White',
     vin: '1FTRF12W88KA10291',
     dateSetInYard: new Date(Date.now() - 1000 * 60 * 60 * 24 * 3).toISOString(),
-    status: 'FRESH_SET',
+    status: 'AVAILABLE',
     partsRemaining: ['Transmission 4R75E', 'Doors (4x)', 'Rear Axle Assembly', 'Interior Seats', 'Fenders', 'Hood'],
+    dismantlingLog: { catalyticConvertersRemoved: 1, wheelsRemoved: 0, gasDrained: true, oilDrained: true },
   },
   {
     id: 'veh-102',
@@ -161,8 +162,9 @@ export const INITIAL_PULL_VEHICLES: PullYardVehicle[] = [
     color: 'Silver Metallic',
     vin: '1G1JC524317109281',
     dateSetInYard: new Date(Date.now() - 1000 * 60 * 60 * 24 * 10).toISOString(),
-    status: 'POPULAR',
+    status: 'AVAILABLE',
     partsRemaining: ['Engine 3.5L V6', 'Headlights', 'Bumper Assembly', 'Front Struts'],
+    dismantlingLog: { catalyticConvertersRemoved: 0, wheelsRemoved: 2, gasDrained: true, oilDrained: false },
   },
   {
     id: 'veh-103',
@@ -175,8 +177,9 @@ export const INITIAL_PULL_VEHICLES: PullYardVehicle[] = [
     color: 'Super Black',
     vin: '1N4AL21E38C209182',
     dateSetInYard: new Date(Date.now() - 1000 * 60 * 60 * 24 * 22).toISOString(),
-    status: 'STRIPPED_SHELL',
+    status: 'CRUSHED',
     partsRemaining: ['Bare Body Shell', 'Subframe', 'Rear Suspension Beam'],
+    dismantlingLog: { catalyticConvertersRemoved: 1, wheelsRemoved: 4, gasDrained: true, oilDrained: true },
   },
   {
     id: 'veh-104',
@@ -189,8 +192,9 @@ export const INITIAL_PULL_VEHICLES: PullYardVehicle[] = [
     color: 'Classic Silver',
     vin: '4T1BF1FK1BU209182',
     dateSetInYard: new Date(Date.now() - 1000 * 60 * 60 * 24 * 1).toISOString(),
-    status: 'FRESH_SET',
+    status: 'PENDING',
     partsRemaining: ['2AR-FE Engine', '6-Speed Auto Transmission', 'Alloy Wheels (4x)', 'Doors', 'Front End Assembly'],
+    dismantlingLog: { catalyticConvertersRemoved: 0, wheelsRemoved: 0, gasDrained: false, oilDrained: false },
   },
 ];
 
@@ -878,7 +882,27 @@ export const storageService = {
       sharedStorage.setItem(STORAGE_KEYS.PULL_YARD_VEHICLES, JSON.stringify(INITIAL_PULL_VEHICLES));
       return INITIAL_PULL_VEHICLES;
     }
-    return JSON.parse(data);
+
+    const vehicles = JSON.parse(data) as Array<Omit<PullYardVehicle, 'status' | 'dismantlingLog'> & {
+      status: string;
+      dismantlingLog?: PullYardVehicle['dismantlingLog'];
+    }>;
+
+    return vehicles.map((vehicle) => ({
+      ...vehicle,
+      status:
+        vehicle.status === 'CRUSHED' || vehicle.status === 'STRIPPED_SHELL' || vehicle.status === 'READY_FOR_CRUSHER'
+          ? 'CRUSHED'
+          : vehicle.status === 'PENDING'
+            ? 'PENDING'
+            : 'AVAILABLE',
+      dismantlingLog: vehicle.dismantlingLog || {
+        catalyticConvertersRemoved: 0,
+        wheelsRemoved: 0,
+        gasDrained: false,
+        oilDrained: false,
+      },
+    }));
   },
 
   savePullYardVehicle(veh: PullYardVehicle): PullYardVehicle {
@@ -891,6 +915,11 @@ export const storageService = {
     }
     sharedStorage.setItem(STORAGE_KEYS.PULL_YARD_VEHICLES, JSON.stringify(vehicles));
     return veh;
+  },
+
+  deletePullYardVehicle(vehicleId: string): void {
+    const vehicles = this.getPullYardVehicles().filter((vehicle) => vehicle.id !== vehicleId);
+    sharedStorage.setItem(STORAGE_KEYS.PULL_YARD_VEHICLES, JSON.stringify(vehicles));
   },
 
   getCoreReturns(): CoreReturnLog[] {
@@ -1081,8 +1110,14 @@ export const storageService = {
         color: c.color,
         vin: c.vin,
         dateSetInYard: new Date().toISOString(),
-        status: 'FRESH_SET',
+        status: c.yardStatus || 'PENDING',
         partsRemaining: ['Engine Assembly', 'Transmission', 'Doors', 'Wheels', 'Headlights', 'Fenders'],
+        dismantlingLog: {
+          catalyticConvertersRemoved: 0,
+          wheelsRemoved: 0,
+          gasDrained: c.fluidsDrained,
+          oilDrained: c.fluidsDrained,
+        },
       });
     }
 

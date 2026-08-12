@@ -120,26 +120,40 @@ export function generateSamplePhoto(type: 'person' | 'id' | 'vehicle' | 'plate' 
 }
 
 // Check compliance level for a ticket or intake (5 Photo Audit Suite)
-export function calculateComplianceScore(captures?: ComplianceCaptures): {
+export function calculateComplianceScore(
+  captures?: ComplianceCaptures,
+  intakeType?: 'CAR_SALVAGE' | 'SCRAP_METAL'
+): {
   score: number;
   status: 'FULL' | 'PARTIAL' | 'MISSING';
   missingItems: string[];
 } {
+  const isCarSalvage = intakeType === 'CAR_SALVAGE';
+
   if (!captures) {
     return {
       score: 0,
       status: 'MISSING',
-      missingItems: ['Seller Photo', 'ID Scan', 'Vehicle Photo', 'License Plate Photo', 'Scrap Cargo Photo'],
+      missingItems: isCarSalvage
+        ? ['Seller Photo', 'Vehicle Photo', 'License Plate Photo', 'Scrap Cargo Photo']
+        : ['Seller Photo', 'ID Scan', 'Vehicle Photo', 'License Plate Photo', 'Scrap Cargo Photo'],
     };
   }
 
-  const items = [
-    { key: 'personPhotoUrl', name: 'Seller Photo' },
-    { key: 'idPhotoUrl', name: 'ID Scan' },
-    { key: 'vehiclePhotoUrl', name: 'Vehicle Photo' },
-    { key: 'licensePlatePhotoUrl', name: 'License Plate' },
-    { key: 'loadPhotoUrl', name: 'Scrap Cargo Photo' },
-  ];
+  const items = isCarSalvage
+    ? [
+        { key: 'personPhotoUrl', name: 'Seller Photo' },
+        { key: 'vehiclePhotoUrl', name: 'Vehicle Photo' },
+        { key: 'licensePlatePhotoUrl', name: 'License Plate' },
+        { key: 'loadPhotoUrl', name: 'Scrap Cargo Photo' },
+      ]
+    : [
+        { key: 'personPhotoUrl', name: 'Seller Photo' },
+        { key: 'idPhotoUrl', name: 'ID Scan' },
+        { key: 'vehiclePhotoUrl', name: 'Vehicle Photo' },
+        { key: 'licensePlatePhotoUrl', name: 'License Plate' },
+        { key: 'loadPhotoUrl', name: 'Scrap Cargo Photo' },
+      ];
 
   const missing: string[] = [];
   let filledCount = 0;

@@ -86,6 +86,17 @@ export interface PullPartItem {
   isPopular?: boolean;
 }
 
+export type PullYardVehicleStatus = 'PENDING' | 'AVAILABLE' | 'CRUSHED';
+
+export interface VehicleDismantlingLog {
+  catalyticConvertersRemoved: number;
+  wheelsRemoved: number;
+  gasDrained: boolean;
+  oilDrained: boolean;
+  notes?: string;
+  updatedAt?: string;
+}
+
 export interface PullYardVehicle {
   id: string;
   rowNumber: string;
@@ -97,8 +108,9 @@ export interface PullYardVehicle {
   color: string;
   vin: string;
   dateSetInYard: string;
-  status: 'FRESH_SET' | 'POPULAR' | 'STRIPPED_SHELL' | 'READY_FOR_CRUSHER';
+  status: PullYardVehicleStatus;
   partsRemaining: string[];
+  dismantlingLog: VehicleDismantlingLog;
 }
 
 export interface CoreReturnLog {
@@ -225,6 +237,7 @@ export interface CarIntakeRecord {
   
   assignedRow?: string;
   assignedSpace?: string;
+  yardStatus?: PullYardVehicleStatus;
   
   pricingMode: 'TONNAGE' | 'FLAT_RATE';
   vehicleWeightLbs: number;

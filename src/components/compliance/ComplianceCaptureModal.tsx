@@ -50,7 +50,10 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
   onClose,
   initialCaptures,
   onSaveCaptures,
+  intakeType,
 }) => {
+  const isCarSalvage = intakeType === 'CAR_SALVAGE';
+
   const [captures, setCaptures] = useState<ComplianceCaptures>(
     initialCaptures || {
       personPhotoUrl: undefined,
@@ -61,7 +64,7 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
     }
   );
 
-  const [activeTab, setActiveTab] = useState<string>("id");
+  const [activeTab, setActiveTab] = useState<string>(isCarSalvage ? "person" : "id");
   const [scannedProfile, setScannedProfile] = useState<DLScanResult | undefined>();
   const [isCapturing, setIsCapturing] = useState(false);
   const [useLiveCamera, setUseLiveCamera] = useState(false);
@@ -73,7 +76,13 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [currentUploadTarget, setCurrentUploadTarget] = useState<keyof ComplianceCaptures | null>(null);
 
-  const complianceStats = calculateComplianceScore(captures);
+  const complianceStats = calculateComplianceScore(captures, intakeType);
+
+  useEffect(() => {
+    if (isCarSalvage && activeTab === 'id') {
+      setActiveTab('person');
+    }
+  }, [isCarSalvage, activeTab]);
 
   // Cleanup camera stream when modal closes
   useEffect(() => {
@@ -328,9 +337,9 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
         )}
 
         {/* Live Thumbnails Bar - Optimized 48px touch targets for iPad */}
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 my-3 p-2.5 bg-slate-900 rounded-xl border border-slate-800">
+        <div className={`grid grid-cols-2 ${isCarSalvage ? 'sm:grid-cols-4' : 'sm:grid-cols-5'} gap-2.5 my-3 p-2.5 bg-slate-900 rounded-xl border border-slate-800`}>
           {[
-            { id: 'idPhotoUrl', title: 'DL / State ID', icon: CreditCard, val: captures.idPhotoUrl, tab: 'id' },
+            ...(!isCarSalvage ? [{ id: 'idPhotoUrl', title: 'DL / State ID', icon: CreditCard, val: captures.idPhotoUrl, tab: 'id' }] : []),
             { id: 'personPhotoUrl', title: 'Seller Face', icon: UserCheck, val: captures.personPhotoUrl, tab: 'person' },
             { id: 'vehiclePhotoUrl', title: 'Vehicle 45°', icon: Car, val: captures.vehiclePhotoUrl, tab: 'vehicle' },
             { id: 'licensePlatePhotoUrl', title: 'License Plate', icon: Scan, val: captures.licensePlatePhotoUrl, tab: 'plate' },
@@ -371,10 +380,12 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
 
         {/* Workspace Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid grid-cols-2 sm:grid-cols-5 bg-slate-900 border border-slate-800 p-1 rounded-xl h-auto">
-            <TabsTrigger value="id" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white text-xs gap-1.5 h-10 font-bold">
-              <CreditCard className="w-4 h-4" /> ID Scan
-            </TabsTrigger>
+          <TabsList className={`grid grid-cols-2 ${isCarSalvage ? 'sm:grid-cols-4' : 'sm:grid-cols-5'} bg-slate-900 border border-slate-800 p-1 rounded-xl h-auto`}>
+            {!isCarSalvage && (
+              <TabsTrigger value="id" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white text-xs gap-1.5 h-10 font-bold">
+                <CreditCard className="w-4 h-4" /> ID Scan
+              </TabsTrigger>
+            )}
             <TabsTrigger value="person" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white text-xs gap-1.5 h-10 font-bold">
               <UserCheck className="w-4 h-4" /> Seller Face
             </TabsTrigger>

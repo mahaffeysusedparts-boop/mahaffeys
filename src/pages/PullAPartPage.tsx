@@ -37,6 +37,9 @@ import {
   CheckCircle2,
   Plus,
   Edit3,
+  Trash2,
+  ClipboardList,
+  Droplets,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -60,10 +63,18 @@ export default function PullAPartPage() {
   const [vehYear, setVehYear] = useState(2010);
   const [vehMake, setVehMake] = useState("Ford");
   const [vehModel, setVehModel] = useState("F-150");
-  const [vehColor, setVehColor] = useState("White");
-  const [vehVin, setVehVin] = useState("1FTRF12W88KA10291");
-  const [vehStatus, setVehStatus] = useState<PullYardVehicle["status"]>("FRESH_SET");
-  const [vehParts, setVehParts] = useState("Engine Assembly, Transmission, Doors, Fenders, Alloy Wheels");
+  const [vehColor, setVehColor] = useState("");
+  const [vehVin, setVehVin] = useState("");
+  const [vehStatus, setVehStatus] = useState<PullYardVehicle["status"]>("PENDING");
+  const [vehParts, setVehParts] = useState("Engine, Transmission, Wheels");
+
+  // Dismantling Log Modal
+  const [logVehicle, setLogVehicle] = useState<PullYardVehicle | null>(null);
+  const [catsRemoved, setCatsRemoved] = useState(0);
+  const [wheelsRemoved, setWheelsRemoved] = useState(0);
+  const [gasDrained, setGasDrained] = useState(false);
+  const [oilDrained, setOilDrained] = useState(false);
+  const [pullNotes, setPullNotes] = useState("");
 
   // Print Pass Modal
   const [selectedVehForTicket, setSelectedVehForTicket] = useState<PullYardVehicle | null>(null);
@@ -94,16 +105,16 @@ export default function PullAPartPage() {
 
   const handleOpenAddVeh = () => {
     setEditingVeh(null);
-    setVehRow("Row 104");
-    setVehSpace("Space 01");
-    setVehYear(2012);
-    setVehMake("Chevrolet");
-    setVehModel("Silverado 1500");
-    setVehColor("Black");
-    setVehVin("1G1JC524317109281");
-    setVehSection("GM & Chevrolet");
-    setVehStatus("FRESH_SET");
-    setVehParts("Engine Assembly, Automatic Transmission, Doors, Hood, Tailgate");
+    setVehRow("");
+    setVehSpace("");
+    setVehYear(new Date().getFullYear());
+    setVehMake("");
+    setVehModel("");
+    setVehColor("");
+    setVehVin("");
+    setVehSection("Domestic Trucks & SUVs");
+    setVehStatus("PENDING");
+    setVehParts("Engine, Transmission, Wheels");
     setVehModalOpen(true);
   };
 
@@ -142,13 +153,60 @@ export default function PullAPartPage() {
       vin: vehVin.toUpperCase().trim(),
       dateSetInYard: editingVeh ? editingVeh.dateSetInYard : new Date().toISOString(),
       status: vehStatus,
-      partsRemaining: partsList.length > 0 ? partsList : ["Bare Body Shell"],
+      partsRemaining: partsList.length > 0 ? partsList : ["Body Shell"],
+      dismantlingLog: editingVeh?.dismantlingLog || {
+        catalyticConvertersRemoved: 0,
+        wheelsRemoved: 0,
+        gasDrained: false,
+        oilDrained: false,
+      },
     };
 
     storageService.savePullYardVehicle(vehObj);
     loadData();
     setVehModalOpen(false);
-    toast.success(`${editingVeh ? "Updated" : "Added"} ${vehYear} ${vehMake} ${vehModel} on ${vehRow}!`);
+    toast.success(`${editingVeh ? "Updated" : "Added"} ${vehYear} ${vehMake} ${vehModel}${vehRow ? ` in ${vehRow}` : ""}`);
+  };
+
+  const handleStatusChange = (vehicle: PullYardVehicle, status: PullYardVehicle["status"]) => {
+    storageService.savePullYardVehicle({ ...vehicle, status });
+    loadData();
+    toast.success(`${vehicle.year} ${vehicle.make} ${vehicle.model} marked ${status.toLowerCase()}`);
+  };
+
+  const handleOpenPullLog = (vehicle: PullYardVehicle) => {
+    setLogVehicle(vehicle);
+    setCatsRemoved(vehicle.dismantlingLog.catalyticConvertersRemoved);
+    setWheelsRemoved(vehicle.dismantlingLog.wheelsRemoved);
+    setGasDrained(vehicle.dismantlingLog.gasDrained);
+    setOilDrained(vehicle.dismantlingLog.oilDrained);
+    setPullNotes(vehicle.dismantlingLog.notes || "");
+  };
+
+  const handleSavePullLog = () => {
+    if (!logVehicle) return;
+
+    storageService.savePullYardVehicle({
+      ...logVehicle,
+      dismantlingLog: {
+        catalyticConvertersRemoved: Math.max(0, catsRemoved),
+        wheelsRemoved: Math.min(8, Math.max(0, wheelsRemoved)),
+        gasDrained,
+        oilDrained,
+        notes: pullNotes.trim() || undefined,
+        updatedAt: new Date().toISOString(),
+      },
+    });
+    loadData();
+    setLogVehicle(null);
+    toast.success(`Pull log saved for ${logVehicle.year} ${logVehicle.make} ${logVehicle.model}`);
+  };
+
+  const handleRemoveVehicle = (vehicle: PullYardVehicle) => {
+    if (!window.confirm(`Remove ${vehicle.year} ${vehicle.make} ${vehicle.model} from the yard list?`)) return;
+    storageService.deletePullYardVehicle(vehicle.id);
+    loadData();
+    toast.success("Vehicle removed from the yard list");
   };
 
   // Filter vehicles
@@ -225,7 +283,9 @@ export default function PullAPartPage() {
     setPassCustId("");
   };
 
-  const freshSetCount = vehicles.filter((v) => v.status === "FRESH_SET").length;
+  const availableCount = vehicles.filter((v) => v.status === "AVAILABLE").length;
+  const pendingCount = vehicles.filter((v) => v.status === "PENDING").length;
+  const crushedCount = vehicles.filter((v) => v.status === "CRUSHED").length;
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
@@ -295,12 +355,12 @@ export default function PullAPartPage() {
           <Card className="bg-slate-900 border-slate-800 text-white">
             <CardContent className="p-4 flex items-center justify-between">
               <div>
-                <p className="text-xs text-slate-400 font-medium">Fresh Set Vehicles (&lt;7 Days)</p>
-                <p className="text-2xl font-black text-emerald-400 font-mono mt-0.5">{freshSetCount}</p>
-                <p className="text-[11px] text-slate-500 mt-0.5">High component availability</p>
+                <p className="text-xs text-slate-400 font-medium">Available Vehicles</p>
+                <p className="text-2xl font-black text-emerald-400 font-mono mt-0.5">{availableCount}</p>
+                <p className="text-[11px] text-slate-500 mt-0.5">Ready for parts pulling</p>
               </div>
               <div className="p-3 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                <Sparkles className="w-6 h-6" />
+                <CheckCircle2 className="w-6 h-6" />
               </div>
             </CardContent>
           </Card>
@@ -308,12 +368,12 @@ export default function PullAPartPage() {
           <Card className="bg-slate-900 border-slate-800 text-white">
             <CardContent className="p-4 flex items-center justify-between">
               <div>
-                <p className="text-xs text-slate-400 font-medium">Part Catalog Items</p>
-                <p className="text-2xl font-black text-sky-400 font-mono mt-0.5">{parts.length}</p>
-                <p className="text-[11px] text-slate-500 mt-0.5">Flat parts price sheet</p>
+                <p className="text-xs text-slate-400 font-medium">Pending Processing</p>
+                <p className="text-2xl font-black text-sky-400 font-mono mt-0.5">{pendingCount}</p>
+                <p className="text-[11px] text-slate-500 mt-0.5">Waiting on prep or inspection</p>
               </div>
               <div className="p-3 rounded-xl bg-sky-500/10 text-sky-400 border border-sky-500/20">
-                <DollarSign className="w-6 h-6" />
+                <Clock className="w-6 h-6" />
               </div>
             </CardContent>
           </Card>
@@ -321,12 +381,12 @@ export default function PullAPartPage() {
           <Card className="bg-slate-900 border-slate-800 text-white">
             <CardContent className="p-4 flex items-center justify-between">
               <div>
-                <p className="text-xs text-slate-400 font-medium">Today's Gate Passes</p>
-                <p className="text-2xl font-black text-purple-400 font-mono mt-0.5">{passes.length}</p>
-                <p className="text-[11px] text-slate-500 mt-0.5">Wristbands issued ($2/ea)</p>
+                <p className="text-xs text-slate-400 font-medium">Crushed Vehicles</p>
+                <p className="text-2xl font-black text-rose-400 font-mono mt-0.5">{crushedCount}</p>
+                <p className="text-[11px] text-slate-500 mt-0.5">Completed vehicle processing</p>
               </div>
-              <div className="p-3 rounded-xl bg-purple-500/10 text-purple-400 border border-purple-500/20">
-                <TicketIcon className="w-6 h-6" />
+              <div className="p-3 rounded-xl bg-rose-500/10 text-rose-400 border border-rose-500/20">
+                <Car className="w-6 h-6" />
               </div>
             </CardContent>
           </Card>

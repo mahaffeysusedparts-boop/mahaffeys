@@ -83,7 +83,7 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
   const [payoutMethod, setPayoutMethod] = useState<'Cash' | 'Check' | 'ACH Direct Transfer'>('Cash');
   const [notes, setNotes] = useState<string>('');
 
-  const complianceStats = calculateComplianceScore(complianceCaptures);
+  const complianceStats = calculateComplianceScore(complianceCaptures, 'CAR_SALVAGE');
 
   const handleCustomerSelect = (custId: string) => {
     setSelectedCustomerId(custId);
@@ -294,9 +294,8 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
             </CardHeader>
 
             <CardContent className="p-4 space-y-4">
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 {[
-                  { title: "DL Scan", icon: CreditCard, val: complianceCaptures.idPhotoUrl },
                   { title: "Seller Face", icon: UserCheck, val: complianceCaptures.personPhotoUrl },
                   { title: "Vehicle 45°", icon: Car, val: complianceCaptures.vehiclePhotoUrl },
                   { title: "License Plate", icon: Scan, val: complianceCaptures.licensePlatePhotoUrl },
@@ -329,13 +328,13 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
 
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 border-t border-slate-800">
                 <p className="text-xs text-slate-400">
-                  5-point photo verification & ID OCR scan sealed.
+                  4-point photo verification studio sealed.
                 </p>
                 <Button
                   onClick={() => setIsComplianceModalOpen(true)}
                   className="bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs gap-2"
                 >
-                  <Camera className="w-4 h-4" /> Launch Compliance Studio & ID Scan
+                  <Camera className="w-4 h-4" /> Launch Compliance Studio & Photos
                 </Button>
               </div>
             </CardContent>
@@ -350,7 +349,7 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
             </CardHeader>
 
             <CardContent className="p-4 space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
                   <Label className="text-xs text-slate-300">Select Registered Customer</Label>
                   <Select value={selectedCustomerId} onValueChange={handleCustomerSelect}>
@@ -360,7 +359,7 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
                     <SelectContent className="bg-slate-900 border-slate-800 text-white">
                       {customers.map((c) => (
                         <SelectItem key={c.id} value={c.id} className="text-xs">
-                          {c.fullName} ({c.idNumber})
+                          {c.fullName}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -373,16 +372,6 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
                     value={customerName}
                     onChange={(e) => setCustomerName(e.target.value)}
                     placeholder="e.g. John Doe"
-                    className="bg-slate-950 border-slate-800 text-white text-xs mt-1"
-                  />
-                </div>
-
-                <div>
-                  <Label className="text-xs text-slate-300">Driver License / Photo ID #</Label>
-                  <Input
-                    value={customerIdNumber}
-                    onChange={(e) => setCustomerIdNumber(e.target.value)}
-                    placeholder="e.g. DL-98210-GA"
                     className="bg-slate-950 border-slate-800 text-white text-xs mt-1"
                   />
                 </div>
