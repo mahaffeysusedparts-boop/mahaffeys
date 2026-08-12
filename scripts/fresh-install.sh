@@ -1,9 +1,10 @@
-# Clean up any previous, conflicting Node.js repository configurations
-echo "Cleaning up previous Node.js repository configurations..."
-rm -f /etc/apt/sources.list.d/nodesource.list
-rm -f /etc/apt/keyrings/nodesource.gpg
-rm -f /usr/share/keyrings/nodesource.gpg
+DROP ROLE IF EXISTS ${DB_USER};
+SQL
 
-export DEBIAN_FRONTEND=noninteractive
-apt-get update
-apt-get install -y ca-certificates curl gnupg nginx postgresql postgresql-contrib rsync certbot python3-certbot-nginx
+DB_PASSWORD="jhilliard"
+runuser -u postgres -- psql --set ON_ERROR_STOP=1 <<SQL
+CREATE ROLE ${DB_USER} LOGIN PASSWORD '${DB_PASSWORD}';
+CREATE DATABASE ${DB_NAME} OWNER ${DB_USER};
+SQL
+
+rm -rf "${INSTALL_DIR}"

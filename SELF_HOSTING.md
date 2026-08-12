@@ -23,23 +23,15 @@ Create a `.env` file in the root of the Mahaffeys project directory. This file w
 nano .env
 ```
 
-Add the following line, replacing `YOUR_SECRET_PASSWORD` with a strong, unique password:
+Add the following line to the file:
 
 ```ini
-POSTGRES_PASSWORD=YOUR_SECRET_PASSWORD
+POSTGRES_PASSWORD=jhilliard
 ```
 
-### 3. Install and build Mahaffeys
+**Security Note:** For a real-world deployment, it is strongly recommended to replace `jhilliard` with a long, randomly generated password.
 
-```bash
-sudo git clone https://github.com/mahaffeysusedparts-boop/mahaffeys /var/www/mahaffeys
-sudo chown -R "$(id -un):$(id -gn)" /var/www/mahaffeys
-cd /var/www/mahaffeys
-npm ci
-npm run build
-```
-
-### 4. Build and Run
+### 3. Build and Run
 
 From the project root directory, build and start all services in the background:
 
