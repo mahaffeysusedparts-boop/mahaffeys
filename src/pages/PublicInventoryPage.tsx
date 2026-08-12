@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from "react";
 import { storageService } from "@/services/storageService";
+import { sharedStorage } from "@/services/sharedStorage";
 import { PullYardVehicle } from "@/types/scrap";
 import { PartsInterchangeModal } from "@/components/inventory/PartsInterchangeModal";
 import { Navbar } from "@/components/layout/Navbar";
+import { generateSamplePhoto } from "@/utils/complianceUtils";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,6 +35,10 @@ import {
   Calendar,
   AlertCircle,
   Layers3,
+  Image as ImageIcon,
+  RefreshCw,
+  Eye,
+  Radio,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -43,6 +49,7 @@ export default function PublicInventoryPage() {
   const [partFilter, setPartFilter] = useState<string>("ALL");
   const [selectedVehicle, setSelectedVehicle] = useState<PullYardVehicle | null>(null);
   const [interchangeOpen, setInterchangeOpen] = useState(false);
+  const [lastUpdatedTime, setLastUpdatedTime] = useState<string>(new Date().toLocaleTimeString());
 
   // Notify Me Request State
   const [notifyOpen, setNotifyOpen] = useState(false);
@@ -51,11 +58,40 @@ export default function PublicInventoryPage() {
   const [reqPhone, setReqPhone] = useState("");
 
   const loadData = () => {
-    setVehicles(storageService.getPullYardVehicles());
+    const list = storageService.getPullYardVehicles();
+    setVehicles(list);
+    setLastUpdatedTime(new Date().toLocaleTimeString());
   };
 
+  // Real-time synchronization
   useEffect(() => {
     loadData();
+
+    // 1. Live 2-second background ticker to keep workstation updates live
+    const timer = setInterval(() => {
+      const currentList = storageService.getPullYardVehicles();
+      setVehicles(currentList);
+      setLastUpdatedTime(new Date().toLocaleTimeString());
+    }, 2000);
+
+    // 2. Cross-tab window storage listener
+    const handleStorageChange = (e: StorageEvent) => {
+      if (!e.key || e.key === "mahaffeys_pull_yard_vehicles") {
+        loadData();
+      }
+    };
+    window.addEventListener("storage", handleStorageChange);
+
+    // 3. Shared database connection listener
+    const unsubscribeShared = sharedStorage.subscribe(() => {
+      loadData();
+    });
+
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener("storage", handleStorageChange);
+      unsubscribeShared();
+    };
   }, []);
 
   // Filter vehicles
@@ -66,7 +102,7 @@ export default function PublicInventoryPage() {
       v.model.toLowerCase().includes(q) ||
       v.year.toString().includes(q) ||
       v.vin.toLowerCase().includes(q) ||
-      v.rowNumber.toLowerCase().includes(q);
+      v.section.toLowerCase().includes(q);
 
     const matchesSection = selectedSection === "ALL" ? true : v.section === selectedSection;
 
@@ -102,19 +138,19 @@ export default function PublicInventoryPage() {
         <div className="relative bg-gradient-to-r from-slate-900 via-slate-900 to-amber-950/50 p-6 sm:p-8 rounded-3xl border border-slate-800 shadow-2xl overflow-hidden">
           <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
             <div className="space-y-2 max-w-2xl">
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/40 text-xs font-mono uppercase tracking-widest px-3 py-1">
                   LIVE YARD CATALOG
                 </Badge>
-                <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-500/40 text-xs font-mono">
-                  UPDATED EVERY 15 MIN
+                <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-500/40 text-xs font-mono gap-1">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping inline-block" /> REAL-TIME AUTO SYNC ({lastUpdatedTime})
                 </Badge>
               </div>
               <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">
                 Public Vehicle Inventory & Part Locator
               </h1>
               <p className="text-slate-400 text-sm leading-relaxed">
-                Search self-service harvest vehicles staged on the lot. Check row and space locations, see available components, and find fresh vehicle arrivals.
+                Search self-service harvest vehicles staged on the lot. See live photos, yard sections, available parts, and fresh vehicle arrivals in real-time.
               </p>
             </div>
 
@@ -165,6 +201,7 @@ export default function PublicInventoryPage() {
                     <SelectItem value="GM & Chevrolet">GM & Chevrolet</SelectItem>
                     <SelectItem value="Asian Imports">Asian Imports</SelectItem>
                     <SelectItem value="Chrysler & Dodge">Chrysler & Dodge</SelectItem>
+                    <SelectItem value="European">European</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -197,9 +234,20 @@ export default function PublicInventoryPage() {
             <h2 className="text-lg font-bold text-white flex items-center gap-2">
               <Car className="w-5 h-5 text-amber-400" /> Currently Staged Vehicles ({filteredVehicles.length})
             </h2>
-            <Badge variant="outline" className="border-slate-700 text-slate-300 text-xs font-mono">
-              {availableCount} Available Vehicles On Lot
-            </Badge>
+            <div className="flex items-center gap-2">
+              <Badge variant="outline" className="border-emerald-500/40 text-emerald-400 text-xs font-mono">
+                {availableCount} Available Vehicles On Lot
+              </Badge>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={loadData}
+                className="h-7 text-xs text-slate-400 hover:text-white"
+                title="Refresh Inventory"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+              </Button>
+            </div>
           </div>
 
           {filteredVehicles.length === 0 ? (
@@ -227,67 +275,73 @@ export default function PublicInventoryPage() {
                 const daysAgo = Math.floor(
                   (Date.now() - new Date(veh.dateSetInYard).getTime()) / (1000 * 60 * 60 * 24)
                 );
+                const displayPhoto = veh.photoUrl || generateSamplePhoto("vehicle");
 
                 return (
                   <Card
                     key={veh.id}
                     onClick={() => setSelectedVehicle(veh)}
-                    className="group bg-slate-900 border-2 border-slate-800 hover:border-amber-500/70 transition-all duration-200 cursor-pointer shadow-xl overflow-hidden flex flex-col justify-between"
+                    className="group bg-slate-900 border-2 border-slate-800 hover:border-amber-500/70 transition-all duration-300 cursor-pointer shadow-xl overflow-hidden flex flex-col justify-between"
                   >
-                    <CardHeader className="py-4 px-5 bg-slate-950/80 border-b border-slate-800 flex flex-row items-start justify-between">
-                      <div className="space-y-1">
-                        <Badge variant="outline" className="border-slate-700 text-slate-300 text-[10px]">
+                    {/* Vehicle Photo Banner */}
+                    <div className="relative aspect-video bg-slate-950 overflow-hidden border-b border-slate-800">
+                      <img
+                        src={displayPhoto}
+                        alt={`${veh.year} ${veh.make} ${veh.model}`}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).src = generateSamplePhoto("vehicle");
+                        }}
+                      />
+                      
+                      {/* Photo Overlays: Section & Live Status Badges */}
+                      <div className="absolute top-2 left-2 flex flex-wrap items-center gap-1.5 z-10">
+                        <Badge className="bg-slate-950/80 backdrop-blur-md text-amber-300 border-amber-500/40 text-[10px] font-mono">
                           {veh.section}
                         </Badge>
-                        <CardTitle className="text-lg font-black text-white group-hover:text-amber-400 transition-colors">
-                          {veh.year} {veh.make} {veh.model}
-                        </CardTitle>
-                        <p className="text-xs text-slate-400 font-mono">
-                          Color: <span className="text-slate-200">{veh.color}</span>
-                        </p>
                       </div>
 
-                      {/* Row Badge */}
-                      <div className="text-right shrink-0">
-                        <div className="p-2 rounded-xl bg-amber-950/80 border border-amber-500/40 text-amber-300 text-center shadow-md">
-                          <span className="text-xs font-black block leading-none font-mono">{veh.rowNumber}</span>
-                          <span className="text-[9px] text-amber-400/80 font-mono">{veh.spaceNumber}</span>
-                        </div>
-                      </div>
-                    </CardHeader>
-
-                    <CardContent className="p-5 space-y-4 flex-1">
-                      {/* Status Badges */}
-                      <div className="flex items-center justify-between text-xs">
+                      <div className="absolute top-2 right-2 z-10">
                         {veh.status === "AVAILABLE" ? (
-                          <Badge className="bg-emerald-950 text-emerald-300 border-emerald-500/40 text-[10px] gap-1">
-                            <Sparkles className="w-3 h-3 text-emerald-400" /> AVAILABLE ({daysAgo === 0 ? "Today" : `${daysAgo}d ago`})
+                          <Badge className="bg-emerald-950/90 backdrop-blur-md text-emerald-300 border-emerald-500/40 text-[10px] gap-1 shadow-md">
+                            <Sparkles className="w-3 h-3 text-emerald-400" /> {daysAgo === 0 ? "STAGED TODAY" : `${daysAgo}d ON YARD`}
                           </Badge>
                         ) : veh.status === "PENDING" ? (
-                          <Badge className="bg-amber-950 text-amber-300 border-amber-500/40 text-[10px]">
+                          <Badge className="bg-amber-950/90 backdrop-blur-md text-amber-300 border-amber-500/40 text-[10px] shadow-md">
                             PENDING INTAKE
                           </Badge>
                         ) : (
-                          <Badge variant="outline" className="border-rose-800 text-rose-400 text-[10px]">
+                          <Badge variant="outline" className="bg-slate-950/90 backdrop-blur-md border-rose-800 text-rose-400 text-[10px]">
                             CRUSHED / STRIPPED
                           </Badge>
                         )}
-
-                        <span className="text-[11px] text-slate-500 font-mono truncate max-w-[120px]">
-                          VIN: {veh.vin.slice(0, 11)}...
-                        </span>
                       </div>
 
-                      {/* Parts Available checklist */}
-                      <div className="space-y-1.5 pt-2 border-t border-slate-800/80">
+                      <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between text-[11px] font-mono font-bold text-white bg-slate-950/80 backdrop-blur-md px-2.5 py-1 rounded-lg border border-slate-800">
+                        <span>Color: {veh.color || "White"}</span>
+                        <span>VIN: {veh.vin.slice(0, 11)}...</span>
+                      </div>
+                    </div>
+
+                    <CardHeader className="py-3.5 px-5 bg-slate-950/60 border-b border-slate-800 flex flex-row items-center justify-between">
+                      <div>
+                        <CardTitle className="text-lg font-black text-white group-hover:text-amber-400 transition-colors">
+                          {veh.year} {veh.make} {veh.model}
+                        </CardTitle>
+                      </div>
+                    </CardHeader>
+
+                    <CardContent className="p-4 space-y-3 flex-1">
+                      {/* Available Parts checklist */}
+                      <div className="space-y-1.5">
                         <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
-                          Available Components ({veh.partsRemaining.length}):
+                          Intact Components ({veh.partsRemaining.length}):
                         </span>
                         <div className="flex flex-wrap gap-1">
                           {veh.partsRemaining.map((part, i) => (
                             <span
                               key={i}
-                              className="text-[10px] px-2 py-0.5 rounded bg-slate-950 text-slate-300 border border-slate-800"
+                              className="text-[10px] px-2 py-0.5 rounded bg-slate-950 text-slate-300 border border-slate-800 font-mono"
                             >
                               {part}
                             </span>
@@ -296,8 +350,10 @@ export default function PublicInventoryPage() {
                       </div>
                     </CardContent>
 
-                    <div className="p-3 bg-slate-950/60 border-t border-slate-800 flex items-center justify-between text-xs text-amber-400 font-semibold group-hover:bg-amber-950/30 transition-colors">
-                      <span>View Row Locator Pass</span>
+                    <div className="p-3 bg-slate-950/80 border-t border-slate-800 flex items-center justify-between text-xs text-amber-400 font-semibold group-hover:bg-amber-950/30 transition-colors">
+                      <span className="flex items-center gap-1.5">
+                        <Eye className="w-3.5 h-3.5" /> View Photo & Location Pass
+                      </span>
                       <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                     </div>
                   </Card>
@@ -312,14 +368,14 @@ export default function PublicInventoryPage() {
       {/* Vehicle Detailed Location & Printable Ticket Modal */}
       {selectedVehicle && (
         <Dialog open={!!selectedVehicle} onOpenChange={() => setSelectedVehicle(null)}>
-          <DialogContent className="max-w-md bg-slate-950 text-slate-100 border-slate-800 p-6">
+          <DialogContent className="max-w-lg bg-slate-950 text-slate-100 border-slate-800 p-6 max-h-[90vh] overflow-y-auto">
             <DialogHeader className="border-b border-slate-800 pb-3">
               <div className="flex items-center justify-between">
                 <Badge className="bg-amber-950 text-amber-300 border-amber-500/40 text-xs font-mono">
-                  {selectedVehicle.rowNumber} - {selectedVehicle.spaceNumber}
+                  {selectedVehicle.section}
                 </Badge>
                 <Badge variant="outline" className="border-slate-700 text-slate-300 text-xs">
-                  {selectedVehicle.section}
+                  {selectedVehicle.status}
                 </Badge>
               </div>
               <DialogTitle className="text-xl font-bold text-white mt-2">
@@ -331,10 +387,26 @@ export default function PublicInventoryPage() {
             </DialogHeader>
 
             <div className="space-y-4 pt-2">
+              {/* Full Photo Display */}
+              <div className="aspect-video bg-slate-950 rounded-xl overflow-hidden border border-slate-800">
+                <img
+                  src={selectedVehicle.photoUrl || generateSamplePhoto("vehicle")}
+                  alt="Vehicle Full Photo"
+                  className="w-full h-full object-cover"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).src = generateSamplePhoto("vehicle");
+                  }}
+                />
+              </div>
+
               <div className="bg-slate-900 p-4 rounded-xl border border-slate-800 space-y-2 text-xs font-mono">
                 <div className="flex justify-between">
+                  <span className="text-slate-400">Yard Section:</span>
+                  <span className="text-amber-300 font-bold">{selectedVehicle.section}</span>
+                </div>
+                <div className="flex justify-between">
                   <span className="text-slate-400">Color:</span>
-                  <span className="text-white font-bold">{selectedVehicle.color}</span>
+                  <span className="text-white font-bold">{selectedVehicle.color || "White"}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-400">Full VIN:</span>
