@@ -23,7 +23,7 @@ import {
   FileText,
   Car,
   Plus,
-  Layers,
+  Image,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -34,8 +34,6 @@ interface BulkVehicleUploadModalProps {
 }
 
 interface ParsedVehicleRow {
-  rowNumber: string;
-  spaceNumber: string;
   section: PullYardVehicle['section'];
   year: number;
   make: string;
@@ -45,6 +43,7 @@ interface ParsedVehicleRow {
   purchasePrice: number;
   originSource: string;
   status: PullYardVehicleStatus;
+  photoUrl: string;
   notes: string;
   isValid: boolean;
   validationError?: string;
@@ -62,11 +61,11 @@ export const BulkVehicleUploadModal: React.FC<BulkVehicleUploadModalProps> = ({
   // Sample CSV Template Generator
   const downloadSampleCsv = () => {
     const csvContent =
-      'Row,Space,Section,Year,Make,Model,Color,VIN,PurchasePrice,OriginSource,Status,Notes\n' +
-      'Row 104,Space 12,Domestic Trucks & SUVs,2008,Ford,F-150,White,1FTRF12W88KA10291,450,1428 Industrial Pkwy,AVAILABLE,Runs and drives\n' +
-      'Row 202,Space 05,GM & Chevrolet,2008,Chevrolet,Impala LT,Silver,1G1JC524317109281,350,Vance Towing,PENDING,Key in ignition\n' +
-      'Row 308,Space 22,Asian Imports,2011,Toyota,Camry LE,Classic Silver,4T1BF1FK1BU209182,500,Decatur Tow Depot,AVAILABLE,Cats intact\n' +
-      'Row 108,Space 01,Asian Imports,2008,Nissan,Altima,Black,1N4AL21E38C209182,300,Highway Police Tow,CRUSHED,Bailer ready';
+      'Section,Year,Make,Model,Color,VIN,PurchasePrice,OriginSource,Status,PhotoUrl,Notes\n' +
+      'Domestic Trucks & SUVs,2008,Ford,F-150,White,1FTRF12W88KA10291,450,1428 Industrial Pkwy,AVAILABLE,https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?w=500,Runs and drives\n' +
+      'GM & Chevrolet,2008,Chevrolet,Impala LT,Silver,1G1JC524317109281,350,Vance Towing,PENDING,https://images.unsplash.com/photo-1552519507-da3b142c6e3d?w=500,Key in ignition\n' +
+      'Asian Imports,2011,Toyota,Camry LE,Classic Silver,4T1BF1FK1BU209182,500,Decatur Tow Depot,AVAILABLE,,Cats intact\n' +
+      'Asian Imports,2008,Nissan,Altima,Black,1N4AL21E38C209182,300,Highway Police Tow,CRUSHED,,Bailer ready';
 
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -89,8 +88,6 @@ export const BulkVehicleUploadModal: React.FC<BulkVehicleUploadModalProps> = ({
     const header = lines[0].split(',').map((h) => h.trim().toLowerCase().replace(/[^a-z0-9]/g, ''));
     
     // Find column indexes
-    const idxRow = header.findIndex((h) => h.includes('row'));
-    const idxSpace = header.findIndex((h) => h.includes('space'));
     const idxSection = header.findIndex((h) => h.includes('section'));
     const idxYear = header.findIndex((h) => h.includes('year'));
     const idxMake = header.findIndex((h) => h.includes('make'));
@@ -100,6 +97,7 @@ export const BulkVehicleUploadModal: React.FC<BulkVehicleUploadModalProps> = ({
     const idxPrice = header.findIndex((h) => h.includes('price') || h.includes('payout') || h.includes('cost'));
     const idxOrigin = header.findIndex((h) => h.includes('origin') || h.includes('source') || h.includes('tow'));
     const idxStatus = header.findIndex((h) => h.includes('status'));
+    const idxPhoto = header.findIndex((h) => h.includes('photo') || h.includes('image') || h.includes('picture') || h.includes('url'));
     const idxNotes = header.findIndex((h) => h.includes('note') || h.includes('desc'));
 
     const parsed: ParsedVehicleRow[] = [];
@@ -108,8 +106,6 @@ export const BulkVehicleUploadModal: React.FC<BulkVehicleUploadModalProps> = ({
       const col = lines[i].split(',').map((c) => c.trim().replace(/^["']|["']$/g, ''));
       if (col.length < 2) continue;
 
-      const rowNumber = idxRow >= 0 ? col[idxRow] || 'Row 101' : 'Row 101';
-      const spaceNumber = idxSpace >= 0 ? col[idxSpace] || 'Space 01' : 'Space 01';
       const rawSection = idxSection >= 0 ? col[idxSection] : '';
       const year = idxYear >= 0 ? parseInt(col[idxYear]) || new Date().getFullYear() - 10 : 2010;
       const make = idxMake >= 0 ? col[idxMake] || '' : '';
@@ -119,6 +115,7 @@ export const BulkVehicleUploadModal: React.FC<BulkVehicleUploadModalProps> = ({
       const purchasePrice = idxPrice >= 0 ? parseFloat(col[idxPrice]) || 0 : 0;
       const originSource = idxOrigin >= 0 ? col[idxOrigin] || 'Bulk CSV Import' : 'Bulk CSV Import';
       const rawStatus = idxStatus >= 0 ? col[idxStatus].toUpperCase() : 'PENDING';
+      const photoUrl = idxPhoto >= 0 && col[idxPhoto] ? col[idxPhoto] : '';
       const notes = idxNotes >= 0 ? col[idxNotes] || '' : '';
 
       // Normalize section
@@ -144,8 +141,6 @@ export const BulkVehicleUploadModal: React.FC<BulkVehicleUploadModalProps> = ({
       const validationError = !isValid ? 'Missing Make or Model' : undefined;
 
       parsed.push({
-        rowNumber,
-        spaceNumber,
         section,
         year,
         make,
@@ -155,6 +150,7 @@ export const BulkVehicleUploadModal: React.FC<BulkVehicleUploadModalProps> = ({
         purchasePrice,
         originSource,
         status,
+        photoUrl,
         notes,
         isValid,
         validationError,
@@ -192,8 +188,6 @@ export const BulkVehicleUploadModal: React.FC<BulkVehicleUploadModalProps> = ({
     validRows.forEach((r, idx) => {
       const newVeh: PullYardVehicle = {
         id: `veh-bulk-${Date.now()}-${idx}`,
-        rowNumber: r.rowNumber,
-        spaceNumber: r.spaceNumber,
         section: r.section,
         year: r.year,
         make: r.make,
@@ -206,7 +200,7 @@ export const BulkVehicleUploadModal: React.FC<BulkVehicleUploadModalProps> = ({
         purchasePrice: r.purchasePrice,
         originSource: r.originSource,
         notes: r.notes || 'Bulk Spreadsheet Import',
-        photoUrl: generateSamplePhoto('vehicle'),
+        photoUrl: r.photoUrl.trim() || generateSamplePhoto('vehicle'),
         dismantlingLog: {
           catalyticConvertersRemoved: 0,
           wheelsRemoved: 0,
@@ -218,7 +212,7 @@ export const BulkVehicleUploadModal: React.FC<BulkVehicleUploadModalProps> = ({
       count++;
     });
 
-    toast.success(`Successfully imported ${count} vehicles into yard inventory!`);
+    toast.success(`Successfully imported ${count} vehicles with photos into yard inventory!`);
     onUploadSuccess();
     onClose();
   };
@@ -227,12 +221,12 @@ export const BulkVehicleUploadModal: React.FC<BulkVehicleUploadModalProps> = ({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="bg-slate-950 text-slate-100 border-slate-800 sm:max-w-[780px] max-h-[90vh] overflow-y-auto">
+      <DialogContent className="bg-slate-950 text-slate-100 border-slate-800 sm:max-w-[820px] max-h-[90vh] overflow-y-auto">
         <DialogHeader className="border-b border-slate-800 pb-3 flex flex-row items-center justify-between">
           <div className="flex items-center gap-2">
             <FileSpreadsheet className="w-5 h-5 text-emerald-400" />
             <DialogTitle className="text-base font-bold font-mono">
-              Bulk Add Vehicles from Spreadsheet (CSV / Excel)
+              Bulk Add Vehicles & Photos from CSV Spreadsheet
             </DialogTitle>
           </div>
           <Button
@@ -265,7 +259,7 @@ export const BulkVehicleUploadModal: React.FC<BulkVehicleUploadModalProps> = ({
                 activeTab === 'PASTE' ? 'bg-emerald-600 text-white' : 'text-slate-400 hover:text-white'
               }`}
             >
-              <FileText className="w-3.5 h-3.5" /> 2. Paste Spreadsheet Text
+              <FileText className="w-3.5 h-3.5" /> 2. Paste CSV Text
             </button>
           </div>
 
@@ -278,7 +272,7 @@ export const BulkVehicleUploadModal: React.FC<BulkVehicleUploadModalProps> = ({
               <div>
                 <p className="font-bold text-white text-sm">Select or drop your vehicle CSV spreadsheet file</p>
                 <p className="text-[11px] text-slate-400 mt-0.5">
-                  Supports headers: Row, Space, Section, Year, Make, Model, Color, VIN, PurchasePrice, OriginSource, Status, Notes
+                  Supported CSV headers: Section, Year, Make, Model, Color, VIN, PurchasePrice, OriginSource, Status, <strong>PhotoUrl</strong>, Notes
                 </p>
               </div>
 
@@ -297,12 +291,12 @@ export const BulkVehicleUploadModal: React.FC<BulkVehicleUploadModalProps> = ({
           {/* TAB 2: PASTE TEXT AREA */}
           {activeTab === 'PASTE' && (
             <div className="space-y-2">
-              <Label className="text-slate-300">Paste CSV or Tab-Delimited Rows from Excel / Google Sheets:</Label>
+              <Label className="text-slate-300">Paste CSV Rows with Photo URLs from Excel / Google Sheets:</Label>
               <Textarea
                 rows={5}
                 value={pasteText}
                 onChange={(e) => setPasteText(e.target.value)}
-                placeholder={'Row,Space,Section,Year,Make,Model,Color,VIN,PurchasePrice,OriginSource,Status,Notes\nRow 104,Space 12,Domestic Trucks,2008,Ford,F-150,White,1FTRF12W88KA10291,450,Tow Depot,AVAILABLE,Good engine'}
+                placeholder={'Section,Year,Make,Model,Color,VIN,PurchasePrice,OriginSource,Status,PhotoUrl,Notes\nDomestic Trucks,2008,Ford,F-150,White,1FTRF12W88KA10291,450,Tow Depot,AVAILABLE,https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?w=500,Good engine'}
                 className="bg-slate-900 border-slate-800 text-amber-300 font-mono text-xs"
               />
               <Button
@@ -336,7 +330,8 @@ export const BulkVehicleUploadModal: React.FC<BulkVehicleUploadModalProps> = ({
                 <Table>
                   <TableHeader className="bg-slate-900">
                     <TableRow className="border-slate-800 text-[11px]">
-                      <TableHead className="text-slate-400">Location</TableHead>
+                      <TableHead className="text-slate-400">Photo</TableHead>
+                      <TableHead className="text-slate-400">Section</TableHead>
                       <TableHead className="text-slate-400">Vehicle Specs</TableHead>
                       <TableHead className="text-slate-400">VIN Number</TableHead>
                       <TableHead className="text-slate-400">Price & Origin</TableHead>
@@ -347,8 +342,17 @@ export const BulkVehicleUploadModal: React.FC<BulkVehicleUploadModalProps> = ({
                   <TableBody>
                     {parsedRows.map((row, idx) => (
                       <TableRow key={idx} className={`border-slate-800 text-xs font-mono ${row.isValid ? 'hover:bg-slate-900' : 'bg-rose-950/20'}`}>
-                        <TableCell className="font-bold text-amber-300">
-                          {row.rowNumber} <span className="text-slate-400 font-normal">{row.spaceNumber}</span>
+                        <TableCell className="w-12 p-1.5">
+                          <div className="w-10 h-8 rounded bg-slate-950 overflow-hidden border border-slate-800 flex items-center justify-center">
+                            {row.photoUrl ? (
+                              <img src={row.photoUrl} alt="CSV photo" className="w-full h-full object-cover" />
+                            ) : (
+                              <Image className="w-4 h-4 text-slate-600" />
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell className="font-bold text-slate-300">
+                          {row.section}
                         </TableCell>
                         <TableCell className="font-sans font-bold text-white">
                           {row.year} {row.make} {row.model}

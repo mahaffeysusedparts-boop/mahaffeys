@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { CarIntakeRecord, Ticket } from '@/types/scrap';
 import { storageService } from '@/services/storageService';
+import { analyzeDriverLicenseImage, analyzeLicensePlateImage } from '@/services/aiVisionService';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -25,6 +26,10 @@ import {
   Video,
   Hash,
   RefreshCw,
+  Sparkles,
+  CreditCard,
+  User,
+  Wand2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -40,11 +45,17 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
   // References for device camera / file capture
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const dlInputRef = useRef<HTMLInputElement>(null);
 
   // Editable Receipt / Ticket Number
   const [customReceiptNumber, setCustomReceiptNumber] = useState<string>(
     `T-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`
   );
+
+  // Seller Details (AI Auto-Filled)
+  const [sellerName, setSellerName] = useState<string>('');
+  const [sellerIdNumber, setSellerIdNumber] = useState<string>('');
+  const [isDlScanned, setIsDlScanned] = useState<boolean>(false);
 
   // Vehicle Details
   const [vin, setVin] = useState<string>('');
@@ -64,10 +75,6 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
   // Tow Driver Notes Section
   const [notes, setNotes] = useState<string>('');
 
-  // Row Staging (Optional)
-  const [assignedRow, setAssignedRow] = useState<string>('Row 104');
-  const [assignedSpace, setAssignedSpace] = useState<string>('Space 15');
-
   // Component Checklist
   const [hasCatalyticConverter, setHasCatalyticConverter] = useState<boolean>(true);
   const [catCondition, setCatCondition] = useState<CarIntakeRecord['catCondition']>('Original OEM');
@@ -85,15 +92,48 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
     toast.info(`Generated Receipt #${newNum}`);
   };
 
+  // AI Driver License OCR Scanner for Vehicle Intake
+  const handleDlPictureUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      toast.info("AI Vision analyzing Driver's License photo...", { icon: "✨" });
+      const reader = new FileReader();
+      reader.onload = async (event) => {
+        const dataUrl = event.target?.result as string;
+        try {
+          const result = await analyzeDriverLicenseImage(dataUrl);
+          if (result.fullName) setSellerName(result.fullName);
+          if (result.idNumber) setSellerIdNumber(result.idNumber);
+          setIsDlScanned(true);
+          toast.success("AI OCR Extracted Seller Name & DL Number!", {
+            description: `Seller: ${result.fullName} | ID: ${result.idNumber}`,
+          });
+        } catch (err) {
+          console.warn("AI OCR Error:", err);
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   // Handle local image file upload for vehicle photo
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
-      reader.onload = (event) => {
+      reader.onload = async (event) => {
         if (event.target?.result) {
-          setPhotoUrl(event.target.result as string);
+          const url = event.target.result as string;
+          setPhotoUrl(url);
           toast.success('Vehicle photo captured successfully');
+          try {
+            const plateRes = await analyzeLicensePlateImage(url);
+            if (plateRes.plateNumber && !plateRes.plateNumber.startsWith("TAG-")) {
+              toast.info(`AI Vision detected Tag: ${plateRes.plateNumber}`);
+            }
+          } catch (err) {
+            console.warn("Plate OCR error:", err);
+          }
         }
       };
       reader.readAsDataURL(file);
@@ -142,6 +182,7 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
     }
 
     const currentOp = storageService.getSettings().operatorName;
+    const finalCustomerName = sellerName.trim() || (originSource.trim() ? `Tow Origin: ${originSource}` : 'Tow Intake');
 
     const carRecord: CarIntakeRecord = {
       vin: vin.toUpperCase().trim(),
@@ -152,8 +193,6 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
       mileage,
       titleStatus,
       titleNumber,
-      assignedRow: assignedRow.trim() || 'Pending Row',
-      assignedSpace: assignedSpace.trim() || 'Space 01',
       yardStatus: 'PENDING',
       hasCatalyticConverter,
       catCondition,
@@ -181,7 +220,8 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
       ticketType: 'CAR_SALVAGE',
       createdAt: new Date().toISOString(),
       status: 'PENDING',
-      customerName: originSource.trim() ? `Tow Origin: ${originSource}` : 'Tow Intake',
+      customerName: finalCustomerName,
+      customerIdNumber: sellerIdNumber.trim() || undefined,
       vehicleLicensePlate: '',
       carRecord,
       complianceCaptures: {
@@ -219,6 +259,15 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
         type="file"
         ref={fileInputRef}
         onChange={handleFileUpload}
+        accept="image/*"
+        className="hidden"
+      />
+
+      {/* Driver's License Input */}
+      <input
+        type="file"
+        ref={dlInputRef}
+        onChange={handleDlPictureUpload}
         accept="image/*"
         className="hidden"
       />
@@ -297,6 +346,62 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
         
         {/* Left 2 Columns: Photo, Specs, Financial & Notes */}
         <div className="lg:col-span-2 space-y-6">
+
+          {/* AI SELLER / DL SCAN CARD */}
+          <Card className="bg-slate-900 border-blue-500/40 text-white shadow-xl overflow-hidden">
+            <CardHeader className="py-3 px-4 bg-gradient-to-r from-blue-950/80 to-slate-950 border-b border-blue-500/30 flex flex-row items-center justify-between">
+              <CardTitle className="text-sm font-bold tracking-wide uppercase text-blue-300 flex items-center gap-2">
+                <User className="w-4 h-4 text-blue-400" /> Seller Credentials (AI OCR Scan)
+              </CardTitle>
+              {isDlScanned && (
+                <Badge className="bg-emerald-950 text-emerald-300 border-emerald-500/40 text-[10px] font-mono gap-1">
+                  <Wand2 className="w-3 h-3 text-emerald-400" /> AI OCR AUTOFILLED
+                </Badge>
+              )}
+            </CardHeader>
+
+            <CardContent className="p-4 space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <Label className="text-xs text-slate-300 flex items-center justify-between">
+                    <span>Seller Full Name</span>
+                    {isDlScanned && <span className="text-[10px] text-emerald-400 font-mono">AI AUTOFILLED</span>}
+                  </Label>
+                  <Input
+                    value={sellerName}
+                    onChange={(e) => setSellerName(e.target.value)}
+                    placeholder="e.g. Marcus Vance"
+                    className="bg-slate-950 border-slate-800 text-white text-xs mt-1 h-10 font-bold"
+                  />
+                </div>
+
+                <div>
+                  <Label className="text-xs text-slate-300 flex items-center justify-between">
+                    <span>Driver License / State ID #</span>
+                    {isDlScanned && <span className="text-[10px] text-emerald-400 font-mono">AI AUTOFILLED</span>}
+                  </Label>
+                  <Input
+                    value={sellerIdNumber}
+                    onChange={(e) => setSellerIdNumber(e.target.value)}
+                    placeholder="e.g. DL-9823145-GA"
+                    className="bg-slate-950 border-slate-800 text-amber-300 font-mono text-xs mt-1 h-10 font-bold"
+                  />
+                </div>
+              </div>
+
+              <div className="pt-2 flex items-center justify-between gap-2 border-t border-slate-800">
+                <span className="text-[11px] text-slate-400">Scan DL photo with device camera to auto-fill seller fields:</span>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => dlInputRef.current?.click()}
+                  className="bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs gap-1.5 shrink-0"
+                >
+                  <CreditCard className="w-3.5 h-3.5 text-amber-300" /> AI Scan DL Photo
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
 
           {/* 1. VEHICLE PICTURE CAPTURE */}
           <Card className="bg-slate-900 border-amber-500/40 text-white shadow-xl overflow-hidden">
@@ -600,40 +705,9 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
 
         </div>
 
-        {/* Right Column: Row Staging, Checklist & Auto-Pending Submit */}
+        {/* Right Column: Component Checklist & Auto-Pending Submit */}
         <div className="space-y-6">
           
-          {/* YARD ROW STAGING */}
-          <Card className="bg-slate-900 border-amber-500/30 text-white shadow-xl">
-            <CardHeader className="py-3 px-4 bg-amber-950/30 border-b border-amber-500/30">
-              <CardTitle className="text-sm font-bold tracking-wide uppercase text-amber-300 flex items-center gap-2">
-                <MapPin className="w-4 h-4 text-amber-400" /> Yard Row Staging (Optional)
-              </CardTitle>
-            </CardHeader>
-
-            <CardContent className="p-4 space-y-3">
-              <div>
-                <Label className="text-xs text-amber-300">Staging Row</Label>
-                <Input
-                  value={assignedRow}
-                  onChange={(e) => setAssignedRow(e.target.value)}
-                  placeholder="Row 104"
-                  className="bg-slate-950 border-amber-500/40 text-amber-300 font-mono font-bold text-xs mt-1"
-                />
-              </div>
-
-              <div>
-                <Label className="text-xs text-amber-300">Space Number</Label>
-                <Input
-                  value={assignedSpace}
-                  onChange={(e) => setAssignedSpace(e.target.value)}
-                  placeholder="Space 15"
-                  className="bg-slate-950 border-amber-500/40 text-amber-300 font-mono font-bold text-xs mt-1"
-                />
-              </div>
-            </CardContent>
-          </Card>
-
           {/* QUICK COMPONENT CHECKLIST */}
           <Card className="bg-slate-900 border-slate-800 text-white shadow-lg">
             <CardHeader className="py-3 px-4 bg-slate-950/60 border-b border-slate-800">

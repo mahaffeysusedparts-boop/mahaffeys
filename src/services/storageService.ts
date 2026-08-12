@@ -138,8 +138,6 @@ export const INITIAL_PULL_PARTS: PullPartItem[] = [
 export const INITIAL_PULL_VEHICLES: PullYardVehicle[] = [
   {
     id: 'veh-101',
-    rowNumber: 'Row 104',
-    spaceNumber: 'Space 12',
     section: 'Domestic Trucks & SUVs',
     year: 2008,
     make: 'Ford',
@@ -157,8 +155,6 @@ export const INITIAL_PULL_VEHICLES: PullYardVehicle[] = [
   },
   {
     id: 'veh-102',
-    rowNumber: 'Row 202',
-    spaceNumber: 'Space 05',
     section: 'GM & Chevrolet',
     year: 2008,
     make: 'Chevrolet',
@@ -176,8 +172,6 @@ export const INITIAL_PULL_VEHICLES: PullYardVehicle[] = [
   },
   {
     id: 'veh-103',
-    rowNumber: 'Row 308',
-    spaceNumber: 'Space 22',
     section: 'Asian Imports',
     year: 2008,
     make: 'Nissan',
@@ -195,8 +189,6 @@ export const INITIAL_PULL_VEHICLES: PullYardVehicle[] = [
   },
   {
     id: 'veh-104',
-    rowNumber: 'Row 310',
-    spaceNumber: 'Space 01',
     section: 'Asian Imports',
     year: 2011,
     make: 'Toyota',
@@ -727,8 +719,6 @@ export const INITIAL_TICKETS: Ticket[] = [
       hasCatalyticConverter: true,
       catCondition: 'Original OEM',
       catCodeSerial: '4R31-5E212-AA',
-      assignedRow: 'Row 202',
-      assignedSpace: 'Space 05',
       hasEngineAndTrans: true,
       hasBattery: true,
       hasAluminumRims: true,
@@ -818,8 +808,6 @@ export const INITIAL_TICKETS: Ticket[] = [
       titleNumber: 'AFF-2025-091',
       hasCatalyticConverter: false,
       catCondition: 'Missing / Removed',
-      assignedRow: 'Row 308',
-      assignedSpace: 'Space 22',
       hasEngineAndTrans: true,
       hasBattery: true,
       hasAluminumRims: false,
@@ -1128,8 +1116,6 @@ export const storageService = {
       const c = ticket.carRecord;
       this.savePullYardVehicle({
         id: `veh-${Date.now()}`,
-        rowNumber: c.assignedRow || 'Pending Row',
-        spaceNumber: c.assignedSpace || 'Space 01',
         section: c.make.includes('Ford')
           ? 'Ford & Lincoln'
           : c.make.includes('Chevy') || c.make.includes('Chevrolet') || c.make.includes('GMC')
