@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Switch } from '@/components/ui/switch';
 import {
   Dialog,
   DialogContent,
@@ -30,6 +31,7 @@ import {
   ShieldAlert,
   Flame,
   Award,
+  Trash2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -38,9 +40,19 @@ export default function PricingPage() {
   const [carRates, setCarRates] = useState<AutoSalvageCategoryRate[]>(storageService.getCarRates());
   const [catCodes, setCatCodes] = useState<CatalyticConverterCode[]>(storageService.getCatCodes());
 
-  // Search & Filters for Cat Codes
+  // Search & Filters for Cat Codes & Metals
   const [catSearch, setCatSearch] = useState('');
+  const [metalSearch, setMetalSearch] = useState('');
   const [addCatModalOpen, setAddCatModalOpen] = useState(false);
+  const [addMetalModalOpen, setAddMetalModalOpen] = useState(false);
+
+  // New Metal Form State
+  const [newMetalName, setNewMetalName] = useState('');
+  const [newMetalCode, setNewMetalCode] = useState('');
+  const [newMetalCategory, setNewMetalCategory] = useState<MetalGrade['category']>('Non-Ferrous');
+  const [newMetalRate, setNewMetalRate] = useState<number>(0.75);
+  const [newMetalDescription, setNewMetalDescription] = useState('');
+  const [newMetalIsPopular, setNewMetalIsPopular] = useState<boolean>(true);
 
   // New Cat Code Form
   const [newCode, setNewCode] = useState('');
@@ -51,7 +63,7 @@ export default function PricingPage() {
   const [newRhGrams, setNewRhGrams] = useState(0.3);
   const [newVal, setNewVal] = useState(180);
 
-  // Editing states
+  // Editing states for metal rates
   const handleMetalRateChange = (id: string, newRate: number) => {
     const updated = metals.map((m) => (m.id === id ? { ...m, ratePerLb: newRate } : m));
     setMetals(updated);
@@ -60,6 +72,51 @@ export default function PricingPage() {
   const handleSaveMetals = () => {
     storageService.saveMetals(metals);
     toast.success('Scrap metal prices updated & saved');
+  };
+
+  // Add new Metal Grade
+  const handleAddMetal = () => {
+    if (!newMetalName.trim()) {
+      toast.error('Metal Grade Name is required');
+      return;
+    }
+
+    const generatedCode = newMetalCode.trim().toUpperCase() || `M-${Math.floor(100 + Math.random() * 900)}`;
+
+    const newMetal: MetalGrade = {
+      id: `m-${Date.now()}`,
+      name: newMetalName.trim(),
+      code: generatedCode,
+      category: newMetalCategory,
+      ratePerLb: newMetalRate,
+      description: newMetalDescription.trim() || `${newMetalName.trim()} scrap metal grade`,
+      isPopular: newMetalIsPopular,
+    };
+
+    const updated = [...metals, newMetal];
+    setMetals(updated);
+    storageService.saveMetals(updated);
+
+    toast.success(`Added ${newMetal.name} (${newMetal.code}) to metal price sheet!`);
+    setAddMetalModalOpen(false);
+
+    // Reset Form
+    setNewMetalName('');
+    setNewMetalCode('');
+    setNewMetalCategory('Non-Ferrous');
+    setNewMetalRate(0.75);
+    setNewMetalDescription('');
+    setNewMetalIsPopular(true);
+  };
+
+  // Remove Metal Grade
+  const handleRemoveMetal = (id: string, name: string) => {
+    if (confirm(`Are you sure you want to remove "${name}" from the metal price catalog?`)) {
+      const updated = metals.filter((m) => m.id !== id);
+      setMetals(updated);
+      storageService.saveMetals(updated);
+      toast.info(`Removed ${name} from metal price sheet`);
+    }
   };
 
   const handleCarRateChange = (id: string, field: keyof AutoSalvageCategoryRate, value: number) => {
@@ -88,7 +145,7 @@ export default function PricingPage() {
   // Save new Cat Code
   const handleSaveCatCode = () => {
     if (!newCode.trim()) {
-      toast.error("OEM Serial Code is required");
+      toast.error('OEM Serial Code is required');
       return;
     }
     const newEntry: CatalyticConverterCode = {
@@ -100,7 +157,7 @@ export default function PricingPage() {
       pdGrams: newPdGrams,
       rhGrams: newRhGrams,
       avgMarketValue: newVal,
-      notes: "Added via Converter Estimator Tool",
+      notes: 'Added via Converter Estimator Tool',
     };
     storageService.saveCatCode(newEntry);
     setCatCodes(storageService.getCatCodes());
@@ -114,6 +171,14 @@ export default function PricingPage() {
       c.code.toLowerCase().includes(catSearch.toLowerCase()) ||
       c.make.toLowerCase().includes(catSearch.toLowerCase()) ||
       c.category.toLowerCase().includes(catSearch.toLowerCase())
+  );
+
+  const filteredMetals = metals.filter(
+    (m) =>
+      m.name.toLowerCase().includes(metalSearch.toLowerCase()) ||
+      m.code.toLowerCase().includes(metalSearch.toLowerCase()) ||
+      m.category.toLowerCase().includes(metalSearch.toLowerCase()) ||
+      m.description.toLowerCase().includes(metalSearch.toLowerCase())
   );
 
   return (
@@ -139,11 +204,13 @@ export default function PricingPage() {
           <div className="flex items-center gap-2">
             <Button
               onClick={() => {
-                storageService.resetToDefaults();
-                setMetals(storageService.getMetals());
-                setCarRates(storageService.getCarRates());
-                setCatCodes(storageService.getCatCodes());
-                toast.info('Price catalog reset to factory default rates');
+                if (confirm('Reset price catalog back to factory default rates?')) {
+                  storageService.resetToDefaults();
+                  setMetals(storageService.getMetals());
+                  setCarRates(storageService.getCarRates());
+                  setCatCodes(storageService.getCatCodes());
+                  toast.info('Price catalog reset to factory default rates');
+                }
               }}
               variant="outline"
               size="sm"
@@ -171,43 +238,66 @@ export default function PricingPage() {
           {/* TAB 1: Scrap Metals Catalog */}
           <TabsContent value="metals" className="space-y-6">
             
-            {/* Quick Bulk Bump Toolbar */}
+            {/* Quick Bulk Bump Toolbar & Add Metal Action */}
             <Card className="bg-slate-900/90 border-slate-800 text-white p-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div className="flex items-center gap-2 text-xs font-semibold text-slate-300">
-                  <TrendingUp className="w-4 h-4 text-emerald-400" /> Quick Category Market Adjustments:
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                  <div className="flex items-center gap-2 text-xs font-semibold text-slate-300">
+                    <TrendingUp className="w-4 h-4 text-emerald-400" /> Market Bump:
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleBulkMetalBump('Non-Ferrous', 0.10)}
+                      className="h-8 bg-slate-800 border-slate-700 hover:bg-slate-700 text-emerald-400 text-xs font-mono"
+                    >
+                      Non-Ferrous +$0.10/lb
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleBulkMetalBump('Non-Ferrous', -0.10)}
+                      className="h-8 bg-slate-800 border-slate-700 hover:bg-slate-700 text-red-400 text-xs font-mono"
+                    >
+                      Non-Ferrous -$0.10/lb
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleBulkMetalBump('Ferrous', 0.01)}
+                      className="h-8 bg-slate-800 border-slate-700 hover:bg-slate-700 text-emerald-400 text-xs font-mono"
+                    >
+                      Steel/Iron +$0.01/lb
+                    </Button>
+                  </div>
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
+
+                <div className="flex items-center gap-2">
+                  <div className="relative">
+                    <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-500" />
+                    <Input
+                      placeholder="Filter metals..."
+                      value={metalSearch}
+                      onChange={(e) => setMetalSearch(e.target.value)}
+                      className="bg-slate-950 border-slate-800 text-xs pl-8 w-44 h-8"
+                    />
+                  </div>
+
                   <Button
+                    onClick={() => setAddMetalModalOpen(true)}
                     size="sm"
-                    variant="outline"
-                    onClick={() => handleBulkMetalBump('Non-Ferrous', 0.10)}
-                    className="h-8 bg-slate-800 border-slate-700 hover:bg-slate-700 text-emerald-400 text-xs font-mono"
+                    className="h-8 bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs gap-1.5"
                   >
-                    Non-Ferrous +$0.10/lb
+                    <Plus className="w-3.5 h-3.5" /> Add Metal Grade
                   </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => handleBulkMetalBump('Non-Ferrous', -0.10)}
-                    className="h-8 bg-slate-800 border-slate-700 hover:bg-slate-700 text-red-400 text-xs font-mono"
-                  >
-                    Non-Ferrous -$0.10/lb
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => handleBulkMetalBump('Ferrous', 0.01)}
-                    className="h-8 bg-slate-800 border-slate-700 hover:bg-slate-700 text-emerald-400 text-xs font-mono"
-                  >
-                    Steel/Iron +$0.01/lb
-                  </Button>
+
                   <Button
                     onClick={handleSaveMetals}
                     size="sm"
-                    className="h-8 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs ml-auto"
+                    className="h-8 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs gap-1"
                   >
-                    <Save className="w-3.5 h-3.5 mr-1" /> Save All Metal Rates
+                    <Save className="w-3.5 h-3.5 mr-1" /> Save All Rates
                   </Button>
                 </div>
               </div>
@@ -224,10 +314,11 @@ export default function PricingPage() {
                       <TableHead className="text-slate-400">Yard Code</TableHead>
                       <TableHead className="text-slate-400">Description</TableHead>
                       <TableHead className="text-slate-400 text-right w-40">Live Rate ($ / LB)</TableHead>
+                      <TableHead className="w-12 text-right text-slate-400"></TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {metals.map((m) => (
+                    {filteredMetals.map((m) => (
                       <TableRow key={m.id} className="border-slate-800 hover:bg-slate-800/40 text-xs">
                         <TableCell>
                           <Badge
@@ -237,13 +328,24 @@ export default function PricingPage() {
                                 ? 'border-amber-500/40 text-amber-300'
                                 : m.category === 'Ferrous'
                                 ? 'border-blue-500/40 text-blue-300'
-                                : 'border-purple-500/40 text-purple-300'
+                                : m.category === 'Precious'
+                                ? 'border-purple-500/40 text-purple-300'
+                                : m.category === 'Batteries & Auto'
+                                ? 'border-emerald-500/40 text-emerald-300'
+                                : 'border-sky-500/40 text-sky-300'
                             }`}
                           >
                             {m.category}
                           </Badge>
                         </TableCell>
-                        <TableCell className="font-bold text-white font-sans">{m.name}</TableCell>
+                        <TableCell className="font-bold text-white font-sans">
+                          {m.name}
+                          {m.isPopular && (
+                            <Badge className="ml-1.5 bg-amber-950 text-amber-300 border-amber-800 text-[9px] px-1 py-0">
+                              1-TAP
+                            </Badge>
+                          )}
+                        </TableCell>
                         <TableCell className="font-mono text-slate-400">{m.code}</TableCell>
                         <TableCell className="text-slate-400 text-[11px] max-w-xs truncate">{m.description}</TableCell>
                         <TableCell className="text-right">
@@ -257,6 +359,17 @@ export default function PricingPage() {
                               className="w-24 h-8 bg-slate-950 border-slate-700 text-emerald-400 font-mono font-bold text-xs text-right"
                             />
                           </div>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => handleRemoveMetal(m.id, m.name)}
+                            className="h-7 w-7 p-0 text-slate-500 hover:text-red-400 hover:bg-slate-800"
+                            title="Delete metal grade from price list"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </Button>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -458,6 +571,100 @@ export default function PricingPage() {
         </Tabs>
 
       </main>
+
+      {/* Add New Metal Grade Modal */}
+      <Dialog open={addMetalModalOpen} onOpenChange={setAddMetalModalOpen}>
+        <DialogContent className="bg-slate-950 text-slate-100 border-slate-800 sm:max-w-[480px]">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold text-white flex items-center gap-2">
+              <Scale className="w-5 h-5 text-emerald-400" /> Add New Metal Grade
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2 text-xs">
+            <div>
+              <Label className="text-slate-300">Metal Grade Name *</Label>
+              <Input
+                value={newMetalName}
+                onChange={(e) => setNewMetalName(e.target.value)}
+                placeholder="e.g. #1 Copper Tubing & Pipe"
+                className="bg-slate-900 border-slate-800 text-white font-bold text-xs mt-1"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <Label className="text-slate-300">Yard Material Code</Label>
+                <Input
+                  value={newMetalCode}
+                  onChange={(e) => setNewMetalCode(e.target.value.toUpperCase())}
+                  placeholder="e.g. COP-TUBING"
+                  className="bg-slate-900 border-slate-800 text-emerald-400 font-mono font-bold text-xs mt-1"
+                />
+              </div>
+
+              <div>
+                <Label className="text-slate-300">Category *</Label>
+                <select
+                  value={newMetalCategory}
+                  onChange={(e) => setNewMetalCategory(e.target.value as any)}
+                  className="w-full h-9 bg-slate-900 border border-slate-800 rounded-md text-xs text-white px-2 mt-1 font-bold"
+                >
+                  <option value="Non-Ferrous">Non-Ferrous</option>
+                  <option value="Ferrous">Ferrous</option>
+                  <option value="Precious">Precious</option>
+                  <option value="Batteries & Auto">Batteries & Auto</option>
+                  <option value="E-Waste">E-Waste</option>
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <Label className="text-slate-300">Rate per Pound ($ / LB) *</Label>
+              <div className="relative">
+                <span className="absolute left-3 top-2.5 text-slate-500 font-mono">$</span>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={newMetalRate}
+                  onChange={(e) => setNewMetalRate(parseFloat(e.target.value) || 0)}
+                  className="bg-slate-900 border-slate-800 text-emerald-400 font-mono font-extrabold text-sm pl-7 mt-1"
+                />
+              </div>
+            </div>
+
+            <div>
+              <Label className="text-slate-300">Grade Description</Label>
+              <Input
+                value={newMetalDescription}
+                onChange={(e) => setNewMetalDescription(e.target.value)}
+                placeholder="e.g. Clean unalloyed copper tubing free of solder"
+                className="bg-slate-900 border-slate-800 text-slate-200 text-xs mt-1"
+              />
+            </div>
+
+            <div className="flex items-center justify-between p-2.5 bg-slate-900 rounded-xl border border-slate-800 mt-2">
+              <div>
+                <Label className="text-slate-200 font-bold block">1-Tap Touch Bar</Label>
+                <span className="text-[10px] text-slate-400 block">Show in quick metal touch selector on scale screen</span>
+              </div>
+              <Switch
+                checked={newMetalIsPopular}
+                onCheckedChange={setNewMetalIsPopular}
+              />
+            </div>
+          </div>
+
+          <DialogFooter className="pt-2 border-t border-slate-800">
+            <Button variant="ghost" onClick={() => setAddMetalModalOpen(false)} className="text-slate-400">
+              Cancel
+            </Button>
+            <Button onClick={handleAddMetal} className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold">
+              Add to Price Sheet
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Add Converter Code Modal */}
       <Dialog open={addCatModalOpen} onOpenChange={setAddCatModalOpen}>
