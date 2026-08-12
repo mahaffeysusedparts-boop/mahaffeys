@@ -22,6 +22,7 @@ import {
   Upload,
   Clock,
   Truck,
+  FileCheck,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -65,6 +66,7 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
   const [fluidsDrained, setFluidsDrained] = useState<boolean>(false);
 
   const [payoutMethod, setPayoutMethod] = useState<'Cash' | 'Check' | 'ACH Direct Transfer'>('Cash');
+  const [checkNumber, setCheckNumber] = useState<string>('CHK-' + Math.floor(1000 + Math.random() * 9000));
 
   // Handle local image file upload for vehicle photo
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -208,6 +210,7 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
       totalDeductions: 0,
       finalPayout: Math.round(purchasePrice * 100) / 100,
       payoutMethod,
+      checkNumber: payoutMethod === 'Check' ? checkNumber : undefined,
       operatorName: currentOp,
       notes,
     };
@@ -470,6 +473,62 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
                     Where the vehicle was picked up from
                   </span>
                 </div>
+              </div>
+
+              {/* Payout Method & Check Number Box */}
+              <div className="pt-3 border-t border-slate-800 space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-bold text-slate-300">Select Payment Method</Label>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setPayoutMethod('Cash')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${
+                        payoutMethod === 'Cash'
+                          ? 'bg-emerald-600 text-white border-emerald-500'
+                          : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
+                      }`}
+                    >
+                      Cash
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPayoutMethod('Check')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${
+                        payoutMethod === 'Check'
+                          ? 'bg-emerald-600 text-white border-emerald-500'
+                          : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
+                      }`}
+                    >
+                      Check Issue
+                    </button>
+                  </div>
+                </div>
+
+                {payoutMethod === 'Check' && (
+                  <div className="p-3 bg-slate-950 border border-emerald-500/40 rounded-xl space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
+                        <FileCheck className="w-4 h-4 text-emerald-400" /> Record Check Number *
+                      </Label>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setCheckNumber('CHK-' + Math.floor(10000 + Math.random() * 90000))}
+                        className="text-[10px] h-7 bg-slate-900 border-slate-700 text-slate-300 hover:text-white"
+                      >
+                        Auto-Generate #
+                      </Button>
+                    </div>
+                    <Input
+                      value={checkNumber}
+                      onChange={(e) => setCheckNumber(e.target.value)}
+                      placeholder="Enter Check Number (e.g. 9042)"
+                      className="bg-slate-900 border-slate-800 text-amber-300 font-mono font-bold text-sm h-10"
+                    />
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>

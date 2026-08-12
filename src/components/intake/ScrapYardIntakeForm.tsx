@@ -346,6 +346,11 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
       return;
     }
 
+    if (payoutMethod === 'Check' && !checkNumber.trim()) {
+      toast.error('Please enter or record a Check Number before completing the ticket');
+      return;
+    }
+
     const currentOp = storageService.getSettings().operatorName;
     const finalTicketId = activeTicketId || `T-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
 
@@ -1002,14 +1007,34 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
                       </div>
                     )}
 
+                    {/* CHECK NUMBER RECORDING SECTION */}
                     {payoutMethod === 'Check' && (
-                      <div className="pt-2">
-                        <Label className="text-[11px] text-slate-400">Check Reference Number</Label>
-                        <Input
-                          value={checkNumber}
-                          onChange={(e) => setCheckNumber(e.target.value)}
-                          className="bg-slate-950 border-slate-800 text-amber-300 font-mono text-xs mt-1 h-10"
-                        />
+                      <div className="p-3 bg-slate-950 border-2 border-emerald-500/40 rounded-xl space-y-2 mt-2">
+                        <div className="flex items-center justify-between">
+                          <Label className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
+                            <FileCheck className="w-4 h-4 text-emerald-400" /> Record Check Number *
+                          </Label>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setCheckNumber('CHK-' + Math.floor(10000 + Math.random() * 90000))}
+                            className="text-[10px] h-7 bg-slate-900 border-slate-700 text-slate-300 hover:text-white"
+                          >
+                            Auto-Generate Next #
+                          </Button>
+                        </div>
+                        <div className="relative">
+                          <Input
+                            value={checkNumber}
+                            onChange={(e) => setCheckNumber(e.target.value)}
+                            placeholder="Enter Check Number (e.g. 9042)"
+                            className="bg-slate-900 border-slate-800 text-amber-300 font-mono font-bold text-sm h-11"
+                          />
+                        </div>
+                        <p className="text-[10px] text-slate-400">
+                          This check number will be printed on the official receipt vouchers for audit compliance.
+                        </p>
                       </div>
                     )}
                   </div>
