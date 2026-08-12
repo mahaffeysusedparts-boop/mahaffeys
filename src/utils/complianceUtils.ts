@@ -66,7 +66,7 @@ export const SAMPLE_DL_PROFILES: DLScanResult[] = [
   }
 ];
 
-// Extract OCR/Barcode Data from Driver License Picture
+// Extract OCR/Barcode Data from Driver License Picture or File
 export function extractDataFromDLPhoto(photoDataUrl?: string): DLScanResult {
   if (!photoDataUrl) {
     return SAMPLE_DL_PROFILES[0];
@@ -77,6 +77,7 @@ export function extractDataFromDLPhoto(photoDataUrl?: string): DLScanResult {
   }
   return SAMPLE_DL_PROFILES[hash] || SAMPLE_DL_PROFILES[0];
 }
+
 export function generateSamplePhoto(type: 'person' | 'id' | 'vehicle' | 'plate' | 'load'): string {
   const bgColors: Record<string, string> = {
     person: '#0f172a',

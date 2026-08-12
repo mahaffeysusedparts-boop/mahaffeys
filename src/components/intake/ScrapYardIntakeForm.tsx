@@ -3,7 +3,13 @@ import { Customer, MetalGrade, ScrapTicketLine, Ticket, WeightUnit, ComplianceCa
 import { storageService } from '@/services/storageService';
 import { LiveScaleGauge } from '../scale/LiveScaleGauge';
 import { ComplianceCaptureModal } from '../compliance/ComplianceCaptureModal';
-import { calculateComplianceScore, generateSamplePhoto, DLScanResult, extractDataFromDLPhoto } from '@/utils/complianceUtils';
+import {
+  calculateComplianceScore,
+  generateSamplePhoto,
+  DLScanResult,
+  extractDataFromDLPhoto,
+  SAMPLE_DL_PROFILES,
+} from '@/utils/complianceUtils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -16,7 +22,16 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from '@/components/ui/dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import {
   Scale,
   Plus,
@@ -39,8 +54,8 @@ import {
   Tablet,
   Laptop,
   Clock,
-  ListFilter,
-  RefreshCw,
+  Sparkles,
+  ChevronDown,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -69,6 +84,7 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
   const [customerName, setCustomerName] = useState<string>('');
   const [customerIdNumber, setCustomerIdNumber] = useState<string>('');
   const [vehicleLicensePlate, setVehicleLicensePlate] = useState<string>('');
+  const [isDlScanned, setIsDlScanned] = useState<boolean>(false);
 
   // Compliance Captures
   const [complianceCaptures, setComplianceCaptures] = useState<ComplianceCaptures>({
@@ -124,17 +140,47 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
           idPhotoUrl: cust.idPhotoUrl || prev.idPhotoUrl,
         }));
       }
+      setIsDlScanned(true);
     }
+  };
+
+  // Helper to apply extracted DL scan result and match registered database customer if available
+  const applyDlScanResult = (profile: DLScanResult, photoDataUrl?: string) => {
+    setCustomerName(profile.fullName);
+    setCustomerIdNumber(profile.idNumber);
+    if (profile.vehicleLicensePlate) {
+      setVehicleLicensePlate(profile.vehicleLicensePlate);
+    }
+    setIsDlScanned(true);
+
+    // Auto-link to existing customer record if ID # or name matches
+    const matchedCustomer = customers.find(
+      (c) =>
+        (c.idNumber && c.idNumber.toLowerCase() === profile.idNumber.toLowerCase()) ||
+        c.fullName.toLowerCase().includes(profile.fullName.toLowerCase())
+    );
+
+    if (matchedCustomer) {
+      setSelectedCustomerId(matchedCustomer.id);
+    }
+
+    const idPhoto = photoDataUrl || generateSamplePhoto('id');
+    setComplianceCaptures((prev) => ({
+      ...prev,
+      idPhotoUrl: idPhoto,
+    }));
+
+    toast.success(`Driver License Scanned & Autofilled!`, {
+      description: `Name: ${profile.fullName} | ID: ${profile.idNumber}${
+        matchedCustomer ? ' (Matched Registered Customer Profile)' : ''
+      }`,
+    });
   };
 
   const handleApplyComplianceCaptures = (captures: ComplianceCaptures, scannedProfile?: DLScanResult) => {
     setComplianceCaptures(captures);
     if (scannedProfile) {
-      setCustomerName(scannedProfile.fullName);
-      setCustomerIdNumber(scannedProfile.idNumber);
-      if (scannedProfile.vehicleLicensePlate) {
-        setVehicleLicensePlate(scannedProfile.vehicleLicensePlate);
-      }
+      applyDlScanResult(scannedProfile, captures.idPhotoUrl);
     }
   };
 
@@ -145,21 +191,16 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
       reader.onload = (event) => {
         const dataUrl = event.target?.result as string;
         const profile = extractDataFromDLPhoto(dataUrl);
-        setCustomerName(profile.fullName);
-        setCustomerIdNumber(profile.idNumber);
-        if (profile.vehicleLicensePlate) {
-          setVehicleLicensePlate(profile.vehicleLicensePlate);
-        }
-        setComplianceCaptures((prev) => ({
-          ...prev,
-          idPhotoUrl: dataUrl,
-        }));
-        toast.success(`Extracted Data from Driver License Picture!`, {
-          description: `Name: ${profile.fullName} | ID #: ${profile.idNumber} | Tag: ${profile.vehicleLicensePlate || 'N/A'}`,
-        });
+        applyDlScanResult(profile, dataUrl);
       };
       reader.readAsDataURL(file);
     }
+  };
+
+  // Quick preset DL profile selection for fast demo or manual scan
+  const handleSelectSampleDlProfile = (profile: DLScanResult) => {
+    const samplePhoto = generateSamplePhoto('id');
+    applyDlScanResult(profile, samplePhoto);
   };
 
   // Load a pending ticket from iPad queue into Office PC Scale workstation
@@ -169,6 +210,7 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
     setCustomerName(pending.customerName);
     setCustomerIdNumber(pending.customerIdNumber || '');
     setVehicleLicensePlate(pending.vehicleLicensePlate || '');
+    setIsDlScanned(true);
     if (pending.complianceCaptures) {
       setComplianceCaptures(pending.complianceCaptures);
     }
@@ -232,6 +274,7 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
     setCustomerName('');
     setCustomerIdNumber('');
     setVehicleLicensePlate('');
+    setIsDlScanned(false);
     setLines([]);
     setNotes('');
     setComplianceCaptures({
@@ -464,25 +507,99 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
             
             <div className="lg:col-span-2 space-y-6">
 
-              {/* 1. CUSTOMER / SELLER PROFILE CARD */}
-              <Card className="bg-slate-900 border-slate-800 text-white shadow-xl">
-                <CardHeader className="py-3.5 px-4 bg-slate-950/80 border-b border-slate-800 flex flex-row items-center justify-between">
-                  <CardTitle className="text-sm font-bold tracking-wide uppercase text-slate-300 flex items-center gap-2">
-                    <User className="w-4 h-4 text-emerald-400" /> Customer / Seller Profile (iPad Field Input)
-                  </CardTitle>
+              {/* 1. CUSTOMER / SELLER PROFILE CARD WITH DL AUTOFILL ACTION */}
+              <Card className="bg-slate-900 border-slate-800 text-white shadow-xl relative overflow-hidden">
+                <CardHeader className="py-3.5 px-4 bg-slate-950/80 border-b border-slate-800 flex flex-row items-center justify-between gap-2 flex-wrap">
+                  <div className="flex items-center gap-2">
+                    <User className="w-4 h-4 text-emerald-400" />
+                    <CardTitle className="text-sm font-bold tracking-wide uppercase text-slate-300">
+                      Customer / Seller Profile
+                    </CardTitle>
+                    {isDlScanned && (
+                      <Badge className="bg-emerald-950 text-emerald-300 border-emerald-500/40 text-[10px] font-mono gap-1">
+                        <Check className="w-3 h-3 text-emerald-400" /> DL AUTOFILLED
+                      </Badge>
+                    )}
+                  </div>
 
-                  <label className="cursor-pointer inline-flex items-center gap-1.5 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs px-3.5 py-2 rounded-lg transition-colors shadow-md">
-                    <CreditCard className="w-4 h-4" /> Scan Data from DL Picture
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={handleDlPictureUpload}
-                      className="hidden"
-                    />
-                  </label>
+                  <div className="flex items-center gap-2">
+                    {/* Primary DL Scan / Upload Button */}
+                    <label className="cursor-pointer inline-flex items-center gap-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-extrabold text-xs px-3.5 py-2 rounded-lg transition-colors shadow-lg shadow-blue-950">
+                      <CreditCard className="w-4 h-4 text-amber-300" /> Scan / Upload Driver License
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleDlPictureUpload}
+                        className="hidden"
+                      />
+                    </label>
+
+                    {/* Dropdown for Sample / Demo Barcode Scanning */}
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button size="sm" variant="outline" className="border-slate-700 bg-slate-950 hover:bg-slate-800 text-slate-300 text-xs px-2.5">
+                          <Sparkles className="w-3.5 h-3.5 text-amber-400 mr-1" /> Barcode
+                          <ChevronDown className="w-3 h-3 ml-1 opacity-60" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="bg-slate-900 border-slate-800 text-white text-xs w-60">
+                        <DropdownMenuLabel className="text-[10px] font-mono text-slate-400 uppercase">
+                          Simulate PDF417 DL Barcode Scan
+                        </DropdownMenuLabel>
+                        <DropdownMenuSeparator className="bg-slate-800" />
+                        {SAMPLE_DL_PROFILES.map((profile, idx) => (
+                          <DropdownMenuItem
+                            key={idx}
+                            onClick={() => handleSelectSampleDlProfile(profile)}
+                            className="cursor-pointer hover:bg-slate-800 flex items-center justify-between p-2"
+                          >
+                            <div>
+                              <p className="font-bold text-white">{profile.fullName}</p>
+                              <p className="text-[10px] text-slate-400 font-mono">{profile.idNumber} ({profile.idState})</p>
+                            </div>
+                            <Badge variant="outline" className="text-[9px] border-emerald-500/40 text-emerald-400">
+                              Autofill
+                            </Badge>
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
                 </CardHeader>
 
                 <CardContent className="p-4 space-y-4">
+                  
+                  {/* Top Notification Banner if DL Scanned */}
+                  {isDlScanned ? (
+                    <div className="p-3 bg-emerald-950/40 border border-emerald-500/40 rounded-xl flex items-center justify-between text-xs text-emerald-300">
+                      <div className="flex items-center gap-2">
+                        <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+                        <span>Driver's License scanned! Seller Name, ID Number, Tag & Photo populated automatically.</span>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          setCustomerName('');
+                          setCustomerIdNumber('');
+                          setVehicleLicensePlate('');
+                          setSelectedCustomerId('');
+                          setIsDlScanned(false);
+                        }}
+                        className="h-6 text-[10px] text-slate-400 hover:text-white"
+                      >
+                        Clear
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="p-3 bg-slate-950 border border-dashed border-slate-800 rounded-xl flex items-center justify-between text-xs text-slate-400">
+                      <div className="flex items-center gap-2">
+                        <Scan className="w-4 h-4 text-blue-400 shrink-0 animate-pulse" />
+                        <span>Tap <strong>"Scan / Upload Driver License"</strong> above to autofill seller details via OCR.</span>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div>
                       <Label className="text-xs text-slate-300">Select Registered Customer</Label>
@@ -493,7 +610,7 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
                         <SelectContent className="bg-slate-900 border-slate-800 text-white">
                           {customers.map((c) => (
                             <SelectItem key={c.id} value={c.id} className="text-xs">
-                              {c.fullName}
+                              {c.fullName} ({c.idNumber || 'No ID'})
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -501,33 +618,48 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
                     </div>
 
                     <div>
-                      <Label className="text-xs text-slate-300">Seller Name *</Label>
+                      <Label className="text-xs text-slate-300 flex items-center justify-between">
+                        <span>Seller Name *</span>
+                        {isDlScanned && <span className="text-[10px] text-emerald-400 font-mono">AUTOFILLED</span>}
+                      </Label>
                       <Input
                         value={customerName}
                         onChange={(e) => setCustomerName(e.target.value)}
                         placeholder="e.g. Marcus Vance"
-                        className="bg-slate-950 border-slate-800 text-white font-bold text-xs mt-1 h-11"
+                        className={`bg-slate-950 border-slate-800 text-white font-bold text-xs mt-1 h-11 ${
+                          isDlScanned ? 'ring-1 ring-emerald-500/50 bg-emerald-950/20' : ''
+                        }`}
                       />
                     </div>
 
                     <div>
-                      <Label className="text-xs text-slate-300">Driver License / ID #</Label>
+                      <Label className="text-xs text-slate-300 flex items-center justify-between">
+                        <span>Driver License / ID #</span>
+                        {isDlScanned && <span className="text-[10px] text-emerald-400 font-mono">AUTOFILLED</span>}
+                      </Label>
                       <Input
                         value={customerIdNumber}
                         onChange={(e) => setCustomerIdNumber(e.target.value)}
                         placeholder="e.g. DL-4481029-GA"
-                        className="bg-slate-950 border-slate-800 text-amber-300 font-mono text-xs mt-1 h-11"
+                        className={`bg-slate-950 border-slate-800 text-amber-300 font-mono text-xs mt-1 h-11 ${
+                          isDlScanned ? 'ring-1 ring-emerald-500/50 bg-emerald-950/20' : ''
+                        }`}
                       />
                     </div>
                   </div>
 
                   <div>
-                    <Label className="text-xs text-slate-300">Vehicle License Plate Tag</Label>
+                    <Label className="text-xs text-slate-300 flex items-center justify-between">
+                      <span>Vehicle License Plate Tag</span>
+                      {isDlScanned && vehicleLicensePlate && <span className="text-[10px] text-emerald-400 font-mono">AUTOFILLED</span>}
+                    </Label>
                     <Input
                       value={vehicleLicensePlate}
                       onChange={(e) => setVehicleLicensePlate(e.target.value)}
                       placeholder="e.g. TOW-912 (GA)"
-                      className="bg-slate-950 border-slate-800 text-slate-200 font-mono uppercase text-xs mt-1 h-11 max-w-sm"
+                      className={`bg-slate-950 border-slate-800 text-slate-200 font-mono uppercase text-xs mt-1 h-11 max-w-sm ${
+                        isDlScanned && vehicleLicensePlate ? 'ring-1 ring-emerald-500/50 bg-emerald-950/20' : ''
+                      }`}
                     />
                   </div>
                 </CardContent>
