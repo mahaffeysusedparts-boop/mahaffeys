@@ -19,6 +19,7 @@ import ContainersPage from "./pages/ContainersPage";
 import CashDrawerPage from "./pages/CashDrawerPage";
 import YardMapPage from "./pages/YardMapPage";
 import PullAPartPage from "./pages/PullAPartPage";
+import MobileYardPage from "./pages/MobileYardPage";
 import SystemHealthPage from "./pages/SystemHealthPage";
 import ServerAdminPage from "./pages/ServerAdminPage";
 import UserManagementPage from "./pages/UserManagementPage";
@@ -68,6 +69,14 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <IntakePage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/mobile-yard"
+              element={
+                <ProtectedRoute>
+                  <MobileYardPage />
                 </ProtectedRoute>
               }
             />

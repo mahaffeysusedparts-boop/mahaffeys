@@ -46,6 +46,7 @@ import {
   Shield,
   Camera,
   Sparkles,
+  Smartphone,
 } from 'lucide-react';
 
 export const Navbar: React.FC = () => {
@@ -71,8 +72,9 @@ export const Navbar: React.FC = () => {
 
   const navItems = [
     { label: 'Dashboard', path: '/', icon: LayoutDashboard },
+    { label: 'Field Ops / Mobile Yard', path: '/mobile-yard', icon: Smartphone, isNew: true },
     { label: 'Scrap Metal Scale', path: '/intake', icon: Scale },
-    { label: 'Cars On Yard', path: '/vehicles', icon: Car, isNew: true },
+    { label: 'Cars On Yard', path: '/vehicles', icon: Car },
     { label: 'Junk Yard Dismantling', path: '/pull-a-part', icon: Wrench },
     { label: 'Parts Price Sheet', path: '/inventory', icon: DollarSign },
     { label: 'Compliance & NMVTIS', path: '/compliance', icon: ShieldCheck },
