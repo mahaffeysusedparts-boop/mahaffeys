@@ -63,7 +63,7 @@ export default function PublicInventoryPage() {
       v.model.toLowerCase().includes(q) ||
       v.year.toString().includes(q) ||
       v.vin.toLowerCase().includes(q) ||
-      v.rowNumber.toLowerCase().includes(q);
+      v.section.toLowerCase().includes(q);
 
     const matchesSection = selectedSection === "ALL" ? true : v.section === selectedSection;
 
@@ -111,7 +111,7 @@ export default function PublicInventoryPage() {
                 Public Vehicle Inventory & Part Locator
               </h1>
               <p className="text-slate-400 text-sm leading-relaxed">
-                Search self-service harvest vehicles staged on the lot. Check row and space locations, see available components, and find fresh vehicle arrivals.
+                Search self-service harvest vehicles staged on the lot. Check section locations, see available components, and find fresh vehicle arrivals.
               </p>
             </div>
 
@@ -224,25 +224,29 @@ export default function PublicInventoryPage() {
                     onClick={() => setSelectedVehicle(veh)}
                     className="group bg-slate-900 border-2 border-slate-800 hover:border-amber-500/70 transition-all duration-200 cursor-pointer shadow-xl overflow-hidden flex flex-col justify-between"
                   >
-                    <CardHeader className="py-4 px-5 bg-slate-950/80 border-b border-slate-800 flex flex-row items-start justify-between">
-                      <div className="space-y-1">
-                        <Badge variant="outline" className="border-slate-700 text-slate-300 text-[10px]">
+                    {/* Vehicle Photo Banner */}
+                    {veh.photoUrl && (
+                      <div className="aspect-video w-full bg-slate-950 overflow-hidden relative border-b border-slate-800">
+                        <img src={veh.photoUrl} alt={`${veh.year} ${veh.make} ${veh.model}`} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                        <div className="absolute top-2 left-2 bg-slate-950/80 backdrop-blur px-2 py-0.5 rounded text-[10px] font-bold text-amber-300 border border-amber-500/40">
                           {veh.section}
-                        </Badge>
+                        </div>
+                      </div>
+                    )}
+
+                    <CardHeader className="py-3 px-5 bg-slate-950/80 border-b border-slate-800 flex flex-row items-start justify-between">
+                      <div className="space-y-1">
+                        {!veh.photoUrl && (
+                          <Badge variant="outline" className="border-slate-700 text-slate-300 text-[10px]">
+                            {veh.section}
+                          </Badge>
+                        )}
                         <CardTitle className="text-lg font-black text-white group-hover:text-amber-400 transition-colors">
                           {veh.year} {veh.make} {veh.model}
                         </CardTitle>
                         <p className="text-xs text-slate-400 font-mono">
                           Color: <span className="text-slate-200">{veh.color}</span>
                         </p>
-                      </div>
-
-                      {/* Row Badge */}
-                      <div className="text-right shrink-0">
-                        <div className="p-2 rounded-xl bg-amber-950/80 border border-amber-500/40 text-amber-300 text-center shadow-md">
-                          <span className="text-xs font-black block leading-none font-mono">{veh.rowNumber}</span>
-                          <span className="text-[9px] text-amber-400/80 font-mono">{veh.spaceNumber}</span>
-                        </div>
                       </div>
                     </CardHeader>
 
@@ -287,7 +291,7 @@ export default function PublicInventoryPage() {
                     </CardContent>
 
                     <div className="p-3 bg-slate-950/60 border-t border-slate-800 flex items-center justify-between text-xs text-amber-400 font-semibold group-hover:bg-amber-950/30 transition-colors">
-                      <span>View Row Locator Pass</span>
+                      <span>View Vehicle Locator Pass</span>
                       <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                     </div>
                   </Card>
@@ -305,10 +309,7 @@ export default function PublicInventoryPage() {
           <DialogContent className="max-w-md bg-slate-950 text-slate-100 border-slate-800 p-6">
             <DialogHeader className="border-b border-slate-800 pb-3">
               <div className="flex items-center justify-between">
-                <Badge className="bg-amber-950 text-amber-300 border-amber-500/40 text-xs font-mono">
-                  {selectedVehicle.rowNumber} - {selectedVehicle.spaceNumber}
-                </Badge>
-                <Badge variant="outline" className="border-slate-700 text-slate-300 text-xs">
+                <Badge variant="outline" className="border-amber-500/40 text-amber-300 text-xs">
                   {selectedVehicle.section}
                 </Badge>
               </div>
@@ -321,6 +322,12 @@ export default function PublicInventoryPage() {
             </DialogHeader>
 
             <div className="space-y-4 pt-2">
+              {selectedVehicle.photoUrl && (
+                <div className="aspect-video w-full rounded-xl overflow-hidden border border-slate-800 bg-slate-900">
+                  <img src={selectedVehicle.photoUrl} alt="Vehicle" className="w-full h-full object-cover" />
+                </div>
+              )}
+
               <div className="bg-slate-900 p-4 rounded-xl border border-slate-800 space-y-2 text-xs font-mono">
                 <div className="flex justify-between">
                   <span className="text-slate-400">Color:</span>

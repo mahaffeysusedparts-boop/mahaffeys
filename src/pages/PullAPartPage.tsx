@@ -47,6 +47,7 @@ import {
   Flame,
   Check,
   FileSpreadsheet,
+  Image as ImageIcon,
 } from "lucide-react";
 import { BulkVehicleUploadModal } from "@/components/inventory/BulkVehicleUploadModal";
 import { toast } from "sonner";
@@ -67,8 +68,6 @@ export default function PullAPartPage() {
   const [editingVeh, setEditingVeh] = useState<PullYardVehicle | null>(null);
   const [bulkUploadOpen, setBulkUploadOpen] = useState(false);
 
-  const [vehRow, setVehRow] = useState("Row 104");
-  const [vehSpace, setVehSpace] = useState("Space 12");
   const [vehSection, setVehSection] = useState<PullYardVehicle["section"]>("Domestic Trucks & SUVs");
   const [vehYear, setVehYear] = useState(2010);
   const [vehMake, setVehMake] = useState("Ford");
@@ -122,8 +121,6 @@ export default function PullAPartPage() {
 
   const handleOpenAddVeh = () => {
     setEditingVeh(null);
-    setVehRow("Row 104");
-    setVehSpace("Space 12");
     setVehYear(new Date().getFullYear() - 10);
     setVehMake("");
     setVehModel("");
@@ -141,8 +138,6 @@ export default function PullAPartPage() {
 
   const handleOpenEditVeh = (v: PullYardVehicle) => {
     setEditingVeh(v);
-    setVehRow(v.rowNumber);
-    setVehSpace(v.spaceNumber);
     setVehSection(v.section);
     setVehYear(v.year);
     setVehMake(v.make);
@@ -168,8 +163,6 @@ export default function PullAPartPage() {
 
     const vehObj: PullYardVehicle = {
       id: editingVeh ? editingVeh.id : `veh-${Date.now()}`,
-      rowNumber: vehRow,
-      spaceNumber: vehSpace,
       section: vehSection,
       year: vehYear,
       make: vehMake,
@@ -194,7 +187,7 @@ export default function PullAPartPage() {
     storageService.savePullYardVehicle(vehObj);
     loadData();
     setVehModalOpen(false);
-    toast.success(`${editingVeh ? "Updated" : "Added"} ${vehYear} ${vehMake} ${vehModel}${vehRow ? ` in ${vehRow}` : ""}`);
+    toast.success(`${editingVeh ? "Updated" : "Added"} ${vehYear} ${vehMake} ${vehModel}`);
   };
 
   const handleStatusChange = (vehicle: PullYardVehicle, status: PullYardVehicleStatus) => {
@@ -253,7 +246,6 @@ export default function PullAPartPage() {
       v.make.toLowerCase().includes(q) ||
       v.model.toLowerCase().includes(q) ||
       v.year.toString().includes(q) ||
-      v.rowNumber.toLowerCase().includes(q) ||
       v.section.toLowerCase().includes(q) ||
       v.vin.toLowerCase().includes(q) ||
       (v.originSource && v.originSource.toLowerCase().includes(q)) ||
@@ -547,7 +539,7 @@ export default function PullAPartPage() {
                   <TableHeader className="bg-slate-950">
                     <TableRow className="border-slate-800 text-xs">
                       <TableHead className="text-slate-400">Photo</TableHead>
-                      <TableHead className="text-slate-400">Yard Location</TableHead>
+                      <TableHead className="text-slate-400">Yard Section</TableHead>
                       <TableHead className="text-slate-400">Vehicle Specs & VIN</TableHead>
                       <TableHead className="text-slate-400">Payout & Origin</TableHead>
                       <TableHead className="text-slate-400">Status</TableHead>
@@ -578,10 +570,9 @@ export default function PullAPartPage() {
                             </div>
                           </TableCell>
 
-                          {/* Row & Space */}
-                          <TableCell className="font-bold text-amber-300 text-sm">
-                            {v.rowNumber}
-                            <span className="block text-[10px] text-slate-400 font-normal">{v.spaceNumber || 'Space 01'}</span>
+                          {/* Section */}
+                          <TableCell className="font-sans font-bold text-amber-300">
+                            {v.section}
                           </TableCell>
 
                           {/* Specs & VIN */}
@@ -892,7 +883,7 @@ export default function PullAPartPage() {
                 <Wrench className="w-5 h-5 text-amber-400" /> Parts Dismantling & Processing Logger
               </DialogTitle>
               <p className="text-xs text-slate-400 font-mono">
-                {logVehicle.year} {logVehicle.make} {logVehicle.model} ({logVehicle.rowNumber} {logVehicle.spaceNumber})
+                {logVehicle.year} {logVehicle.make} {logVehicle.model}
               </p>
             </DialogHeader>
 
@@ -1059,28 +1050,6 @@ export default function PullAPartPage() {
           </DialogHeader>
 
           <div className="space-y-3 py-2 text-xs">
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <Label className="text-slate-300">Row Number *</Label>
-                <Input
-                  value={vehRow}
-                  onChange={(e) => setVehRow(e.target.value)}
-                  placeholder="Row 104"
-                  className="bg-slate-900 border-slate-800 text-amber-300 font-mono font-bold text-xs mt-1"
-                />
-              </div>
-
-              <div>
-                <Label className="text-slate-300">Space Number</Label>
-                <Input
-                  value={vehSpace}
-                  onChange={(e) => setVehSpace(e.target.value)}
-                  placeholder="Space 12"
-                  className="bg-slate-900 border-slate-800 text-white font-mono text-xs mt-1"
-                />
-              </div>
-            </div>
-
             <div className="grid grid-cols-3 gap-2">
               <div>
                 <Label className="text-slate-300">Year *</Label>
@@ -1186,6 +1155,16 @@ export default function PullAPartPage() {
                   <option value="CRUSHED">CRUSHED</option>
                 </select>
               </div>
+            </div>
+
+            <div>
+              <Label className="text-slate-300">Photo URL (Optional Image Link)</Label>
+              <Input
+                value={vehPhotoUrl}
+                onChange={(e) => setVehPhotoUrl(e.target.value)}
+                placeholder="https://images.unsplash.com/..."
+                className="bg-slate-900 border-slate-800 text-slate-300 text-xs mt-1"
+              />
             </div>
 
             <div>
@@ -1345,14 +1324,13 @@ export default function PullAPartPage() {
           <DialogContent className="bg-white text-slate-900 sm:max-w-[420px] font-mono text-xs">
             <div className="text-center border-b-2 border-slate-900 pb-3 space-y-1">
               <h2 className="text-lg font-black tracking-tight uppercase">APEX PULL-A-PART YARD PASS</h2>
-              <p className="text-[10px]">VEHICLE ROW LOCATOR & PARTS GUIDE</p>
+              <p className="text-[10px]">VEHICLE SECTION & PARTS GUIDE</p>
             </div>
 
             <div className="space-y-3 py-2">
               <div className="bg-slate-100 p-3 rounded border border-slate-300 text-center">
-                <span className="text-[10px] font-bold text-slate-500 block">YARD STAGING LOCATION</span>
-                <span className="text-2xl font-black text-slate-900">{selectedVehForTicket.rowNumber}</span>
-                <span className="text-sm font-bold text-slate-700 block">{selectedVehForTicket.spaceNumber || 'Space 01'}</span>
+                <span className="text-[10px] font-bold text-slate-500 block">YARD SECTION</span>
+                <span className="text-xl font-black text-slate-900">{selectedVehForTicket.section}</span>
               </div>
 
               <div className="space-y-1 text-[11px]">
