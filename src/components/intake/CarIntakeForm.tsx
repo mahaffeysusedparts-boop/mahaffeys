@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { CarIntakeRecord, Ticket } from '@/types/scrap';
 import { storageService } from '@/services/storageService';
-import { analyzeDriverLicenseImage, analyzeLicensePlateImage } from '@/services/aiVisionService';
+import { analyzeDriverLicenseImage, analyzeLicensePlateImage, analyzeVinImage } from '@/services/aiVisionService';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -30,6 +30,8 @@ import {
   CreditCard,
   User,
   Wand2,
+  Scan,
+  Ban,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -46,6 +48,7 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dlInputRef = useRef<HTMLInputElement>(null);
+  const vinCameraInputRef = useRef<HTMLInputElement>(null);
 
   // Editable Receipt / Ticket Number
   const [customReceiptNumber, setCustomReceiptNumber] = useState<string>(
@@ -116,6 +119,32 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
     }
   };
 
+  // AI VIN Tag / Plate OCR Scanner
+  const handleVinPictureUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      toast.info("AI Vision analyzing Dash/Door Jamb VIN plate photo...", { icon: "✨" });
+      const reader = new FileReader();
+      reader.onload = async (event) => {
+        const dataUrl = event.target?.result as string;
+        try {
+          const result = await analyzeVinImage(dataUrl);
+          if (result.vin) {
+            setVin(result.vin);
+            toast.success(`AI Vision Extracted VIN: ${result.vin}`);
+            // Automatically decode extracted VIN
+            handleDecodeVinWithVin(result.vin);
+          } else {
+            toast.error("Could not find clear 17-character VIN. Please verify photo quality.");
+          }
+        } catch (err) {
+          console.warn("AI VIN OCR Error:", err);
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   // Handle local image file upload for vehicle photo
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -140,12 +169,15 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
     }
   };
 
-  const handleDecodeVin = () => {
-    if (!vin || vin.length < 5) {
-      toast.error('Enter a valid VIN string to decode');
-      return;
-    }
-    const clean = vin.toUpperCase().trim();
+  const handleSkipVin = () => {
+    const noVinTag = `NO-VIN-${Math.floor(1000 + Math.random() * 9000)}`;
+    setVin(noVinTag);
+    toast.info(`Skipped VIN. Assigned: ${noVinTag}`);
+  };
+
+  const handleDecodeVinWithVin = (vinString: string) => {
+    if (!vinString || vinString.length < 5) return;
+    const clean = vinString.toUpperCase().trim();
     setVin(clean);
     
     if (clean.startsWith('1G')) {
@@ -164,12 +196,20 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
       setMake('Dodge');
       setModel('Ram 1500');
     }
+  };
+
+  const handleDecodeVin = () => {
+    if (!vin || vin.length < 5) {
+      toast.error('Enter a valid VIN string or tap "Scan VIN Photo"');
+      return;
+    }
+    handleDecodeVinWithVin(vin);
     toast.success('VIN decoded successfully');
   };
 
   const handleSubmitTicket = () => {
     if (!vin.trim()) {
-      toast.error('Please enter the vehicle VIN number');
+      toast.error('Please enter the vehicle VIN or tap "No VIN"');
       return;
     }
     if (!customReceiptNumber.trim()) {
@@ -269,6 +309,16 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
         ref={dlInputRef}
         onChange={handleDlPictureUpload}
         accept="image/*"
+        className="hidden"
+      />
+
+      {/* VIN Photo OCR Input */}
+      <input
+        type="file"
+        ref={vinCameraInputRef}
+        onChange={handleVinPictureUpload}
+        accept="image/*"
+        capture="environment"
         className="hidden"
       />
 
@@ -469,34 +519,60 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
             </CardContent>
           </Card>
 
-          {/* 2. VEHICLE DETAILS & VIN DECODER */}
+          {/* 2. VEHICLE DETAILS & VIN OCR DECODER WITH NO-VIN SKIP */}
           <Card className="bg-slate-900 border-slate-800 text-white shadow-lg">
             <CardHeader className="py-3 px-4 bg-slate-950/60 border-b border-slate-800 flex flex-row items-center justify-between">
               <CardTitle className="text-sm font-bold tracking-wide uppercase text-slate-300 flex items-center gap-2">
-                <Car className="w-4 h-4 text-amber-400" /> Vehicle Identification Specs
+                <Car className="w-4 h-4 text-amber-400" /> Vehicle Identification Specs & VIN OCR
               </CardTitle>
             </CardHeader>
 
             <CardContent className="p-4 space-y-4">
               
-              <div className="space-y-1">
-                <Label className="text-xs text-slate-300">17-Digit VIN Number *</Label>
-                <div className="flex gap-2">
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs text-slate-300 font-bold">17-Digit VIN Number *</Label>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={handleSkipVin}
+                    className="h-7 text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-950/40 gap-1 font-semibold"
+                  >
+                    <Ban className="w-3.5 h-3.5" /> Skip / No VIN
+                  </Button>
+                </div>
+
+                <div className="flex flex-wrap sm:flex-nowrap gap-2">
                   <Input
                     value={vin}
                     onChange={(e) => setVin(e.target.value.toUpperCase())}
-                    placeholder="e.g. 1FTRF12W88KA10291"
+                    placeholder="e.g. 1FTRF12W88KA10291 or NO-VIN"
                     className="bg-slate-950 border-slate-800 text-amber-300 font-mono tracking-wider font-bold text-sm uppercase flex-1"
                   />
+
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => vinCameraInputRef.current?.click()}
+                    className="bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold gap-1.5 shrink-0"
+                    title="Snap photo of dash plate or door jamb sticker"
+                  >
+                    <Scan className="w-3.5 h-3.5 text-amber-300" /> Scan VIN Photo
+                  </Button>
+
                   <Button
                     type="button"
                     variant="outline"
                     onClick={handleDecodeVin}
                     className="bg-slate-800 border-slate-700 hover:bg-slate-700 text-slate-200 text-xs shrink-0 gap-1"
                   >
-                    <Search className="w-3.5 h-3.5 text-amber-400" /> Decode VIN
+                    <Search className="w-3.5 h-3.5 text-amber-400" /> Decode
                   </Button>
                 </div>
+                <p className="text-[10px] text-slate-400">
+                  Tap <strong>"Scan VIN Photo"</strong> to auto-extract VIN from dash tag/door jamb photo, or tap <strong>"Skip / No VIN"</strong>.
+                </p>
               </div>
 
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">

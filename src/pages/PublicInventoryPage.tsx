@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { storageService } from "@/services/storageService";
 import { PullYardVehicle } from "@/types/scrap";
+import { PartsInterchangeModal } from "@/components/inventory/PartsInterchangeModal";
 import { Navbar } from "@/components/layout/Navbar";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -31,6 +32,7 @@ import {
   Layers,
   Calendar,
   AlertCircle,
+  Layers3,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -40,6 +42,7 @@ export default function PublicInventoryPage() {
   const [selectedSection, setSelectedSection] = useState<string>("ALL");
   const [partFilter, setPartFilter] = useState<string>("ALL");
   const [selectedVehicle, setSelectedVehicle] = useState<PullYardVehicle | null>(null);
+  const [interchangeOpen, setInterchangeOpen] = useState(false);
 
   // Notify Me Request State
   const [notifyOpen, setNotifyOpen] = useState(false);
@@ -116,6 +119,13 @@ export default function PublicInventoryPage() {
             </div>
 
             <div className="flex flex-col sm:flex-row items-center gap-3 shrink-0">
+              <Button
+                onClick={() => setInterchangeOpen(true)}
+                className="w-full sm:w-auto bg-purple-600 hover:bg-purple-500 text-white font-extrabold text-xs px-5 h-10 gap-1.5 shadow-lg shadow-purple-950"
+              >
+                <Layers3 className="w-4 h-4 text-amber-300" /> Parts Interchange Lookup
+              </Button>
+
               <Button
                 onClick={() => setNotifyOpen(true)}
                 className="w-full sm:w-auto bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-xs px-5 h-10 gap-1.5 shadow-lg shadow-amber-950"
@@ -427,6 +437,12 @@ export default function PublicInventoryPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Parts Interchange Search Modal */}
+      <PartsInterchangeModal
+        isOpen={interchangeOpen}
+        onClose={() => setInterchangeOpen(false)}
+      />
     </div>
   );
 }

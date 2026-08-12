@@ -14,6 +14,12 @@ export interface AILicensePlateResult {
   extractedRawText: string;
 }
 
+export interface AIVinResult {
+  vin: string;
+  confidence: number;
+  extractedRawText: string;
+}
+
 // Common State Abbreviations
 const US_STATES = [
   "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA",
@@ -69,7 +75,6 @@ export async function analyzeDriverLicenseImage(imageDataUrl: string): Promise<A
     }
 
     // 2. Extract Driver License / ID Number
-    // Matches patterns like DL 12345678, 4b: 09182391, NO. 9823145, GA DL# 019283019
     const dlNumberRegexes = [
       /(?:DL|LIC|NO|ID|4b|4d|3)\s*[:#\.\-]?\s*([A-Z0-9]{6,14})\b/i,
       /\b([A-Z]\d{7,12})\b/, // E.g., S12345678 or D98120391
@@ -79,7 +84,6 @@ export async function analyzeDriverLicenseImage(imageDataUrl: string): Promise<A
     for (const regex of dlNumberRegexes) {
       const match = rawText.match(regex);
       if (match && match[1]) {
-        // Filter out obvious zip codes or years
         const candidate = match[1].toUpperCase().replace(/[^A-Z0-9]/g, "");
         if (candidate.length >= 6 && !/^(19|20)\d{2}$/.test(candidate) && !/^\d{5}$/.test(candidate)) {
           idNumber = candidate;
@@ -89,7 +93,7 @@ export async function analyzeDriverLicenseImage(imageDataUrl: string): Promise<A
       }
     }
 
-    // 3. Extract DOB (Date of Birth)
+    // 3. Extract DOB
     const dobMatch = rawText.match(/(?:DOB|BIRTH|4d|DB)\s*[:#\.\-]?\s*(\d{2}[\/\-\.]\d{2}[\/\-\.]\d{2,4})\b/i) ||
                      rawText.match(/\b(\d{2}\/\d{2}\/(?:19|20)\d{2})\b/);
     if (dobMatch && dobMatch[1]) {
@@ -105,7 +109,6 @@ export async function analyzeDriverLicenseImage(imageDataUrl: string): Promise<A
     }
 
     // 5. Extract Full Name
-    // Look for lines following FN, LN, NAME, or AAMVA tags 1, 2, 3
     const nameLineMatch = rawText.match(/(?:FN|LN|NAME|3|1|2)\s*[:#\.\-]?\s*([A-[A-Z\s,]{3,30})/i);
     if (nameLineMatch && nameLineMatch[1]) {
       const candidate = nameLineMatch[1].replace(/[^A-Za-z\s,]/g, "").trim();
@@ -115,7 +118,6 @@ export async function analyzeDriverLicenseImage(imageDataUrl: string): Promise<A
       }
     }
 
-    // Fallback Name Detection: Check lines that look like capitalized Names (First Last)
     if (!fullName) {
       for (const line of lines) {
         if (/^[A-Z][a-z]+\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?$/.test(line)) {
@@ -128,7 +130,7 @@ export async function analyzeDriverLicenseImage(imageDataUrl: string): Promise<A
       }
     }
 
-    // 6. Extract Address (Street & Zip Code)
+    // 6. Extract Address
     const streetMatch = rawText.match(/\b\d{1,5}\s+[A-Za-z0-9\s\.,]{4,30}(?:ST|STREET|AVE|AVENUE|RD|ROAD|BLVD|DR|DRIVE|LN|WAY|CT|HWY|PKWY)\b/i);
     const zipMatch = rawText.match(/\b\d{5}(?:-\d{4})?\b/);
 
@@ -180,7 +182,6 @@ export async function analyzeLicensePlateImage(imageDataUrl: string): Promise<AI
     let plateNumber = "";
     let state = "GA";
 
-    // Detect State
     for (const st of US_STATES) {
       if (new RegExp(`\\b${st}\\b`, "i").test(rawText)) {
         state = st;
@@ -188,10 +189,8 @@ export async function analyzeLicensePlateImage(imageDataUrl: string): Promise<AI
       }
     }
 
-    // Extract License Plate Alphanumeric Tag (3-8 Characters, e.g., 7ABC89, TOW-912, BKN-402)
     const plateMatches = rawText.match(/\b[A-Z0-9]{1,4}[\s\-]*[A-Z0-9]{2,5}\b/gi);
     if (plateMatches && plateMatches.length > 0) {
-      // Find candidate with 5 to 8 chars
       for (const candidate of plateMatches) {
         const clean = candidate.toUpperCase().replace(/[^A-Z0-9]/g, "");
         if (clean.length >= 5 && clean.length <= 8 && !/^(19|20)\d{2}$/.test(clean)) {
@@ -218,6 +217,59 @@ export async function analyzeLicensePlateImage(imageDataUrl: string): Promise<AI
     return {
       plateNumber: "",
       state: "GA",
+      confidence: 0,
+      extractedRawText: "",
+    };
+  }
+}
+
+/**
+ * Analyzes Dash VIN Plate or Door Jamb Sticker Photos to extract 17-character VIN.
+ */
+export async function analyzeVinImage(imageDataUrl: string): Promise<AIVinResult> {
+  try {
+    const worker = await getWorker();
+    const ret = await worker.recognize(imageDataUrl);
+    const rawText = ret.data.text || "";
+    const confidence = Math.round(ret.data.confidence || 0);
+
+    let detectedVin = "";
+
+    // 1. Look for explicit 17-character VIN regex (excluding letters I, O, Q)
+    const exactVinMatch = rawText.match(/\b[A-HJ-NPR-Z0-9]{17}\b/i);
+    if (exactVinMatch && exactVinMatch[0]) {
+      detectedVin = exactVinMatch[0].toUpperCase();
+    }
+
+    // 2. Search for "VIN:" or "VIN#" prefix
+    if (!detectedVin) {
+      const vinPrefixMatch = rawText.match(/(?:VIN|SERIAL|MFR|VEHICLE\s*ID)\s*[:#\.\-]?\s*([A-HJ-NPR-Z0-9]{14,17})/i);
+      if (vinPrefixMatch && vinPrefixMatch[1]) {
+        const candidate = vinPrefixMatch[1].toUpperCase().replace(/[^A-HJ-NPR-Z0-9]/g, "");
+        if (candidate.length === 17) {
+          detectedVin = candidate;
+        }
+      }
+    }
+
+    // 3. Fallback: Clean all alphanumeric characters and search for 17-length sequence
+    if (!detectedVin) {
+      const cleanText = rawText.toUpperCase().replace(/[^A-Z0-9]/g, "").replace(/[IOQ]/g, "0");
+      const match17 = cleanText.match(/(?:1|2|3|4|5|J|K|W|S|L)[A-HJ-NPR-Z0-9]{16}/);
+      if (match17 && match17[0]) {
+        detectedVin = match17[0];
+      }
+    }
+
+    return {
+      vin: detectedVin,
+      confidence,
+      extractedRawText: rawText,
+    };
+  } catch (error) {
+    console.warn("AI VIN OCR error:", error);
+    return {
+      vin: "",
       confidence: 0,
       extractedRawText: "",
     };

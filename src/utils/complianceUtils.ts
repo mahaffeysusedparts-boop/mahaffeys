@@ -171,10 +171,21 @@ export function calculateComplianceScore(
   return { score, status, missingItems: missing };
 }
 
-// VIN Validation Helper
+// VIN Validation Helper (Supports "NO VIN" / "NO-VIN" option)
 export function validateVin(vin?: string): { isValid: boolean; reason?: string } {
   if (!vin) return { isValid: false, reason: "VIN is required" };
   const cleaned = vin.trim().toUpperCase();
+
+  if (
+    cleaned === "NO VIN" ||
+    cleaned === "NO-VIN" ||
+    cleaned.startsWith("NO-VIN") ||
+    cleaned.startsWith("NOVIN") ||
+    cleaned.startsWith("NO VIN")
+  ) {
+    return { isValid: true, reason: "Explicitly marked as No VIN" };
+  }
+
   if (cleaned.length !== 17) {
     return { isValid: false, reason: `VIN must be 17 characters (currently ${cleaned.length})` };
   }

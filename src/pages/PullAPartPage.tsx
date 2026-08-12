@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { storageService } from "@/services/storageService";
 import {
   PullYardVehicle,
@@ -8,6 +8,8 @@ import {
   PullYardVehicleStatus,
 } from "@/types/scrap";
 import { generateSamplePhoto } from "@/utils/complianceUtils";
+import { analyzeVinImage } from "@/services/aiVisionService";
+import { PartsInterchangeModal } from "@/components/inventory/PartsInterchangeModal";
 import { Navbar } from "@/components/layout/Navbar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -46,6 +48,10 @@ import {
   Flame,
   Check,
   FileSpreadsheet,
+  Scan,
+  Ban,
+  Layers3,
+  Sparkles,
 } from "lucide-react";
 import { BulkVehicleUploadModal } from "@/components/inventory/BulkVehicleUploadModal";
 import { toast } from "sonner";
@@ -65,6 +71,7 @@ export default function PullAPartPage() {
   const [vehModalOpen, setVehModalOpen] = useState(false);
   const [editingVeh, setEditingVeh] = useState<PullYardVehicle | null>(null);
   const [bulkUploadOpen, setBulkUploadOpen] = useState(false);
+  const [interchangeModalOpen, setInterchangeModalOpen] = useState(false);
 
   const [vehSection, setVehSection] = useState<PullYardVehicle["section"]>("Domestic Trucks & SUVs");
   const [vehYear, setVehYear] = useState(2010);
@@ -78,6 +85,8 @@ export default function PullAPartPage() {
   const [vehOriginSource, setVehOriginSource] = useState("Tow Origin / Address");
   const [vehNotes, setVehNotes] = useState("");
   const [vehPhotoUrl, setVehPhotoUrl] = useState(generateSamplePhoto("vehicle"));
+
+  const vinCameraRef = useRef<HTMLInputElement>(null);
 
   // Dismantling Log Modal
   const [logVehicle, setLogVehicle] = useState<PullYardVehicle | null>(null);
@@ -151,6 +160,35 @@ export default function PullAPartPage() {
     setVehModalOpen(true);
   };
 
+  const handleVinPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      toast.info("AI Vision analyzing dash tag or door jamb VIN photo...", { icon: "✨" });
+      const reader = new FileReader();
+      reader.onload = async (evt) => {
+        const dataUrl = evt.target?.result as string;
+        try {
+          const res = await analyzeVinImage(dataUrl);
+          if (res.vin) {
+            setVehVin(res.vin);
+            toast.success(`AI Extracted VIN: ${res.vin}`);
+          } else {
+            toast.error("Could not read 17-character VIN. Please verify photo angle.");
+          }
+        } catch (err) {
+          console.warn("VIN OCR error:", err);
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleSkipVin = () => {
+    const noVinCode = `NO-VIN-${Math.floor(1000 + Math.random() * 9000)}`;
+    setVehVin(noVinCode);
+    toast.info(`Bypassed VIN. Assigned: ${noVinCode}`);
+  };
+
   const handleSaveVeh = () => {
     if (!vehMake.trim() || !vehModel.trim()) {
       toast.error("Make and Model are required");
@@ -166,7 +204,7 @@ export default function PullAPartPage() {
       make: vehMake,
       model: vehModel,
       color: vehColor,
-      vin: vehVin.toUpperCase().trim(),
+      vin: vehVin.toUpperCase().trim() || `NO-VIN-${Math.floor(1000 + Math.random() * 9000)}`,
       dateSetInYard: editingVeh ? editingVeh.dateSetInYard : new Date().toISOString(),
       status: vehStatus,
       partsRemaining: partsList.length > 0 ? partsList : ["Body Shell"],
@@ -237,7 +275,6 @@ export default function PullAPartPage() {
     setDeletingVehicle(null);
   };
 
-  // Filter vehicles
   const filteredVehicles = vehicles.filter((v) => {
     const q = vehSearch.toLowerCase();
     const matchesSearch =
@@ -323,6 +360,15 @@ export default function PullAPartPage() {
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
       <Navbar />
 
+      <input
+        type="file"
+        ref={vinCameraRef}
+        onChange={handleVinPhotoUpload}
+        accept="image/*"
+        capture="environment"
+        className="hidden"
+      />
+
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
         
         {/* Header Bar */}
@@ -348,10 +394,16 @@ export default function PullAPartPage() {
 
           <div className="flex items-center gap-2 flex-wrap">
             <Button
+              onClick={() => setInterchangeModalOpen(true)}
+              className="bg-purple-600 hover:bg-purple-500 text-white font-extrabold text-xs gap-1.5 shadow-md"
+            >
+              <Layers3 className="w-4 h-4 text-amber-300" /> Parts Interchange Search
+            </Button>
+            <Button
               onClick={() => setBulkUploadOpen(true)}
               className="bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs gap-1.5 shadow-md"
             >
-              <FileSpreadsheet className="w-4 h-4 text-amber-300" /> Bulk Add Spreadsheet (CSV)
+              <FileSpreadsheet className="w-4 h-4 text-amber-300" /> Bulk Add CSV
             </Button>
             <Button
               onClick={handleOpenAddVeh}
@@ -872,175 +924,9 @@ export default function PullAPartPage() {
 
       </main>
 
-      {/* Dismantling & Parts Pull Logger Modal */}
-      {logVehicle && (
-        <Dialog open={!!logVehicle} onOpenChange={() => setLogVehicle(null)}>
-          <DialogContent className="bg-slate-950 text-slate-100 border-slate-800 sm:max-w-[520px]">
-            <DialogHeader>
-              <DialogTitle className="text-base font-bold text-white flex items-center gap-2">
-                <Wrench className="w-5 h-5 text-amber-400" /> Parts Dismantling & Processing Logger
-              </DialogTitle>
-              <p className="text-xs text-slate-400 font-mono">
-                {logVehicle.year} {logVehicle.make} {logVehicle.model} ({logVehicle.section})
-              </p>
-            </DialogHeader>
-
-            <div className="space-y-4 py-2 text-xs">
-              
-              {/* Catalytic Converters Removed Counter */}
-              <div className="bg-slate-900 p-3 rounded-lg border border-slate-800 flex items-center justify-between">
-                <div>
-                  <span className="font-bold text-slate-200 block">Catalytic Converters Removed</span>
-                  <span className="text-[10px] text-slate-400">Count of cats harvested</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setCatsRemoved((c) => Math.max(0, c - 1))}
-                    className="h-8 w-8 p-0 border-slate-700 bg-slate-800 text-white font-bold"
-                  >
-                    -
-                  </Button>
-                  <span className="font-mono font-bold text-lg text-amber-400 w-6 text-center">{catsRemoved}</span>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setCatsRemoved((c) => c + 1)}
-                    className="h-8 w-8 p-0 border-slate-700 bg-slate-800 text-white font-bold"
-                  >
-                    +
-                  </Button>
-                </div>
-              </div>
-
-              {/* Wheels Removed Counter */}
-              <div className="bg-slate-900 p-3 rounded-lg border border-slate-800 flex items-center justify-between">
-                <div>
-                  <span className="font-bold text-slate-200 block">Wheels Removed</span>
-                  <span className="text-[10px] text-slate-400">Rims / tires pulled</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setWheelsRemoved((w) => Math.max(0, w - 1))}
-                    className="h-8 w-8 p-0 border-slate-700 bg-slate-800 text-white font-bold"
-                  >
-                    -
-                  </Button>
-                  <span className="font-mono font-bold text-lg text-sky-400 w-6 text-center">{wheelsRemoved}</span>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setWheelsRemoved((w) => Math.min(8, w + 1))}
-                    className="h-8 w-8 p-0 border-slate-700 bg-slate-800 text-white font-bold"
-                  >
-                    +
-                  </Button>
-                </div>
-              </div>
-
-              {/* Fluids Drained Switches */}
-              <div className="grid grid-cols-2 gap-3 bg-slate-900 p-3 rounded-lg border border-slate-800">
-                <div className="flex items-center justify-between">
-                  <span className="font-semibold text-slate-200 flex items-center gap-1">
-                    <Droplets className="w-3.5 h-3.5 text-amber-400" /> Gas Drained
-                  </span>
-                  <Switch
-                    checked={gasDrained}
-                    onCheckedChange={setGasDrained}
-                  />
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <span className="font-semibold text-slate-200 flex items-center gap-1">
-                    <Droplets className="w-3.5 h-3.5 text-amber-400" /> Oil Drained
-                  </span>
-                  <Switch
-                    checked={oilDrained}
-                    onCheckedChange={setOilDrained}
-                  />
-                </div>
-              </div>
-
-              {/* Processor Notes Section */}
-              <div className="space-y-1">
-                <Label className="text-slate-300 font-semibold flex items-center gap-1">
-                  <FileText className="w-3.5 h-3.5 text-sky-400" /> Processor Dismantling Notes
-                </Label>
-                <Textarea
-                  rows={3}
-                  value={processorNotes}
-                  onChange={(e) => setProcessorNotes(e.target.value)}
-                  placeholder="e.g. Pulled 5.4L engine block & transmission, OEM cats removed, battery stored in vault..."
-                  className="bg-slate-900 border-slate-800 text-slate-200 text-xs"
-                />
-              </div>
-
-            </div>
-
-            <DialogFooter className="pt-3 border-t border-slate-800 flex-col sm:flex-row gap-2">
-              <Button
-                variant="ghost"
-                onClick={() => setLogVehicle(null)}
-                className="text-slate-400 text-xs"
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={() => handleSavePullLog(false)}
-                className="bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs"
-              >
-                Save Dismantling Log
-              </Button>
-              <Button
-                onClick={() => handleSavePullLog(true)}
-                className="bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs gap-1"
-              >
-                <Check className="w-4 h-4" /> Save & Move to Yard (Set Available)
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      )}
-
-      {/* Delete Confirmation Modal */}
-      {deletingVehicle && (
-        <Dialog open={!!deletingVehicle} onOpenChange={() => setDeletingVehicle(null)}>
-          <DialogContent className="bg-slate-950 text-slate-100 border-slate-800 sm:max-w-[400px]">
-            <DialogHeader>
-              <DialogTitle className="text-base font-bold text-white flex items-center gap-2">
-                <AlertCircle className="w-5 h-5 text-rose-500" /> Remove Vehicle from Yard?
-              </DialogTitle>
-            </DialogHeader>
-
-            <div className="py-2 text-xs text-slate-300 space-y-2">
-              <p>
-                Are you sure you want to completely remove <strong className="text-white">{deletingVehicle.year} {deletingVehicle.make} {deletingVehicle.model}</strong> ({deletingVehicle.vin}) from the yard database?
-              </p>
-              <p className="text-rose-400 text-[11px]">This action cannot be undone.</p>
-            </div>
-
-            <DialogFooter className="pt-2 border-t border-slate-800">
-              <Button variant="ghost" onClick={() => setDeletingVehicle(null)} className="text-slate-400 text-xs">
-                Cancel
-              </Button>
-              <Button onClick={handleConfirmRemoveVehicle} className="bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs">
-                Delete Vehicle
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      )}
-
       {/* Add / Edit Vehicle Modal */}
       <Dialog open={vehModalOpen} onOpenChange={setVehModalOpen}>
-        <DialogContent className="bg-slate-950 text-slate-100 border-slate-800 sm:max-w-[520px]">
+        <DialogContent className="bg-slate-950 text-slate-100 border-slate-800 sm:max-w-[540px]">
           <DialogHeader>
             <DialogTitle className="text-base font-bold text-white flex items-center gap-2">
               <Car className="w-5 h-5 text-emerald-400" /> {editingVeh ? "Edit Yard Vehicle" : "Add Vehicle to Yard"}
@@ -1080,6 +966,38 @@ export default function PullAPartPage() {
               </div>
             </div>
 
+            {/* VIN Field with Photo OCR & Skip No VIN */}
+            <div className="space-y-1">
+              <div className="flex items-center justify-between">
+                <Label className="text-slate-300 font-bold">VIN Number</Label>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={handleSkipVin}
+                  className="h-6 text-[11px] text-rose-400 hover:text-rose-300 gap-1 p-0"
+                >
+                  <Ban className="w-3 h-3" /> Skip / No VIN
+                </Button>
+              </div>
+              <div className="flex gap-2">
+                <Input
+                  value={vehVin}
+                  onChange={(e) => setVehVin(e.target.value.toUpperCase())}
+                  placeholder="1FTRF12W88KA10291 or NO-VIN"
+                  className="bg-slate-900 border-slate-800 text-amber-300 font-mono font-bold text-xs flex-1"
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => vinCameraRef.current?.click()}
+                  className="bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs gap-1 shrink-0"
+                >
+                  <Scan className="w-3.5 h-3.5" /> VIN Photo
+                </Button>
+              </div>
+            </div>
+
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <Label className="text-slate-300">Color</Label>
@@ -1092,18 +1010,6 @@ export default function PullAPartPage() {
               </div>
 
               <div>
-                <Label className="text-slate-300">VIN Number</Label>
-                <Input
-                  value={vehVin}
-                  onChange={(e) => setVehVin(e.target.value)}
-                  placeholder="1FTRF12W88KA10291"
-                  className="bg-slate-900 border-slate-800 text-amber-300 font-mono text-xs mt-1"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <div>
                 <Label className="text-slate-300">Purchase Price ($)</Label>
                 <Input
                   type="number"
@@ -1112,7 +1018,9 @@ export default function PullAPartPage() {
                   className="bg-slate-900 border-slate-800 text-emerald-400 font-mono font-bold text-xs mt-1"
                 />
               </div>
+            </div>
 
+            <div className="grid grid-cols-2 gap-2">
               <div>
                 <Label className="text-slate-300">Tow Origin / Source</Label>
                 <Input
@@ -1122,9 +1030,7 @@ export default function PullAPartPage() {
                   className="bg-slate-900 border-slate-800 text-white text-xs mt-1"
                 />
               </div>
-            </div>
 
-            <div className="grid grid-cols-2 gap-2">
               <div>
                 <Label className="text-slate-300">Yard Section</Label>
                 <select
@@ -1140,19 +1046,19 @@ export default function PullAPartPage() {
                   <option value="European">European</option>
                 </select>
               </div>
+            </div>
 
-              <div>
-                <Label className="text-slate-300">Status</Label>
-                <select
-                  value={vehStatus}
-                  onChange={(e) => setVehStatus(e.target.value as any)}
-                  className="w-full h-9 bg-slate-900 border border-slate-800 rounded-md text-xs text-white px-2 mt-1 font-mono font-bold"
-                >
-                  <option value="PENDING">PENDING</option>
-                  <option value="AVAILABLE">AVAILABLE</option>
-                  <option value="CRUSHED">CRUSHED</option>
-                </select>
-              </div>
+            <div>
+              <Label className="text-slate-300">Status</Label>
+              <select
+                value={vehStatus}
+                onChange={(e) => setVehStatus(e.target.value as any)}
+                className="w-full h-9 bg-slate-900 border border-slate-800 rounded-md text-xs text-white px-2 mt-1 font-mono font-bold"
+              >
+                <option value="PENDING">PENDING</option>
+                <option value="AVAILABLE">AVAILABLE</option>
+                <option value="CRUSHED">CRUSHED</option>
+              </select>
             </div>
 
             <div>
@@ -1187,182 +1093,11 @@ export default function PullAPartPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Core Refund Modal */}
-      <Dialog open={coreModalOpen} onOpenChange={setCoreModalOpen}>
-        <DialogContent className="bg-slate-950 text-slate-100 border-slate-800 sm:max-w-[420px]">
-          <DialogHeader>
-            <DialogTitle className="text-base font-bold text-white flex items-center gap-2">
-              <RotateCcw className="w-5 h-5 text-emerald-400" /> Core Deposit Cash Refund
-            </DialogTitle>
-          </DialogHeader>
-
-          <div className="space-y-3 py-2 text-xs">
-            <div>
-              <Label className="text-slate-300">Customer Full Name *</Label>
-              <Input
-                value={coreCustName}
-                onChange={(e) => setCoreCustName(e.target.value)}
-                placeholder="e.g. Robert Henderson"
-                className="bg-slate-900 border-slate-800 text-white text-xs mt-1"
-              />
-            </div>
-
-            <div>
-              <Label className="text-slate-300">Driver License / Photo ID #</Label>
-              <Input
-                value={coreCustId}
-                onChange={(e) => setCoreCustId(e.target.value)}
-                placeholder="e.g. DL-9823145-GA"
-                className="bg-slate-900 border-slate-800 text-white text-xs mt-1"
-              />
-            </div>
-
-            <div>
-              <Label className="text-slate-300">Core Component Returned</Label>
-              <Input
-                value={corePartName}
-                onChange={(e) => setCorePartName(e.target.value)}
-                className="bg-slate-900 border-slate-800 text-amber-300 font-medium text-xs mt-1"
-              />
-            </div>
-
-            <div>
-              <Label className="text-slate-300">Core Refund Amount ($) *</Label>
-              <Input
-                type="number"
-                value={coreDeposit}
-                onChange={(e) => setCoreDeposit(parseFloat(e.target.value) || 0)}
-                className="bg-slate-900 border-slate-800 text-emerald-400 font-bold font-mono text-base mt-1"
-              />
-            </div>
-          </div>
-
-          <DialogFooter className="pt-2 border-t border-slate-800">
-            <Button variant="ghost" onClick={() => setCoreModalOpen(false)} className="text-slate-400">
-              Cancel
-            </Button>
-            <Button onClick={handleIssueCoreRefund} className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold">
-              Issue Refund Voucher
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Gate Admission Pass Modal */}
-      <Dialog open={passModalOpen} onOpenChange={setPassModalOpen}>
-        <DialogContent className="bg-slate-950 text-slate-100 border-slate-800 sm:max-w-[420px]">
-          <DialogHeader>
-            <DialogTitle className="text-base font-bold text-white flex items-center gap-2">
-              <TicketIcon className="w-5 h-5 text-amber-400" /> $2.00 Yard Gate Admission Wristband
-            </DialogTitle>
-          </DialogHeader>
-
-          <div className="space-y-3 py-2 text-xs">
-            <div>
-              <Label className="text-slate-300">Yard Puller Full Name *</Label>
-              <Input
-                value={passCustName}
-                onChange={(e) => setPassCustName(e.target.value)}
-                placeholder="e.g. Sarah Jenkins"
-                className="bg-slate-900 border-slate-800 text-white text-xs mt-1"
-              />
-            </div>
-
-            <div>
-              <Label className="text-slate-300">Driver License / ID #</Label>
-              <Input
-                value={passCustId}
-                onChange={(e) => setPassCustId(e.target.value)}
-                placeholder="e.g. ID-881920-GA"
-                className="bg-slate-900 border-slate-800 text-white text-xs mt-1"
-              />
-            </div>
-
-            <div className="bg-slate-900 p-3 rounded-lg border border-slate-800 space-y-2">
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="waiver"
-                  checked={waiverSigned}
-                  onCheckedChange={(c) => setWaiverSigned(!!c)}
-                />
-                <label htmlFor="waiver" className="text-[11px] font-semibold text-slate-200 cursor-pointer">
-                  Puller signs yard safety goggles & waiver agreement
-                </label>
-              </div>
-              <p className="text-[10px] text-slate-400 leading-tight">
-                No jacks, torches, or open toes allowed. Puller enters yard at own risk.
-              </p>
-            </div>
-          </div>
-
-          <DialogFooter className="pt-2 border-t border-slate-800">
-            <Button variant="ghost" onClick={() => setPassModalOpen(false)} className="text-slate-400">
-              Cancel
-            </Button>
-            <Button onClick={handleIssuePass} className="bg-amber-600 hover:bg-amber-500 text-white font-extrabold">
-              Issue $2.00 Wristband Pass
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Printable Vehicle Ticket Modal */}
-      {selectedVehForTicket && (
-        <Dialog open={!!selectedVehForTicket} onOpenChange={() => setSelectedVehForTicket(null)}>
-          <DialogContent className="bg-white text-slate-900 sm:max-w-[420px] font-mono text-xs">
-            <div className="text-center border-b-2 border-slate-900 pb-3 space-y-1">
-              <h2 className="text-lg font-black tracking-tight uppercase">APEX PULL-A-PART YARD PASS</h2>
-              <p className="text-[10px]">VEHICLE LOCATOR & PARTS GUIDE</p>
-            </div>
-
-            <div className="space-y-3 py-2">
-              <div className="bg-slate-100 p-3 rounded border border-slate-300 text-center">
-                <span className="text-[10px] font-bold text-slate-500 block">YARD SECTION</span>
-                <span className="text-xl font-black text-slate-900">{selectedVehForTicket.section}</span>
-              </div>
-
-              <div className="space-y-1 text-[11px]">
-                <p><span className="font-bold">VEHICLE:</span> {selectedVehForTicket.year} {selectedVehForTicket.make} {selectedVehForTicket.model}</p>
-                <p><span className="font-bold">COLOR:</span> {selectedVehForTicket.color}</p>
-                <p><span className="font-bold">VIN:</span> {selectedVehForTicket.vin}</p>
-                <p><span className="font-bold">STATUS:</span> {selectedVehForTicket.status}</p>
-                {selectedVehForTicket.originSource && (
-                  <p><span className="font-bold">ORIGIN:</span> {selectedVehForTicket.originSource}</p>
-                )}
-                {selectedVehForTicket.purchasePrice && (
-                  <p><span className="font-bold">PAYOUT:</span> ${selectedVehForTicket.purchasePrice.toFixed(2)}</p>
-                )}
-                <p><span className="font-bold">SET DATE:</span> {new Date(selectedVehForTicket.dateSetInYard).toLocaleDateString()}</p>
-              </div>
-
-              {selectedVehForTicket.notes && (
-                <div className="border-t border-slate-300 pt-2 text-[10px]">
-                  <p className="font-bold text-slate-700">DRIVER NOTES:</p>
-                  <p className="text-slate-800">{selectedVehForTicket.notes}</p>
-                </div>
-              )}
-
-              {selectedVehForTicket.dismantlingLog.notes && (
-                <div className="border-t border-slate-300 pt-2 text-[10px]">
-                  <p className="font-bold text-slate-700">PROCESSOR NOTES:</p>
-                  <p className="text-slate-800">{selectedVehForTicket.dismantlingLog.notes}</p>
-                </div>
-              )}
-
-              <div className="border-t border-slate-300 pt-2 text-[10px] text-slate-600">
-                <p className="font-bold">PARTS AVAILABLE:</p>
-                <p>{selectedVehForTicket.partsRemaining.join(", ")}</p>
-              </div>
-            </div>
-
-            <DialogFooter className="pt-2 border-t border-slate-300">
-              <Button onClick={() => window.print()} className="w-full bg-slate-900 text-white font-bold text-xs">
-                <Printer className="w-4 h-4 mr-1.5" /> Print Locator Ticket
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      )}
+      {/* Parts Interchange Search Modal */}
+      <PartsInterchangeModal
+        isOpen={interchangeModalOpen}
+        onClose={() => setInterchangeModalOpen(false)}
+      />
 
       {/* Bulk Spreadsheet Upload Modal */}
       <BulkVehicleUploadModal
