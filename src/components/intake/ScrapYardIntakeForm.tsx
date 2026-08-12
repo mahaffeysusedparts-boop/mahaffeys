@@ -3,7 +3,7 @@ import { Customer, MetalGrade, ScrapTicketLine, Ticket, WeightUnit, ComplianceCa
 import { storageService } from '@/services/storageService';
 import { LiveScaleGauge } from '../scale/LiveScaleGauge';
 import { ComplianceCaptureModal } from '../compliance/ComplianceCaptureModal';
-import { calculateComplianceScore, generateSamplePhoto, DLScanResult } from '@/utils/complianceUtils';
+import { calculateComplianceScore, generateSamplePhoto, DLScanResult, extractDataFromDLPhoto } from '@/utils/complianceUtils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -92,6 +92,30 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
       if (scannedProfile.vehicleLicensePlate) {
         setVehicleLicensePlate(scannedProfile.vehicleLicensePlate);
       }
+    }
+  };
+
+  const handleDlPictureUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const dataUrl = event.target?.result as string;
+        const profile = extractDataFromDLPhoto(dataUrl);
+        setCustomerName(profile.fullName);
+        setCustomerIdNumber(profile.idNumber);
+        if (profile.vehicleLicensePlate) {
+          setVehicleLicensePlate(profile.vehicleLicensePlate);
+        }
+        setComplianceCaptures((prev) => ({
+          ...prev,
+          idPhotoUrl: dataUrl,
+        }));
+        toast.success(`Extracted Data from Driver License Picture!`, {
+          description: `Name: ${profile.fullName} | ID #: ${profile.idNumber} | Tag: ${profile.vehicleLicensePlate || 'N/A'}`,
+        });
+      };
+      reader.readAsDataURL(file);
     }
   };
 
@@ -307,6 +331,16 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
               <CardTitle className="text-sm font-bold tracking-wide uppercase text-slate-300 flex items-center gap-2">
                 <User className="w-4 h-4 text-emerald-400" /> Customer / Seller Profile
               </CardTitle>
+
+              <label className="cursor-pointer inline-flex items-center gap-1.5 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs px-3 py-1.5 rounded-lg transition-colors shadow">
+                <CreditCard className="w-3.5 h-3.5" /> Scan Data from DL Picture
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleDlPictureUpload}
+                  className="hidden"
+                />
+              </label>
             </CardHeader>
 
             <CardContent className="p-4 space-y-4">

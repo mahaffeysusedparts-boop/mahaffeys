@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { CarIntakeRecord, Ticket } from '@/types/scrap';
 import { storageService } from '@/services/storageService';
-import { generateSamplePhoto, DLScanResult, SAMPLE_DL_PROFILES } from '@/utils/complianceUtils';
+import { generateSamplePhoto } from '@/utils/complianceUtils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -10,13 +10,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from '@/components/ui/dialog';
 import {
   Car,
   CheckCircle2,
@@ -29,11 +22,6 @@ import {
   Upload,
   Clock,
   Truck,
-  CreditCard,
-  User,
-  Scan,
-  ShieldCheck,
-  Check,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -46,15 +34,6 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
   // Vehicle Picture Capture State
   const [photoUrl, setPhotoUrl] = useState<string>(generateSamplePhoto('vehicle'));
   
-  // Seller / Driver Info (Fetched via ID Scan or manual entry)
-  const [customerName, setCustomerName] = useState<string>('Marcus Vance');
-  const [customerIdNumber, setCustomerIdNumber] = useState<string>('DL-4481029-GA');
-  const [customerAddress, setCustomerAddress] = useState<string>('802 Scrap Yard Rd, Marietta, GA 30060');
-  const [vehicleLicensePlate, setVehicleLicensePlate] = useState<string>('TOW-912');
-
-  // ID Scanner Modal State
-  const [isIdScanOpen, setIsIdScanOpen] = useState<boolean>(false);
-
   // Vehicle Details
   const [vin, setVin] = useState<string>('');
   const [year, setYear] = useState<number>(new Date().getFullYear() - 12);
@@ -86,23 +65,6 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
   const [fluidsDrained, setFluidsDrained] = useState<boolean>(false);
 
   const [payoutMethod, setPayoutMethod] = useState<'Cash' | 'Check' | 'ACH Direct Transfer'>('Cash');
-
-  // Apply scanned DL result to form
-  const handleApplyDlProfile = (profile: DLScanResult) => {
-    setCustomerName(profile.fullName);
-    setCustomerIdNumber(profile.idNumber);
-    setCustomerAddress(profile.address);
-    if (profile.vehicleLicensePlate) {
-      setVehicleLicensePlate(profile.vehicleLicensePlate);
-    }
-    if (profile.address && (!originSource || originSource === 'Tow Origin / Address / Shop Name')) {
-      setOriginSource(profile.address);
-    }
-    setIsIdScanOpen(false);
-    toast.success(`ID Scanned: Fetched Name, License #, and Address for ${profile.fullName}!`, {
-      description: `License #: ${profile.idNumber} | Address: ${profile.address}`,
-    });
-  };
 
   // Handle local image file upload for vehicle photo
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -226,8 +188,7 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
       deductions: 0,
       totalPayout: Math.round(purchasePrice * 100) / 100,
       purchasePrice: Math.round(purchasePrice * 100) / 100,
-      originSource: originSource.trim() || customerAddress || 'Tow Origin',
-      customerAddress: customerAddress.trim() || undefined,
+      originSource: originSource.trim() || 'Tow Origin',
       notes: notes.trim() || undefined,
       photoUrl,
     };
@@ -237,13 +198,11 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
       ticketType: 'CAR_SALVAGE',
       createdAt: new Date().toISOString(),
       status: 'COMPLETED',
-      customerName: customerName.trim() || 'Tow Intake',
-      customerIdNumber: customerIdNumber.trim() || undefined,
-      vehicleLicensePlate: vehicleLicensePlate.trim() || undefined,
+      customerName: originSource.trim() ? `Tow Origin: ${originSource}` : 'Tow Intake',
+      vehicleLicensePlate: '',
       carRecord,
       complianceCaptures: {
         vehiclePhotoUrl: photoUrl,
-        idPhotoUrl: generateSamplePhoto('id'),
       },
       grossTotal: purchasePrice,
       totalDeductions: 0,
@@ -282,90 +241,25 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
               </Badge>
             </div>
             <p className="text-xs text-slate-400">
-              Streamlined tow drop intake: ID scanner, photo, purchase price, origin location & driver notes.
+              Streamlined tow drop intake: photo, purchase price, tow origin & driver notes. No driver license scan required.
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
-          <Button
-            onClick={() => setIsIdScanOpen(true)}
-            className="bg-blue-600 hover:bg-blue-500 text-white font-extrabold text-xs gap-1.5 shadow-lg shadow-blue-950"
-          >
-            <CreditCard className="w-4 h-4" /> Scan Driver License / ID
-          </Button>
+          <Badge variant="outline" className="border-sky-500/40 text-sky-400 text-xs font-mono gap-1">
+            <Clock className="w-3.5 h-3.5" /> FAST INTAKE MODE
+          </Badge>
         </div>
       </div>
 
       {/* Main Intake Layout Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
-        {/* Left 2 Columns: Driver ID, Photo, Specs, Financial & Notes */}
+        {/* Left 2 Columns: Photo, Specs, Financial & Notes */}
         <div className="lg:col-span-2 space-y-6">
 
-          {/* 1. SELLER / DRIVER ID CREDENTIALS (AUTO-FETCHED VIA ID SCAN) */}
-          <Card className="bg-slate-900 border-blue-500/40 text-white shadow-xl">
-            <CardHeader className="py-3 px-4 bg-slate-950/80 border-b border-blue-500/30 flex flex-row items-center justify-between">
-              <CardTitle className="text-sm font-bold tracking-wide uppercase text-blue-300 flex items-center gap-2">
-                <User className="w-4 h-4 text-blue-400" /> Seller / Driver Credentials (ID Scan Fetched)
-              </CardTitle>
-              <Button
-                size="sm"
-                onClick={() => setIsIdScanOpen(true)}
-                className="bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs h-8 gap-1.5"
-              >
-                <Scan className="w-3.5 h-3.5" /> Scan ID Barcode
-              </Button>
-            </CardHeader>
-
-            <CardContent className="p-4 space-y-3">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <Label className="text-xs text-slate-300">Seller / Tow Driver Name *</Label>
-                  <Input
-                    value={customerName}
-                    onChange={(e) => setCustomerName(e.target.value)}
-                    placeholder="e.g. Marcus Vance"
-                    className="bg-slate-950 border-slate-800 text-white font-bold text-xs mt-1"
-                  />
-                </div>
-
-                <div>
-                  <Label className="text-xs text-slate-300">Driver License / ID Number *</Label>
-                  <Input
-                    value={customerIdNumber}
-                    onChange={(e) => setCustomerIdNumber(e.target.value)}
-                    placeholder="e.g. DL-4481029-GA"
-                    className="bg-slate-950 border-slate-800 text-amber-300 font-mono font-bold text-xs mt-1"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div className="sm:col-span-2">
-                  <Label className="text-xs text-slate-300">Street Address *</Label>
-                  <Input
-                    value={customerAddress}
-                    onChange={(e) => setCustomerAddress(e.target.value)}
-                    placeholder="e.g. 802 Scrap Yard Rd, Marietta, GA 30060"
-                    className="bg-slate-950 border-slate-800 text-white text-xs mt-1"
-                  />
-                </div>
-
-                <div>
-                  <Label className="text-xs text-slate-300">Tow / Truck Plate Tag</Label>
-                  <Input
-                    value={vehicleLicensePlate}
-                    onChange={(e) => setVehicleLicensePlate(e.target.value)}
-                    placeholder="e.g. TOW-912"
-                    className="bg-slate-950 border-slate-800 text-slate-200 text-xs mt-1 font-mono uppercase"
-                  />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* 2. VEHICLE PICTURE CAPTURE */}
+          {/* 1. VEHICLE PICTURE CAPTURE */}
           <Card className="bg-slate-900 border-amber-500/40 text-white shadow-xl overflow-hidden">
             <CardHeader className="py-3 px-4 bg-gradient-to-r from-amber-950/80 to-slate-950 border-b border-amber-500/30 flex flex-row items-center justify-between">
               <CardTitle className="text-sm font-bold tracking-wide uppercase text-amber-300 flex items-center gap-2">
@@ -424,7 +318,7 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
             </CardContent>
           </Card>
 
-          {/* 3. VEHICLE DETAILS & VIN DECODER */}
+          {/* 2. VEHICLE DETAILS & VIN DECODER */}
           <Card className="bg-slate-900 border-slate-800 text-white shadow-lg">
             <CardHeader className="py-3 px-4 bg-slate-950/60 border-b border-slate-800 flex flex-row items-center justify-between">
               <CardTitle className="text-sm font-bold tracking-wide uppercase text-slate-300 flex items-center gap-2">
@@ -530,7 +424,7 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
             </CardContent>
           </Card>
 
-          {/* 4. FINANCIAL & ORIGIN LOGGING */}
+          {/* 3. FINANCIAL & ORIGIN LOGGING */}
           <Card className="bg-slate-900 border-slate-800 text-white shadow-lg">
             <CardHeader className="py-3 px-4 bg-slate-950/60 border-b border-slate-800">
               <CardTitle className="text-sm font-bold tracking-wide uppercase text-slate-300 flex items-center gap-2">
@@ -580,7 +474,7 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
             </CardContent>
           </Card>
 
-          {/* 5. TOW DRIVER NOTES SECTION */}
+          {/* 4. TOW DRIVER NOTES SECTION */}
           <Card className="bg-slate-900 border-slate-800 text-white shadow-lg">
             <CardHeader className="py-3 px-4 bg-slate-950/60 border-b border-slate-800">
               <CardTitle className="text-sm font-bold tracking-wide uppercase text-slate-300 flex items-center gap-2">
@@ -711,61 +605,6 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
         </div>
 
       </div>
-
-      {/* ID SCAN MODAL */}
-      <Dialog open={isIdScanOpen} onOpenChange={setIsIdScanOpen}>
-        <DialogContent className="bg-slate-950 text-slate-100 border-slate-800 sm:max-w-[500px]">
-          <DialogHeader>
-            <DialogTitle className="text-base font-bold text-white flex items-center gap-2">
-              <CreditCard className="w-5 h-5 text-blue-400" /> Driver License & State ID Barcode Scanner
-            </DialogTitle>
-            <p className="text-xs text-slate-400">
-              Select or scan an ID barcode to auto-fetch Name, License #, and Street Address.
-            </p>
-          </DialogHeader>
-
-          <div className="space-y-3 py-2 text-xs">
-            <div className="p-3 bg-slate-900 rounded-xl border border-slate-800 space-y-2">
-              <span className="font-bold text-slate-300 block">Available State ID Profiles (Tap to Fetch Data):</span>
-              
-              <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
-                {SAMPLE_DL_PROFILES.map((profile, idx) => (
-                  <div
-                    key={idx}
-                    onClick={() => handleApplyDlProfile(profile)}
-                    className="p-3 rounded-lg bg-slate-950 border border-slate-800 hover:border-blue-500 cursor-pointer transition-all flex items-center justify-between"
-                  >
-                    <div className="space-y-0.5">
-                      <div className="font-bold text-white text-sm flex items-center gap-2">
-                        {profile.fullName}
-                        <Badge variant="outline" className="text-[10px] border-blue-500/40 text-blue-300">
-                          {profile.idType}
-                        </Badge>
-                      </div>
-                      <div className="text-[11px] font-mono text-amber-400">
-                        License #: {profile.idNumber} ({profile.idState})
-                      </div>
-                      <div className="text-[10px] text-slate-400">
-                        Address: {profile.address}
-                      </div>
-                    </div>
-
-                    <Button size="sm" className="bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs h-8 px-3">
-                      Fetch Data
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          <DialogFooter className="pt-2 border-t border-slate-800">
-            <Button variant="ghost" onClick={() => setIsIdScanOpen(false)} className="text-slate-400">
-              Close
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 };

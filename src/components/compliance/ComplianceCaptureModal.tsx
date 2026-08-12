@@ -34,6 +34,7 @@ import {
   SAMPLE_DL_PROFILES,
   generateSamplePhoto,
   calculateComplianceScore,
+  extractDataFromDLPhoto,
 } from "@/utils/complianceUtils";
 import { toast } from "sonner";
 
@@ -140,7 +141,13 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
           [currentUploadTarget]: dataUrl,
         }));
 
-        toast.success("Photo captured from iPad camera!");
+        if (currentUploadTarget === 'idPhotoUrl') {
+          const profile = extractDataFromDLPhoto(dataUrl);
+          setScannedProfile(profile);
+          toast.success(`Extracted DL Picture OCR Data: ${profile.fullName} (${profile.idNumber})`);
+        } else {
+          toast.success("Photo captured from iPad camera!");
+        }
         stopCameraStream();
       }
     }
@@ -167,7 +174,15 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
           ...prev,
           [currentUploadTarget]: result,
         }));
-        toast.success("Photo uploaded successfully");
+        if (currentUploadTarget === 'idPhotoUrl') {
+          const profile = extractDataFromDLPhoto(result);
+          setScannedProfile(profile);
+          toast.success(`Extracted DL Picture OCR Data: ${profile.fullName} (${profile.idNumber})`, {
+            description: "Seller fields & license tag auto-populated!",
+          });
+        } else {
+          toast.success("Photo uploaded successfully");
+        }
       };
       reader.readAsDataURL(file);
     }

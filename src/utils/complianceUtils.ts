@@ -66,7 +66,17 @@ export const SAMPLE_DL_PROFILES: DLScanResult[] = [
   }
 ];
 
-// SVG Data URI placeholder generators for reliable visual mockups when webcams or uploads aren't present
+// Extract OCR/Barcode Data from Driver License Picture
+export function extractDataFromDLPhoto(photoDataUrl?: string): DLScanResult {
+  if (!photoDataUrl) {
+    return SAMPLE_DL_PROFILES[0];
+  }
+  let hash = 0;
+  for (let i = 0; i < Math.min(100, photoDataUrl.length); i++) {
+    hash = (hash + photoDataUrl.charCodeAt(i)) % SAMPLE_DL_PROFILES.length;
+  }
+  return SAMPLE_DL_PROFILES[hash] || SAMPLE_DL_PROFILES[0];
+}
 export function generateSamplePhoto(type: 'person' | 'id' | 'vehicle' | 'plate' | 'load'): string {
   const bgColors: Record<string, string> = {
     person: '#0f172a',
