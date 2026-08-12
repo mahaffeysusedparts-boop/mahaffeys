@@ -6,7 +6,7 @@ rsync -a \
   "${SOURCE_DIR}/" "${INSTALL_DIR}/"
 chown -R "${APP_USER}:${APP_USER}" "${INSTALL_DIR}"
 
-runuser -u "${APP_USER}" -- bash -lc "cd '${INSTALL_DIR}' && npm ci && npm run build"
+runuser -u "${APP_USER}" -- bash -lc "cd '${INSTALL_DIR}' && npm install && npm run build"
 
 cat > "${INSTALL_DIR}/ecosystem.config.cjs" <<EOF
 module.exports = {

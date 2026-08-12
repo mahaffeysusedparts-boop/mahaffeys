@@ -145,7 +145,7 @@ sudo mv "/tmp/$BACKUP_FILE" /var/backups/mahaffeys/
 
 cd /var/www/mahaffeys
 git pull --ff-only origin main
-npm ci
+npm install
 npm run build
 sudo systemctl restart mahaffeys
 curl http://127.0.0.1:3000/api/health
