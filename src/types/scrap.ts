@@ -99,6 +99,8 @@ export interface VehicleDismantlingLog {
 
 export interface PullYardVehicle {
   id: string;
+  rowNumber: string;
+  spaceNumber: string;
   section: 'Domestic Trucks & SUVs' | 'Ford & Lincoln' | 'GM & Chevrolet' | 'Chrysler & Dodge' | 'Asian Imports' | 'European';
   year: number;
   make: string;
@@ -237,6 +239,8 @@ export interface CarIntakeRecord {
   hasAluminumRims: boolean;
   fluidsDrained: boolean;
   
+  assignedRow?: string;
+  assignedSpace?: string;
   yardStatus?: PullYardVehicleStatus;
   
   pricingMode: 'TONNAGE' | 'FLAT_RATE';
