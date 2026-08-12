@@ -111,6 +111,10 @@ export interface PullYardVehicle {
   status: PullYardVehicleStatus;
   partsRemaining: string[];
   dismantlingLog: VehicleDismantlingLog;
+  photoUrl?: string;
+  purchasePrice?: number;
+  originSource?: string;
+  notes?: string;
 }
 
 export interface CoreReturnLog {
@@ -248,6 +252,11 @@ export interface CarIntakeRecord {
   batteryBonus: number;
   deductions: number;
   totalPayout: number;
+
+  purchasePrice?: number;
+  originSource?: string;
+  notes?: string;
+  photoUrl?: string;
 
   complianceCaptures?: ComplianceCaptures;
 }

@@ -5,11 +5,14 @@ import {
   PullPartItem,
   CoreReturnLog,
   AdmissionPass,
+  PullYardVehicleStatus,
 } from "@/types/scrap";
+import { generateSamplePhoto } from "@/utils/complianceUtils";
 import { Navbar } from "@/components/layout/Navbar";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -22,6 +25,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
 import {
   Wrench,
   Car,
@@ -29,7 +33,6 @@ import {
   DollarSign,
   Ticket as TicketIcon,
   RotateCcw,
-  Sparkles,
   MapPin,
   Clock,
   Printer,
@@ -38,8 +41,11 @@ import {
   Plus,
   Edit3,
   Trash2,
-  ClipboardList,
   Droplets,
+  AlertCircle,
+  FileText,
+  Flame,
+  Check,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -49,8 +55,9 @@ export default function PullAPartPage() {
   const [cores, setCores] = useState<CoreReturnLog[]>([]);
   const [passes, setPasses] = useState<AdmissionPass[]>([]);
 
-  // Search states
+  // Search & Filter states
   const [vehSearch, setVehSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"ALL" | PullYardVehicleStatus>("ALL");
   const [partSearch, setPartSearch] = useState("");
 
   // Vehicle Add / Edit Modal
@@ -65,8 +72,12 @@ export default function PullAPartPage() {
   const [vehModel, setVehModel] = useState("F-150");
   const [vehColor, setVehColor] = useState("");
   const [vehVin, setVehVin] = useState("");
-  const [vehStatus, setVehStatus] = useState<PullYardVehicle["status"]>("PENDING");
+  const [vehStatus, setVehStatus] = useState<PullYardVehicleStatus>("PENDING");
   const [vehParts, setVehParts] = useState("Engine, Transmission, Wheels");
+  const [vehPurchasePrice, setVehPurchasePrice] = useState(450);
+  const [vehOriginSource, setVehOriginSource] = useState("Tow Origin / Address");
+  const [vehNotes, setVehNotes] = useState("");
+  const [vehPhotoUrl, setVehPhotoUrl] = useState(generateSamplePhoto("vehicle"));
 
   // Dismantling Log Modal
   const [logVehicle, setLogVehicle] = useState<PullYardVehicle | null>(null);
@@ -74,7 +85,10 @@ export default function PullAPartPage() {
   const [wheelsRemoved, setWheelsRemoved] = useState(0);
   const [gasDrained, setGasDrained] = useState(false);
   const [oilDrained, setOilDrained] = useState(false);
-  const [pullNotes, setPullNotes] = useState("");
+  const [processorNotes, setProcessorNotes] = useState("");
+
+  // Delete Confirmation Modal
+  const [deletingVehicle, setDeletingVehicle] = useState<PullYardVehicle | null>(null);
 
   // Print Pass Modal
   const [selectedVehForTicket, setSelectedVehForTicket] = useState<PullYardVehicle | null>(null);
@@ -105,9 +119,9 @@ export default function PullAPartPage() {
 
   const handleOpenAddVeh = () => {
     setEditingVeh(null);
-    setVehRow("");
-    setVehSpace("");
-    setVehYear(new Date().getFullYear());
+    setVehRow("Row 104");
+    setVehSpace("Space 12");
+    setVehYear(new Date().getFullYear() - 10);
     setVehMake("");
     setVehModel("");
     setVehColor("");
@@ -115,6 +129,10 @@ export default function PullAPartPage() {
     setVehSection("Domestic Trucks & SUVs");
     setVehStatus("PENDING");
     setVehParts("Engine, Transmission, Wheels");
+    setVehPurchasePrice(450);
+    setVehOriginSource("");
+    setVehNotes("");
+    setVehPhotoUrl(generateSamplePhoto("vehicle"));
     setVehModalOpen(true);
   };
 
@@ -130,6 +148,10 @@ export default function PullAPartPage() {
     setVehVin(v.vin);
     setVehStatus(v.status);
     setVehParts(v.partsRemaining.join(", "));
+    setVehPurchasePrice(v.purchasePrice || 0);
+    setVehOriginSource(v.originSource || "");
+    setVehNotes(v.notes || "");
+    setVehPhotoUrl(v.photoUrl || generateSamplePhoto("vehicle"));
     setVehModalOpen(true);
   };
 
@@ -154,6 +176,10 @@ export default function PullAPartPage() {
       dateSetInYard: editingVeh ? editingVeh.dateSetInYard : new Date().toISOString(),
       status: vehStatus,
       partsRemaining: partsList.length > 0 ? partsList : ["Body Shell"],
+      purchasePrice: vehPurchasePrice,
+      originSource: vehOriginSource.trim() || undefined,
+      notes: vehNotes.trim() || undefined,
+      photoUrl: vehPhotoUrl,
       dismantlingLog: editingVeh?.dismantlingLog || {
         catalyticConvertersRemoved: 0,
         wheelsRemoved: 0,
@@ -168,10 +194,10 @@ export default function PullAPartPage() {
     toast.success(`${editingVeh ? "Updated" : "Added"} ${vehYear} ${vehMake} ${vehModel}${vehRow ? ` in ${vehRow}` : ""}`);
   };
 
-  const handleStatusChange = (vehicle: PullYardVehicle, status: PullYardVehicle["status"]) => {
+  const handleStatusChange = (vehicle: PullYardVehicle, status: PullYardVehicleStatus) => {
     storageService.savePullYardVehicle({ ...vehicle, status });
     loadData();
-    toast.success(`${vehicle.year} ${vehicle.make} ${vehicle.model} marked ${status.toLowerCase()}`);
+    toast.success(`${vehicle.year} ${vehicle.make} ${vehicle.model} marked as ${status}`);
   };
 
   const handleOpenPullLog = (vehicle: PullYardVehicle) => {
@@ -180,46 +206,59 @@ export default function PullAPartPage() {
     setWheelsRemoved(vehicle.dismantlingLog.wheelsRemoved);
     setGasDrained(vehicle.dismantlingLog.gasDrained);
     setOilDrained(vehicle.dismantlingLog.oilDrained);
-    setPullNotes(vehicle.dismantlingLog.notes || "");
+    setProcessorNotes(vehicle.dismantlingLog.notes || "");
   };
 
-  const handleSavePullLog = () => {
+  const handleSavePullLog = (moveToAvailable = false) => {
     if (!logVehicle) return;
+
+    const newStatus: PullYardVehicleStatus = moveToAvailable ? "AVAILABLE" : logVehicle.status;
 
     storageService.savePullYardVehicle({
       ...logVehicle,
+      status: newStatus,
       dismantlingLog: {
         catalyticConvertersRemoved: Math.max(0, catsRemoved),
         wheelsRemoved: Math.min(8, Math.max(0, wheelsRemoved)),
         gasDrained,
         oilDrained,
-        notes: pullNotes.trim() || undefined,
+        notes: processorNotes.trim() || undefined,
         updatedAt: new Date().toISOString(),
       },
     });
     loadData();
     setLogVehicle(null);
-    toast.success(`Pull log saved for ${logVehicle.year} ${logVehicle.make} ${logVehicle.model}`);
+    toast.success(
+      moveToAvailable
+        ? `${logVehicle.year} ${logVehicle.make} ${logVehicle.model} processed & moved to AVAILABLE on yard!`
+        : `Dismantling log saved for ${logVehicle.year} ${logVehicle.make} ${logVehicle.model}`
+    );
   };
 
-  const handleRemoveVehicle = (vehicle: PullYardVehicle) => {
-    if (!window.confirm(`Remove ${vehicle.year} ${vehicle.make} ${vehicle.model} from the yard list?`)) return;
-    storageService.deletePullYardVehicle(vehicle.id);
+  const handleConfirmRemoveVehicle = () => {
+    if (!deletingVehicle) return;
+    storageService.deletePullYardVehicle(deletingVehicle.id);
     loadData();
-    toast.success("Vehicle removed from the yard list");
+    toast.success(`Removed ${deletingVehicle.year} ${deletingVehicle.make} ${deletingVehicle.model} from database`);
+    setDeletingVehicle(null);
   };
 
   // Filter vehicles
   const filteredVehicles = vehicles.filter((v) => {
     const q = vehSearch.toLowerCase();
-    return (
+    const matchesSearch =
       v.make.toLowerCase().includes(q) ||
       v.model.toLowerCase().includes(q) ||
       v.year.toString().includes(q) ||
       v.rowNumber.toLowerCase().includes(q) ||
       v.section.toLowerCase().includes(q) ||
-      v.vin.toLowerCase().includes(q)
-    );
+      v.vin.toLowerCase().includes(q) ||
+      (v.originSource && v.originSource.toLowerCase().includes(q)) ||
+      (v.notes && v.notes.toLowerCase().includes(q));
+
+    const matchesStatus = statusFilter === "ALL" ? true : v.status === statusFilter;
+
+    return matchesSearch && matchesStatus;
   });
 
   const filteredParts = parts.filter((p) => {
@@ -302,14 +341,14 @@ export default function PullAPartPage() {
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-2xl font-bold text-white tracking-tight">
-                  Pull-A-Part Self-Service Yard Suite
+                  Parts Processor & Yard Workstation
                 </h1>
-                <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/40 text-xs">
-                  ROW & PARTS DISPATCH
+                <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-500/40 text-xs">
+                  DISMANTLING & INVENTORY
                 </Badge>
               </div>
               <p className="text-xs text-slate-400 mt-0.5">
-                Self-service vehicle row locator, flat parts price catalog, core deposit refunds & gate admission passes
+                Log removed cats, wheels, drained fluids & notes. Move vehicles from PENDING to AVAILABLE or CRUSHED.
               </p>
             </div>
           </div>
@@ -319,7 +358,7 @@ export default function PullAPartPage() {
               onClick={handleOpenAddVeh}
               className="bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs gap-1.5"
             >
-              <Plus className="w-4 h-4" /> Add Car to Row
+              <Plus className="w-4 h-4" /> Add Car to Yard
             </Button>
             <Button
               onClick={() => setPassModalOpen(true)}
@@ -339,25 +378,59 @@ export default function PullAPartPage() {
 
         {/* Top KPI Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-          <Card className="bg-slate-900 border-slate-800 text-white">
+          <Card
+            onClick={() => setStatusFilter("ALL")}
+            className={`cursor-pointer transition-all ${
+              statusFilter === "ALL"
+                ? "bg-slate-900 border-amber-500/60 ring-1 ring-amber-500/40"
+                : "bg-slate-900 border-slate-800 hover:border-slate-700"
+            } text-white`}
+          >
             <CardContent className="p-4 flex items-center justify-between">
               <div>
-                <p className="text-xs text-slate-400 font-medium">Vehicles Staged in Yard</p>
-                <p className="text-2xl font-black text-amber-400 font-mono mt-0.5">{vehicles.length}</p>
-                <p className="text-[11px] text-slate-500 mt-0.5">Across all Row sections</p>
+                <p className="text-xs text-slate-400 font-medium">All Yard Vehicles</p>
+                <p className="text-2xl font-black text-white font-mono mt-0.5">{vehicles.length}</p>
+                <p className="text-[11px] text-slate-500 mt-0.5">Total registered</p>
               </div>
-              <div className="p-3 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20">
+              <div className="p-3 rounded-xl bg-slate-800 text-slate-300 border border-slate-700">
                 <Car className="w-6 h-6" />
               </div>
             </CardContent>
           </Card>
 
-          <Card className="bg-slate-900 border-slate-800 text-white">
+          <Card
+            onClick={() => setStatusFilter("PENDING")}
+            className={`cursor-pointer transition-all ${
+              statusFilter === "PENDING"
+                ? "bg-slate-900 border-amber-500/60 ring-1 ring-amber-500/40"
+                : "bg-slate-900 border-slate-800 hover:border-slate-700"
+            } text-white`}
+          >
             <CardContent className="p-4 flex items-center justify-between">
               <div>
-                <p className="text-xs text-slate-400 font-medium">Available Vehicles</p>
+                <p className="text-xs text-amber-400 font-medium">Pending Tow Intake</p>
+                <p className="text-2xl font-black text-amber-400 font-mono mt-0.5">{pendingCount}</p>
+                <p className="text-[11px] text-slate-500 mt-0.5">Needs parts/fluid processing</p>
+              </div>
+              <div className="p-3 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                <Clock className="w-6 h-6" />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card
+            onClick={() => setStatusFilter("AVAILABLE")}
+            className={`cursor-pointer transition-all ${
+              statusFilter === "AVAILABLE"
+                ? "bg-slate-900 border-emerald-500/60 ring-1 ring-emerald-500/40"
+                : "bg-slate-900 border-slate-800 hover:border-slate-700"
+            } text-white`}
+          >
+            <CardContent className="p-4 flex items-center justify-between">
+              <div>
+                <p className="text-xs text-emerald-400 font-medium">Available On Yard</p>
                 <p className="text-2xl font-black text-emerald-400 font-mono mt-0.5">{availableCount}</p>
-                <p className="text-[11px] text-slate-500 mt-0.5">Ready for parts pulling</p>
+                <p className="text-[11px] text-slate-500 mt-0.5">Ready for pullers</p>
               </div>
               <div className="p-3 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                 <CheckCircle2 className="w-6 h-6" />
@@ -365,28 +438,22 @@ export default function PullAPartPage() {
             </CardContent>
           </Card>
 
-          <Card className="bg-slate-900 border-slate-800 text-white">
+          <Card
+            onClick={() => setStatusFilter("CRUSHED")}
+            className={`cursor-pointer transition-all ${
+              statusFilter === "CRUSHED"
+                ? "bg-slate-900 border-rose-500/60 ring-1 ring-rose-500/40"
+                : "bg-slate-900 border-slate-800 hover:border-slate-700"
+            } text-white`}
+          >
             <CardContent className="p-4 flex items-center justify-between">
               <div>
-                <p className="text-xs text-slate-400 font-medium">Pending Processing</p>
-                <p className="text-2xl font-black text-sky-400 font-mono mt-0.5">{pendingCount}</p>
-                <p className="text-[11px] text-slate-500 mt-0.5">Waiting on prep or inspection</p>
-              </div>
-              <div className="p-3 rounded-xl bg-sky-500/10 text-sky-400 border border-sky-500/20">
-                <Clock className="w-6 h-6" />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-slate-900 border-slate-800 text-white">
-            <CardContent className="p-4 flex items-center justify-between">
-              <div>
-                <p className="text-xs text-slate-400 font-medium">Crushed Vehicles</p>
+                <p className="text-xs text-rose-400 font-medium">Crushed / Stripped</p>
                 <p className="text-2xl font-black text-rose-400 font-mono mt-0.5">{crushedCount}</p>
-                <p className="text-[11px] text-slate-500 mt-0.5">Completed vehicle processing</p>
+                <p className="text-[11px] text-slate-500 mt-0.5">Archived / Bailer</p>
               </div>
               <div className="p-3 rounded-xl bg-rose-500/10 text-rose-400 border border-rose-500/20">
-                <Car className="w-6 h-6" />
+                <Flame className="w-6 h-6" />
               </div>
             </CardContent>
           </Card>
@@ -396,7 +463,7 @@ export default function PullAPartPage() {
         <Tabs defaultValue="finder" className="space-y-6">
           <TabsList className="bg-slate-900 border border-slate-800 p-1 rounded-xl">
             <TabsTrigger value="finder" className="data-[state=active]:bg-amber-600 data-[state=active]:text-white text-xs gap-1.5">
-              <Car className="w-3.5 h-3.5" /> Yard Vehicle Row Finder ({vehicles.length})
+              <Car className="w-3.5 h-3.5" /> Yard Vehicle Inventory & Dismantling Workstation ({vehicles.length})
             </TabsTrigger>
             <TabsTrigger value="catalog" className="data-[state=active]:bg-amber-600 data-[state=active]:text-white text-xs gap-1.5">
               <DollarSign className="w-3.5 h-3.5" /> Flat Parts Price Catalog ({parts.length})
@@ -409,21 +476,39 @@ export default function PullAPartPage() {
             </TabsTrigger>
           </TabsList>
 
-          {/* TAB 1: VEHICLE ROW FINDER */}
+          {/* TAB 1: VEHICLE YARD WORKSTATION & DISMANTLING TABLE */}
           <TabsContent value="finder" className="space-y-4">
             <Card className="bg-slate-900 border-slate-800 text-white overflow-hidden shadow-xl">
-              <CardHeader className="py-4 px-6 bg-slate-950/60 border-b border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div>
-                  <CardTitle className="text-base font-bold text-white flex items-center gap-2">
-                    <MapPin className="w-5 h-5 text-amber-400" /> Self-Service Puller Vehicle Row Finder
-                  </CardTitle>
+              <CardHeader className="py-4 px-6 bg-slate-950/60 border-b border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs font-bold text-slate-400 uppercase tracking-wider mr-2">Filter Status:</span>
+                  {[
+                    { id: "ALL", label: "All Vehicles", count: vehicles.length },
+                    { id: "PENDING", label: "Pending (Tow Intake)", count: pendingCount, color: "text-amber-400" },
+                    { id: "AVAILABLE", label: "Available (On Yard)", count: availableCount, color: "text-emerald-400" },
+                    { id: "CRUSHED", label: "Crushed", count: crushedCount, color: "text-rose-400" },
+                  ].map((tab) => (
+                    <Button
+                      key={tab.id}
+                      size="sm"
+                      variant={statusFilter === tab.id ? "default" : "outline"}
+                      onClick={() => setStatusFilter(tab.id as any)}
+                      className={`text-xs h-8 ${
+                        statusFilter === tab.id
+                          ? "bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold"
+                          : "border-slate-800 bg-slate-950 text-slate-300 hover:bg-slate-800"
+                      }`}
+                    >
+                      {tab.label} <span className="ml-1 opacity-80 font-mono">({tab.count})</span>
+                    </Button>
+                  ))}
                 </div>
 
                 <div className="flex items-center gap-2">
                   <div className="relative">
                     <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-500" />
                     <Input
-                      placeholder="Search Ford, Impala, Row 104..."
+                      placeholder="Search vehicle, VIN, origin..."
                       value={vehSearch}
                       onChange={(e) => setVehSearch(e.target.value)}
                       className="bg-slate-950 border-slate-800 text-xs pl-8 w-64"
@@ -432,7 +517,7 @@ export default function PullAPartPage() {
                   <Button
                     size="sm"
                     onClick={handleOpenAddVeh}
-                    className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold gap-1"
+                    className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold gap-1 shrink-0"
                   >
                     <Plus className="w-3.5 h-3.5" /> Add Car
                   </Button>
@@ -443,84 +528,161 @@ export default function PullAPartPage() {
                 <Table>
                   <TableHeader className="bg-slate-950">
                     <TableRow className="border-slate-800 text-xs">
+                      <TableHead className="text-slate-400">Photo</TableHead>
                       <TableHead className="text-slate-400">Yard Location</TableHead>
-                      <TableHead className="text-slate-400">Section</TableHead>
-                      <TableHead className="text-slate-400">Vehicle Specs</TableHead>
-                      <TableHead className="text-slate-400">VIN Number</TableHead>
-                      <TableHead className="text-slate-400">Date Set In Yard</TableHead>
+                      <TableHead className="text-slate-400">Vehicle Specs & VIN</TableHead>
+                      <TableHead className="text-slate-400">Payout & Origin</TableHead>
                       <TableHead className="text-slate-400">Status</TableHead>
-                      <TableHead className="text-slate-400">Major Components Left</TableHead>
+                      <TableHead className="text-slate-400">Dismantling & Fluid Log</TableHead>
+                      <TableHead className="text-slate-400">Driver & Processor Notes</TableHead>
                       <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredVehicles.map((v) => (
-                      <TableRow key={v.id} className="border-slate-800 hover:bg-slate-800/40 text-xs font-mono">
-                        <TableCell className="font-bold text-amber-300 text-sm">
-                          {v.rowNumber}
-                          <span className="block text-[10px] text-slate-400 font-normal">{v.spaceNumber}</span>
-                        </TableCell>
-
-                        <TableCell className="font-sans">
-                          <Badge variant="outline" className="border-slate-700 text-slate-300 text-[10px]">
-                            {v.section}
-                          </Badge>
-                        </TableCell>
-
-                        <TableCell className="font-sans">
-                          <span className="font-bold text-white block">{v.year} {v.make} {v.model}</span>
-                          <span className="text-[10px] text-slate-400">{v.color}</span>
-                        </TableCell>
-
-                        <TableCell className="text-slate-400 text-[11px]">{v.vin}</TableCell>
-
-                        <TableCell className="text-slate-300">
-                          {new Date(v.dateSetInYard).toLocaleDateString()}
-                        </TableCell>
-
-                        <TableCell className="font-sans">
-                          {v.status === "FRESH_SET" && (
-                            <Badge className="bg-emerald-950 text-emerald-300 border-emerald-800 text-[10px] gap-1">
-                              <Sparkles className="w-2.5 h-2.5 text-emerald-400" /> FRESH SET
-                            </Badge>
-                          )}
-                          {v.status === "POPULAR" && (
-                            <Badge className="bg-amber-950 text-amber-300 border-amber-800 text-[10px]">
-                              POPULAR
-                            </Badge>
-                          )}
-                          {v.status === "STRIPPED_SHELL" && (
-                            <Badge variant="outline" className="text-rose-400 border-rose-800 text-[10px]">
-                              STRIPPED SHELL
-                            </Badge>
-                          )}
-                        </TableCell>
-
-                        <TableCell className="font-sans max-w-xs truncate text-[11px] text-slate-300">
-                          {v.partsRemaining.join(", ")}
-                        </TableCell>
-
-                        <TableCell className="text-right space-x-1">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => handleOpenEditVeh(v)}
-                            className="h-7 text-xs text-slate-300 hover:text-white hover:bg-slate-800"
-                          >
-                            <Edit3 className="w-3.5 h-3.5 mr-1 text-emerald-400" /> Edit
-                          </Button>
-
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => setSelectedVehForTicket(v)}
-                            className="h-7 text-xs text-amber-400 hover:text-amber-300 hover:bg-slate-800"
-                          >
-                            <Printer className="w-3.5 h-3.5 mr-1" /> Pass
-                          </Button>
+                    {filteredVehicles.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={8} className="text-center py-10 text-slate-500 text-xs font-sans">
+                          No vehicles found matching search and status filter.
                         </TableCell>
                       </TableRow>
-                    ))}
+                    ) : (
+                      filteredVehicles.map((v) => (
+                        <TableRow key={v.id} className="border-slate-800 hover:bg-slate-800/40 text-xs font-mono">
+                          
+                          {/* Photo Thumbnail */}
+                          <TableCell className="w-16 p-2">
+                            <div className="w-12 h-10 rounded-lg bg-slate-950 overflow-hidden border border-slate-800 shrink-0 flex items-center justify-center">
+                              {v.photoUrl ? (
+                                <img src={v.photoUrl} alt="Vehicle thumbnail" className="w-full h-full object-cover" />
+                              ) : (
+                                <Car className="w-5 h-5 text-slate-600" />
+                              )}
+                            </div>
+                          </TableCell>
+
+                          {/* Row & Space */}
+                          <TableCell className="font-bold text-amber-300 text-sm">
+                            {v.rowNumber}
+                            <span className="block text-[10px] text-slate-400 font-normal">{v.spaceNumber || 'Space 01'}</span>
+                          </TableCell>
+
+                          {/* Specs & VIN */}
+                          <TableCell className="font-sans">
+                            <span className="font-bold text-white block">{v.year} {v.make} {v.model}</span>
+                            <span className="text-[10px] text-slate-400 font-mono">{v.vin}</span>
+                          </TableCell>
+
+                          {/* Payout & Origin */}
+                          <TableCell className="font-sans">
+                            <span className="font-bold text-emerald-400 block">${v.purchasePrice ? v.purchasePrice.toFixed(2) : '0.00'}</span>
+                            <span className="text-[10px] text-slate-400 max-w-[120px] truncate block" title={v.originSource || 'Tow Intake'}>
+                              {v.originSource || 'Tow Intake'}
+                            </span>
+                          </TableCell>
+
+                          {/* Status Selector */}
+                          <TableCell className="font-sans">
+                            <select
+                              value={v.status}
+                              onChange={(e) => handleStatusChange(v, e.target.value as PullYardVehicleStatus)}
+                              className={`h-7 px-2 text-[10px] font-extrabold rounded border font-mono uppercase cursor-pointer ${
+                                v.status === "PENDING"
+                                  ? "bg-amber-950 text-amber-300 border-amber-800"
+                                  : v.status === "AVAILABLE"
+                                  ? "bg-emerald-950 text-emerald-300 border-emerald-800"
+                                  : "bg-rose-950 text-rose-300 border-rose-800"
+                              }`}
+                            >
+                              <option value="PENDING">PENDING</option>
+                              <option value="AVAILABLE">AVAILABLE</option>
+                              <option value="CRUSHED">CRUSHED</option>
+                            </select>
+                          </TableCell>
+
+                          {/* Dismantling & Fluid Summary */}
+                          <TableCell className="font-sans">
+                            <div className="space-y-1 text-[10px]">
+                              <div className="flex items-center gap-1">
+                                <span className="text-amber-400 font-bold">Cats: {v.dismantlingLog.catalyticConvertersRemoved}</span>
+                                <span className="text-slate-500">|</span>
+                                <span className="text-sky-400 font-bold">Wheels: {v.dismantlingLog.wheelsRemoved}</span>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <span className={v.dismantlingLog.gasDrained ? "text-emerald-400 font-semibold" : "text-slate-500"}>
+                                  Gas: {v.dismantlingLog.gasDrained ? "Drained" : "No"}
+                                </span>
+                                <span className="text-slate-500">|</span>
+                                <span className={v.dismantlingLog.oilDrained ? "text-emerald-400 font-semibold" : "text-slate-500"}>
+                                  Oil: {v.dismantlingLog.oilDrained ? "Drained" : "No"}
+                                </span>
+                              </div>
+                            </div>
+                          </TableCell>
+
+                          {/* Notes Section Display */}
+                          <TableCell className="font-sans max-w-xs">
+                            <div className="space-y-1 text-[10px]">
+                              {v.notes && (
+                                <p className="text-amber-300/90 truncate" title={v.notes}>
+                                  <span className="font-bold text-amber-400">Driver:</span> {v.notes}
+                                </p>
+                              )}
+                              {v.dismantlingLog.notes && (
+                                <p className="text-sky-300/90 truncate" title={v.dismantlingLog.notes}>
+                                  <span className="font-bold text-sky-400">Processor:</span> {v.dismantlingLog.notes}
+                                </p>
+                              )}
+                              {!v.notes && !v.dismantlingLog.notes && (
+                                <span className="text-slate-600 italic">No notes</span>
+                              )}
+                            </div>
+                          </TableCell>
+
+                          {/* Action Buttons */}
+                          <TableCell className="text-right space-x-1">
+                            <Button
+                              size="sm"
+                              onClick={() => handleOpenPullLog(v)}
+                              className="h-7 text-[11px] bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold px-2 gap-1"
+                              title="Log Pulled Parts & Fluids"
+                            >
+                              <Wrench className="w-3 h-3" /> Log Parts
+                            </Button>
+
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => handleOpenEditVeh(v)}
+                              className="h-7 w-7 p-0 text-slate-300 hover:text-white hover:bg-slate-800"
+                              title="Edit Vehicle Details"
+                            >
+                              <Edit3 className="w-3.5 h-3.5 text-emerald-400" />
+                            </Button>
+
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => setSelectedVehForTicket(v)}
+                              className="h-7 w-7 p-0 text-amber-400 hover:text-amber-300 hover:bg-slate-800"
+                              title="Print Yard Locator Pass"
+                            >
+                              <Printer className="w-3.5 h-3.5" />
+                            </Button>
+
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => setDeletingVehicle(v)}
+                              className="h-7 w-7 p-0 text-rose-400 hover:text-rose-300 hover:bg-rose-950/50"
+                              title="Delete Vehicle"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </Button>
+                          </TableCell>
+
+                        </TableRow>
+                      ))
+                    )}
                   </TableBody>
                 </Table>
               </CardContent>
@@ -703,12 +865,178 @@ export default function PullAPartPage() {
 
       </main>
 
+      {/* Dismantling & Parts Pull Logger Modal */}
+      {logVehicle && (
+        <Dialog open={!!logVehicle} onOpenChange={() => setLogVehicle(null)}>
+          <DialogContent className="bg-slate-950 text-slate-100 border-slate-800 sm:max-w-[520px]">
+            <DialogHeader>
+              <DialogTitle className="text-base font-bold text-white flex items-center gap-2">
+                <Wrench className="w-5 h-5 text-amber-400" /> Parts Dismantling & Processing Logger
+              </DialogTitle>
+              <p className="text-xs text-slate-400 font-mono">
+                {logVehicle.year} {logVehicle.make} {logVehicle.model} ({logVehicle.rowNumber} {logVehicle.spaceNumber})
+              </p>
+            </DialogHeader>
+
+            <div className="space-y-4 py-2 text-xs">
+              
+              {/* Catalytic Converters Removed Counter */}
+              <div className="bg-slate-900 p-3 rounded-lg border border-slate-800 flex items-center justify-between">
+                <div>
+                  <span className="font-bold text-slate-200 block">Catalytic Converters Removed</span>
+                  <span className="text-[10px] text-slate-400">Count of cats harvested</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setCatsRemoved((c) => Math.max(0, c - 1))}
+                    className="h-8 w-8 p-0 border-slate-700 bg-slate-800 text-white font-bold"
+                  >
+                    -
+                  </Button>
+                  <span className="font-mono font-bold text-lg text-amber-400 w-6 text-center">{catsRemoved}</span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setCatsRemoved((c) => c + 1)}
+                    className="h-8 w-8 p-0 border-slate-700 bg-slate-800 text-white font-bold"
+                  >
+                    +
+                  </Button>
+                </div>
+              </div>
+
+              {/* Wheels Removed Counter */}
+              <div className="bg-slate-900 p-3 rounded-lg border border-slate-800 flex items-center justify-between">
+                <div>
+                  <span className="font-bold text-slate-200 block">Wheels Removed</span>
+                  <span className="text-[10px] text-slate-400">Rims / tires pulled</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setWheelsRemoved((w) => Math.max(0, w - 1))}
+                    className="h-8 w-8 p-0 border-slate-700 bg-slate-800 text-white font-bold"
+                  >
+                    -
+                  </Button>
+                  <span className="font-mono font-bold text-lg text-sky-400 w-6 text-center">{wheelsRemoved}</span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setWheelsRemoved((w) => Math.min(8, w + 1))}
+                    className="h-8 w-8 p-0 border-slate-700 bg-slate-800 text-white font-bold"
+                  >
+                    +
+                  </Button>
+                </div>
+              </div>
+
+              {/* Fluids Drained Switches */}
+              <div className="grid grid-cols-2 gap-3 bg-slate-900 p-3 rounded-lg border border-slate-800">
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold text-slate-200 flex items-center gap-1">
+                    <Droplets className="w-3.5 h-3.5 text-amber-400" /> Gas Drained
+                  </span>
+                  <Switch
+                    checked={gasDrained}
+                    onCheckedChange={setGasDrained}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold text-slate-200 flex items-center gap-1">
+                    <Droplets className="w-3.5 h-3.5 text-amber-400" /> Oil Drained
+                  </span>
+                  <Switch
+                    checked={oilDrained}
+                    onCheckedChange={setOilDrained}
+                  />
+                </div>
+              </div>
+
+              {/* Processor Notes Section */}
+              <div className="space-y-1">
+                <Label className="text-slate-300 font-semibold flex items-center gap-1">
+                  <FileText className="w-3.5 h-3.5 text-sky-400" /> Processor Dismantling Notes
+                </Label>
+                <Textarea
+                  rows={3}
+                  value={processorNotes}
+                  onChange={(e) => setProcessorNotes(e.target.value)}
+                  placeholder="e.g. Pulled 5.4L engine block & transmission, OEM cats removed, battery stored in vault..."
+                  className="bg-slate-900 border-slate-800 text-slate-200 text-xs"
+                />
+              </div>
+
+            </div>
+
+            <DialogFooter className="pt-3 border-t border-slate-800 flex-col sm:flex-row gap-2">
+              <Button
+                variant="ghost"
+                onClick={() => setLogVehicle(null)}
+                className="text-slate-400 text-xs"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={() => handleSavePullLog(false)}
+                className="bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs"
+              >
+                Save Dismantling Log
+              </Button>
+              <Button
+                onClick={() => handleSavePullLog(true)}
+                className="bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs gap-1"
+              >
+                <Check className="w-4 h-4" /> Save & Move to Yard (Set Available)
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deletingVehicle && (
+        <Dialog open={!!deletingVehicle} onOpenChange={() => setDeletingVehicle(null)}>
+          <DialogContent className="bg-slate-950 text-slate-100 border-slate-800 sm:max-w-[400px]">
+            <DialogHeader>
+              <DialogTitle className="text-base font-bold text-white flex items-center gap-2">
+                <AlertCircle className="w-5 h-5 text-rose-500" /> Remove Vehicle from Yard?
+              </DialogTitle>
+            </DialogHeader>
+
+            <div className="py-2 text-xs text-slate-300 space-y-2">
+              <p>
+                Are you sure you want to completely remove <strong className="text-white">{deletingVehicle.year} {deletingVehicle.make} {deletingVehicle.model}</strong> ({deletingVehicle.vin}) from the yard database?
+              </p>
+              <p className="text-rose-400 text-[11px]">This action cannot be undone.</p>
+            </div>
+
+            <DialogFooter className="pt-2 border-t border-slate-800">
+              <Button variant="ghost" onClick={() => setDeletingVehicle(null)} className="text-slate-400 text-xs">
+                Cancel
+              </Button>
+              <Button onClick={handleConfirmRemoveVehicle} className="bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs">
+                Delete Vehicle
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+
       {/* Add / Edit Vehicle Modal */}
       <Dialog open={vehModalOpen} onOpenChange={setVehModalOpen}>
-        <DialogContent className="bg-slate-950 text-slate-100 border-slate-800 sm:max-w-[500px]">
+        <DialogContent className="bg-slate-950 text-slate-100 border-slate-800 sm:max-w-[520px]">
           <DialogHeader>
             <DialogTitle className="text-base font-bold text-white flex items-center gap-2">
-              <Car className="w-5 h-5 text-emerald-400" /> {editingVeh ? "Edit Staged Vehicle" : "Add Vehicle to Yard Row"}
+              <Car className="w-5 h-5 text-emerald-400" /> {editingVeh ? "Edit Yard Vehicle" : "Add Vehicle to Yard"}
             </DialogTitle>
           </DialogHeader>
 
@@ -791,6 +1119,28 @@ export default function PullAPartPage() {
 
             <div className="grid grid-cols-2 gap-2">
               <div>
+                <Label className="text-slate-300">Purchase Price ($)</Label>
+                <Input
+                  type="number"
+                  value={vehPurchasePrice}
+                  onChange={(e) => setVehPurchasePrice(parseFloat(e.target.value) || 0)}
+                  className="bg-slate-900 border-slate-800 text-emerald-400 font-mono font-bold text-xs mt-1"
+                />
+              </div>
+
+              <div>
+                <Label className="text-slate-300">Tow Origin / Source</Label>
+                <Input
+                  value={vehOriginSource}
+                  onChange={(e) => setVehOriginSource(e.target.value)}
+                  placeholder="e.g. Tow Drop / Address"
+                  className="bg-slate-900 border-slate-800 text-white text-xs mt-1"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
                 <Label className="text-slate-300">Yard Section</Label>
                 <select
                   value={vehSection}
@@ -811,14 +1161,23 @@ export default function PullAPartPage() {
                 <select
                   value={vehStatus}
                   onChange={(e) => setVehStatus(e.target.value as any)}
-                  className="w-full h-9 bg-slate-900 border border-slate-800 rounded-md text-xs text-white px-2 mt-1"
+                  className="w-full h-9 bg-slate-900 border border-slate-800 rounded-md text-xs text-white px-2 mt-1 font-mono font-bold"
                 >
-                  <option value="FRESH_SET">FRESH SET</option>
-                  <option value="POPULAR">POPULAR DEMAND</option>
-                  <option value="STRIPPED_SHELL">STRIPPED SHELL</option>
-                  <option value="READY_FOR_CRUSHER">READY FOR CRUSHER</option>
+                  <option value="PENDING">PENDING</option>
+                  <option value="AVAILABLE">AVAILABLE</option>
+                  <option value="CRUSHED">CRUSHED</option>
                 </select>
               </div>
+            </div>
+
+            <div>
+              <Label className="text-slate-300">Tow Driver Notes</Label>
+              <Input
+                value={vehNotes}
+                onChange={(e) => setVehNotes(e.target.value)}
+                placeholder="Condition notes..."
+                className="bg-slate-900 border-slate-800 text-white text-xs mt-1"
+              />
             </div>
 
             <div>
@@ -975,15 +1334,36 @@ export default function PullAPartPage() {
               <div className="bg-slate-100 p-3 rounded border border-slate-300 text-center">
                 <span className="text-[10px] font-bold text-slate-500 block">YARD STAGING LOCATION</span>
                 <span className="text-2xl font-black text-slate-900">{selectedVehForTicket.rowNumber}</span>
-                <span className="text-sm font-bold text-slate-700 block">{selectedVehForTicket.spaceNumber}</span>
+                <span className="text-sm font-bold text-slate-700 block">{selectedVehForTicket.spaceNumber || 'Space 01'}</span>
               </div>
 
               <div className="space-y-1 text-[11px]">
                 <p><span className="font-bold">VEHICLE:</span> {selectedVehForTicket.year} {selectedVehForTicket.make} {selectedVehForTicket.model}</p>
                 <p><span className="font-bold">COLOR:</span> {selectedVehForTicket.color}</p>
                 <p><span className="font-bold">VIN:</span> {selectedVehForTicket.vin}</p>
+                <p><span className="font-bold">STATUS:</span> {selectedVehForTicket.status}</p>
+                {selectedVehForTicket.originSource && (
+                  <p><span className="font-bold">ORIGIN:</span> {selectedVehForTicket.originSource}</p>
+                )}
+                {selectedVehForTicket.purchasePrice && (
+                  <p><span className="font-bold">PAYOUT:</span> ${selectedVehForTicket.purchasePrice.toFixed(2)}</p>
+                )}
                 <p><span className="font-bold">SET DATE:</span> {new Date(selectedVehForTicket.dateSetInYard).toLocaleDateString()}</p>
               </div>
+
+              {selectedVehForTicket.notes && (
+                <div className="border-t border-slate-300 pt-2 text-[10px]">
+                  <p className="font-bold text-slate-700">DRIVER NOTES:</p>
+                  <p className="text-slate-800">{selectedVehForTicket.notes}</p>
+                </div>
+              )}
+
+              {selectedVehForTicket.dismantlingLog.notes && (
+                <div className="border-t border-slate-300 pt-2 text-[10px]">
+                  <p className="font-bold text-slate-700">PROCESSOR NOTES:</p>
+                  <p className="text-slate-800">{selectedVehForTicket.dismantlingLog.notes}</p>
+                </div>
+              )}
 
               <div className="border-t border-slate-300 pt-2 text-[10px] text-slate-600">
                 <p className="font-bold">PARTS AVAILABLE:</p>

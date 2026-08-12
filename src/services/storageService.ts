@@ -149,7 +149,11 @@ export const INITIAL_PULL_VEHICLES: PullYardVehicle[] = [
     dateSetInYard: new Date(Date.now() - 1000 * 60 * 60 * 24 * 3).toISOString(),
     status: 'AVAILABLE',
     partsRemaining: ['Transmission 4R75E', 'Doors (4x)', 'Rear Axle Assembly', 'Interior Seats', 'Fenders', 'Hood'],
-    dismantlingLog: { catalyticConvertersRemoved: 1, wheelsRemoved: 0, gasDrained: true, oilDrained: true },
+    dismantlingLog: { catalyticConvertersRemoved: 1, wheelsRemoved: 0, gasDrained: true, oilDrained: true, notes: 'Pulled main cat converter' },
+    photoUrl: generateSamplePhoto('vehicle'),
+    purchasePrice: 450,
+    originSource: '1428 Industrial Pkwy, Tow Origin',
+    notes: 'Runs and drives, minor front dent',
   },
   {
     id: 'veh-102',
@@ -165,6 +169,10 @@ export const INITIAL_PULL_VEHICLES: PullYardVehicle[] = [
     status: 'AVAILABLE',
     partsRemaining: ['Engine 3.5L V6', 'Headlights', 'Bumper Assembly', 'Front Struts'],
     dismantlingLog: { catalyticConvertersRemoved: 0, wheelsRemoved: 2, gasDrained: true, oilDrained: false },
+    photoUrl: generateSamplePhoto('vehicle'),
+    purchasePrice: 350,
+    originSource: 'Vance Auto Recovery Tow',
+    notes: 'Missing key, flat tire on right rear',
   },
   {
     id: 'veh-103',
@@ -179,7 +187,11 @@ export const INITIAL_PULL_VEHICLES: PullYardVehicle[] = [
     dateSetInYard: new Date(Date.now() - 1000 * 60 * 60 * 24 * 22).toISOString(),
     status: 'CRUSHED',
     partsRemaining: ['Bare Body Shell', 'Subframe', 'Rear Suspension Beam'],
-    dismantlingLog: { catalyticConvertersRemoved: 1, wheelsRemoved: 4, gasDrained: true, oilDrained: true },
+    dismantlingLog: { catalyticConvertersRemoved: 1, wheelsRemoved: 4, gasDrained: true, oilDrained: true, notes: 'Completely stripped and ready for bailer' },
+    photoUrl: generateSamplePhoto('vehicle'),
+    purchasePrice: 300,
+    originSource: 'Decatur Highway Tow Depot',
+    notes: 'Crushed and stripped shell',
   },
   {
     id: 'veh-104',
@@ -195,6 +207,10 @@ export const INITIAL_PULL_VEHICLES: PullYardVehicle[] = [
     status: 'PENDING',
     partsRemaining: ['2AR-FE Engine', '6-Speed Auto Transmission', 'Alloy Wheels (4x)', 'Doors', 'Front End Assembly'],
     dismantlingLog: { catalyticConvertersRemoved: 0, wheelsRemoved: 0, gasDrained: false, oilDrained: false },
+    photoUrl: generateSamplePhoto('vehicle'),
+    purchasePrice: 500,
+    originSource: 'Highway 78 Police Impound Tow',
+    notes: 'Tow driver note: Key in ignition, catalytic converters intact',
   },
 ];
 
@@ -1091,11 +1107,11 @@ export const storageService = {
     }
     sharedStorage.setItem(STORAGE_KEYS.TICKETS, JSON.stringify(tickets));
 
-    if (ticket.ticketType === 'CAR_SALVAGE' && ticket.carRecord && ticket.carRecord.assignedRow) {
+    if (ticket.ticketType === 'CAR_SALVAGE' && ticket.carRecord) {
       const c = ticket.carRecord;
       this.savePullYardVehicle({
         id: `veh-${Date.now()}`,
-        rowNumber: c.assignedRow,
+        rowNumber: c.assignedRow || 'Pending Row',
         spaceNumber: c.assignedSpace || 'Space 01',
         section: c.make.includes('Ford')
           ? 'Ford & Lincoln'
@@ -1112,6 +1128,10 @@ export const storageService = {
         dateSetInYard: new Date().toISOString(),
         status: c.yardStatus || 'PENDING',
         partsRemaining: ['Engine Assembly', 'Transmission', 'Doors', 'Wheels', 'Headlights', 'Fenders'],
+        photoUrl: c.photoUrl || ticket.complianceCaptures?.vehiclePhotoUrl,
+        purchasePrice: c.purchasePrice ?? ticket.finalPayout,
+        originSource: c.originSource || 'Tow Intake',
+        notes: c.notes || ticket.notes,
         dismantlingLog: {
           catalyticConvertersRemoved: 0,
           wheelsRemoved: 0,
