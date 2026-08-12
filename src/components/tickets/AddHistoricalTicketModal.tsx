@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Ticket, ScrapTicketLine, CarIntakeRecord, MetalGrade, Customer } from "@/types/scrap";
+import { Ticket, ScrapTicketLine, CarIntakeRecord, Customer } from "@/types/scrap";
 import { storageService } from "@/services/storageService";
 import { generateSamplePhoto } from "@/utils/complianceUtils";
 import {
@@ -13,24 +13,27 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
   History,
   Calendar,
-  Clock,
   Plus,
   Trash2,
   Car,
   Scale,
-  DollarSign,
   User,
   Hash,
-  FileCheck,
   CheckCircle2,
-  FileText,
+  Upload,
+  Camera,
+  CreditCard,
+  UserCheck,
+  Scan,
+  Package,
+  ShieldCheck,
+  Image as ImageIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -72,6 +75,13 @@ export const AddHistoricalTicketModal: React.FC<AddHistoricalTicketModalProps> =
   );
   const [notes, setNotes] = useState<string>("Historical paper ticket entered retroactively into system");
 
+  // PAST COMPLIANCE PHOTOS
+  const [idPhotoUrl, setIdPhotoUrl] = useState<string>(generateSamplePhoto("id"));
+  const [personPhotoUrl, setPersonPhotoUrl] = useState<string>(generateSamplePhoto("person"));
+  const [vehiclePhotoUrl, setVehiclePhotoUrl] = useState<string>(generateSamplePhoto("vehicle"));
+  const [licensePlatePhotoUrl, setLicensePlatePhotoUrl] = useState<string>(generateSamplePhoto("plate"));
+  const [loadPhotoUrl, setLoadPhotoUrl] = useState<string>(generateSamplePhoto("load"));
+
   // SCRAP METAL LINE ITEMS
   const [scrapLines, setScrapLines] = useState<ScrapTicketLine[]>([]);
   const [selectedMetalId, setSelectedMetalId] = useState<string>(metals[0]?.id || "");
@@ -96,6 +106,7 @@ export const AddHistoricalTicketModal: React.FC<AddHistoricalTicketModalProps> =
       setCustomerPhone(found.phone || "");
       setCustomerIdNumber(found.idNumber);
       if (found.vehicleLicensePlate) setVehicleLicensePlate(found.vehicleLicensePlate);
+      if (found.idPhotoUrl) setIdPhotoUrl(found.idPhotoUrl);
     }
   };
 
@@ -104,6 +115,25 @@ export const AddHistoricalTicketModal: React.FC<AddHistoricalTicketModalProps> =
     const found = metals.find((m) => m.id === metalId);
     if (found) {
       setLineRate(found.ratePerLb);
+    }
+  };
+
+  const handleFileUpload = (
+    e: React.ChangeEvent<HTMLInputElement>,
+    setter: (url: string) => void,
+    label: string
+  ) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (evt) => {
+        if (evt.target?.result) {
+          const dataUrl = evt.target.result as string;
+          setter(dataUrl);
+          toast.success(`Attached ${label} photo`);
+        }
+      };
+      reader.readAsDataURL(file);
     }
   };
 
@@ -186,7 +216,7 @@ export const AddHistoricalTicketModal: React.FC<AddHistoricalTicketModalProps> =
             deductions: 0,
             totalPayout: carPayout,
             purchasePrice: carPayout,
-            photoUrl: generateSamplePhoto("vehicle"),
+            photoUrl: vehiclePhotoUrl,
           }
         : undefined;
 
@@ -203,9 +233,11 @@ export const AddHistoricalTicketModal: React.FC<AddHistoricalTicketModalProps> =
       scrapLines: ticketType === "SCRAP_METAL" ? scrapLines : undefined,
       carRecord,
       complianceCaptures: {
-        idPhotoUrl: generateSamplePhoto("id"),
-        vehiclePhotoUrl: generateSamplePhoto("vehicle"),
-        loadPhotoUrl: generateSamplePhoto("load"),
+        idPhotoUrl,
+        personPhotoUrl,
+        vehiclePhotoUrl,
+        licensePlatePhotoUrl,
+        loadPhotoUrl,
       },
       grossTotal: finalPayoutTotal,
       totalDeductions: 0,
@@ -224,9 +256,17 @@ export const AddHistoricalTicketModal: React.FC<AddHistoricalTicketModalProps> =
     onClose();
   };
 
+  const photoSlots = [
+    { label: "DL / ID Scan", url: idPhotoUrl, setter: setIdPhotoUrl, defaultVal: generateSamplePhoto("id"), icon: CreditCard },
+    { label: "Seller Face", url: personPhotoUrl, setter: setPersonPhotoUrl, defaultVal: generateSamplePhoto("person"), icon: UserCheck },
+    { label: "Vehicle", url: vehiclePhotoUrl, setter: setVehiclePhotoUrl, defaultVal: generateSamplePhoto("vehicle"), icon: Car },
+    { label: "License Plate", url: licensePlatePhotoUrl, setter: setLicensePlatePhotoUrl, defaultVal: generateSamplePhoto("plate"), icon: Scan },
+    { label: "Cargo Load", url: loadPhotoUrl, setter: setLoadPhotoUrl, defaultVal: generateSamplePhoto("load"), icon: Package },
+  ];
+
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="bg-slate-950 text-slate-100 border-slate-800 sm:max-w-[700px] max-h-[92vh] overflow-y-auto font-sans">
+      <DialogContent className="bg-slate-950 text-slate-100 border-slate-800 sm:max-w-[720px] max-h-[92vh] overflow-y-auto font-sans">
         <DialogHeader className="border-b border-slate-800 pb-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -240,7 +280,7 @@ export const AddHistoricalTicketModal: React.FC<AddHistoricalTicketModalProps> =
             </Badge>
           </div>
           <DialogDescription className="text-xs text-slate-400">
-            Log past paper receipts or historical transactions into the system ledger and customer records.
+            Log past paper receipts, customer credentials, and attach past photos into the system ledger.
           </DialogDescription>
         </DialogHeader>
 
@@ -365,6 +405,64 @@ export const AddHistoricalTicketModal: React.FC<AddHistoricalTicketModalProps> =
                   className="bg-slate-950 border-slate-800 text-slate-200 font-mono uppercase text-xs mt-1 h-9"
                 />
               </div>
+            </div>
+          </div>
+
+          {/* Row 3: PAST COMPLIANCE PHOTOS UPLOAD */}
+          <div className="p-3.5 bg-slate-900 rounded-xl border border-slate-800 space-y-2">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+              <span className="font-bold text-white flex items-center gap-1.5">
+                <ShieldCheck className="w-4 h-4 text-blue-400" /> Upload Past Compliance Photos
+              </span>
+              <span className="text-[10px] text-slate-400 font-mono">
+                Attach historical image files for audit proof
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 pt-1">
+              {photoSlots.map((slot, idx) => {
+                const Icon = slot.icon;
+                const isCustom = slot.url && slot.url !== slot.defaultVal;
+
+                return (
+                  <div key={idx} className="bg-slate-950 p-2 rounded-lg border border-slate-800 text-center space-y-1.5">
+                    <div className="aspect-video bg-slate-900 rounded overflow-hidden relative flex items-center justify-center border border-slate-800">
+                      {slot.url ? (
+                        <img src={slot.url} alt={slot.label} className="w-full h-full object-cover" />
+                      ) : (
+                        <Icon className="w-4 h-4 text-slate-600" />
+                      )}
+                      {isCustom && (
+                        <span className="absolute top-0.5 right-0.5 bg-emerald-500 text-slate-950 p-0.5 rounded-full">
+                          <CheckCircle2 className="w-2.5 h-2.5 stroke-[3]" />
+                        </span>
+                      )}
+                    </div>
+
+                    <span className="text-[10px] font-bold text-slate-300 block truncate">{slot.label}</span>
+
+                    <label className="cursor-pointer inline-flex items-center justify-center gap-1 w-full bg-slate-900 hover:bg-slate-800 text-slate-200 font-semibold text-[10px] py-1 px-1.5 rounded border border-slate-700 transition-colors">
+                      <Upload className="w-3 h-3 text-amber-400" /> {isCustom ? "Change" : "Upload"}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => handleFileUpload(e, slot.setter, slot.label)}
+                        className="hidden"
+                      />
+                    </label>
+
+                    {isCustom && (
+                      <button
+                        type="button"
+                        onClick={() => slot.setter(slot.defaultVal)}
+                        className="text-[9px] text-slate-500 hover:text-red-400 block mx-auto underline"
+                      >
+                        Reset
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
 
