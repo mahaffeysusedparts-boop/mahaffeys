@@ -1,3 +1,5 @@
+"use client";
+
 import React, { useState, useEffect } from "react";
 import { Navbar } from "@/components/layout/Navbar";
 import { storageService } from "@/services/storageService";
@@ -36,8 +38,9 @@ import {
   Shield,
   ChevronRight,
   Camera,
-  Layers3,
   Smartphone,
+  Layers3,
+  Truck,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -125,20 +128,14 @@ export default function DashboardPage() {
             {/* Quick Action Launchers */}
             <div className="flex flex-col sm:flex-row items-center gap-3 shrink-0">
               <Link to="/mobile-yard" className="w-full sm:w-auto">
-                <Button className="w-full sm:w-auto bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs px-5 h-11 gap-2 shadow-lg shadow-amber-950">
-                  <Smartphone className="w-4 h-4" /> Mobile Field Ops
+                <Button className="w-full sm:w-auto bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-xs px-5 h-11 gap-2 shadow-lg shadow-amber-950">
+                  <Smartphone className="w-4 h-4" /> Mobile Field Yard Ops
                 </Button>
               </Link>
 
               <Link to="/intake" className="w-full sm:w-auto">
                 <Button className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs px-5 h-11 gap-2 shadow-lg shadow-emerald-950">
                   <Plus className="w-4 h-4" /> Start New Intake
-                </Button>
-              </Link>
-
-              <Link to="/vehicles" className="w-full sm:w-auto">
-                <Button variant="outline" className="w-full sm:w-auto border-amber-500/40 bg-amber-950/20 hover:bg-amber-950/50 text-amber-300 font-bold text-xs h-11 gap-2">
-                  <Car className="w-4 h-4 text-amber-400" /> Public Cars Portal
                 </Button>
               </Link>
             </div>
@@ -342,7 +339,7 @@ export default function DashboardPage() {
 
             <CardContent className="p-4 space-y-2">
               {[
-                { title: "Mobile Field Yard & Tow Hub", path: "/mobile-yard", icon: Smartphone, color: "text-amber-400" },
+                { title: "Mobile Field Yard Ops", path: "/mobile-yard", icon: Smartphone, color: "text-amber-400" },
                 { title: "Car Salvage & Scrap Intake", path: "/intake", icon: Scale, color: "text-emerald-400" },
                 { title: "Public Cars On Yard", path: "/vehicles", icon: Car, color: "text-amber-400" },
                 { title: "Public Parts Catalog", path: "/inventory", icon: Wrench, color: "text-sky-400" },
@@ -420,15 +417,3 @@ export default function DashboardPage() {
     </div>
   );
 }
-</dyad-file>
-
-Now let's update `.dyad/plans/chat-26-plan.md` to mark all items as complete.<dyad-write path=".dyad/plans/chat-26-plan.md" description="Updating plan status to complete">
-# Plan: Mobile Yard Scan & Tow Driver Operations PWA
-
-## Progress
-- [x] Create plan tracking file
-- [x] Extend storage services with mobile yard relocation & tow drop helpers
-- [x] Create Mobile Yard sub-components (`TowDropModal.tsx`, `YardRelocateModal.tsx`, `DismantleChecklistModal.tsx`)
-- [x] Create Mobile Yard Page (`MobileYardPage.tsx`)
-- [x] Register `/mobile-yard` route in `App.tsx`
-- [x] Add Navigation & Dashboard links (`Navbar.tsx`, `DashboardPage.tsx`)
