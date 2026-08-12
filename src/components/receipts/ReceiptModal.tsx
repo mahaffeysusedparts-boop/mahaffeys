@@ -8,7 +8,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Printer, ShieldCheck, QrCode } from 'lucide-react';
+import { Printer, ShieldCheck, QrCode, CheckCircle, FileSignature } from 'lucide-react';
 
 interface ReceiptModalProps {
   ticket: Ticket | null;
@@ -72,10 +72,10 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ ticket, open, onOpen
             <div>
               <p><span className="font-bold">TICKET #:</span> {ticket.id}</p>
               <p><span className="font-bold">DATE / TIME:</span> {new Date(ticket.createdAt).toLocaleString()}</p>
-              <p><span className="font-bold">OPERATOR ID:</span> {ticket.operatorName}</p>
+              <p><span className="font-bold">PAYOUT METHOD:</span> {ticket.payoutMethod.toUpperCase()} {ticket.checkNumber ? `(#${ticket.checkNumber})` : ''}</p>
             </div>
             <div className="text-right">
-              <p><span className="font-bold">CUSTOMER:</span> {ticket.customerName}</p>
+              <p><span className="font-bold">SELLER / CUSTOMER:</span> {ticket.customerName}</p>
               <p><span className="font-bold">ID #:</span> {ticket.customerIdNumber || 'VERIFIED ON FILE'}</p>
               {ticket.vehicleLicensePlate && (
                 <p><span className="font-bold">VEHICLE PLATE:</span> {ticket.vehicleLicensePlate}</p>
@@ -127,7 +127,10 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ ticket, open, onOpen
                 <tbody>
                   {ticket.scrapLines.map((line) => (
                     <tr key={line.id} className="border-b border-slate-200">
-                      <td className="py-1.5 font-bold">{line.metalName}</td>
+                      <td className="py-1.5 font-bold">
+                        {line.metalName}
+                        <span className="block text-[9px] text-slate-500 font-normal">{line.metalCategory}</span>
+                      </td>
                       <td className="py-1.5 text-right">{line.billableWeight} lbs</td>
                       <td className="py-1.5 text-right">${line.ratePerLb.toFixed(2)}</td>
                       <td className="py-1.5 text-right font-bold">${line.lineTotal.toFixed(2)}</td>
@@ -189,23 +192,61 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ ticket, open, onOpen
             </div>
           </div>
 
-          {/* Legal Disclosures */}
+          {/* Statutory Payout & Legal Disclosures */}
           <div className="text-[9px] text-slate-600 border-t border-slate-300 pt-3 space-y-1 leading-tight">
             <p className="font-bold uppercase">{settings.receiptHeader}</p>
             <p>
-              Seller certifies legal ownership of all scrap materials and vehicles listed above. State photo ID was presented and logged into the compliance system.
+              Seller certifies legal ownership of all scrap materials and vehicles listed above. State photo ID was presented and logged into the compliance system. Cash payouts are limited under State Statutory Scrap Metal Theft Prevention Laws ($25.00 for Non-Ferrous and $100.00 for Ferrous). Amounts exceeding statutory cash limits are paid via Check.
             </p>
           </div>
 
-          {/* Customer Signature Line */}
-          <div className="pt-4 grid grid-cols-2 gap-8 items-end">
-            <div>
-              <div className="border-b border-slate-900 mb-1 h-8" />
-              <p className="text-[10px] font-bold">SELLER / CUSTOMER SIGNATURE</p>
+          {/* DUAL SIGNATURE BOX: SELLER SIGNATURE & AUTOMATIC YARD EMPLOYEE SIGNATURE */}
+          <div className="pt-4 border-t-2 border-slate-900 grid grid-cols-2 gap-6 items-end">
+            
+            {/* 1. SELLER SIGNATURE LINE */}
+            <div className="space-y-1">
+              <div className="border-b border-slate-900 h-10 flex items-end pb-1">
+                <span className="text-[10px] text-slate-400 italic font-sans">
+                  Sign here: X _______________________
+                </span>
+              </div>
+              <p className="text-[10px] font-bold uppercase text-slate-900">
+                SELLER / CUSTOMER SIGNATURE
+              </p>
+              <p className="text-[9px] text-slate-500 font-sans">
+                I hereby declare under penalty of perjury that I am the legal owner or authorized seller of the scrap metal listed above.
+              </p>
             </div>
-            <div className="text-right flex flex-col items-end">
-              <QrCode className="w-10 h-10 text-slate-800" />
-              <p className="text-[9px] text-slate-500 font-mono mt-0.5">AUTH #{ticket.id}</p>
+
+            {/* 2. AUTOMATIC YARD EMPLOYEE SIGNATURE: Jackson Hilliard */}
+            <div className="bg-slate-100 p-2.5 rounded border border-slate-300 space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-[9px] font-bold text-slate-600 uppercase flex items-center gap-1">
+                  <FileSignature className="w-3 h-3 text-blue-600" /> Yard Employee Sign-Off
+                </span>
+                <span className="bg-emerald-200 text-emerald-950 font-bold text-[8px] px-1.5 py-0.5 rounded flex items-center gap-1">
+                  <CheckCircle className="w-2.5 h-2.5 text-emerald-800" /> AUTO-SIGNED
+                </span>
+              </div>
+              
+              <div className="bg-white p-2 rounded border border-slate-200 text-center">
+                <span className="font-serif italic font-extrabold text-slate-900 text-base tracking-wide block border-b border-slate-300 pb-1">
+                  Jackson Hilliard
+                </span>
+                <span className="text-[8px] text-slate-500 uppercase font-mono mt-0.5 block">
+                  Authorized Yard Scale Inspector & Compliance Officer
+                </span>
+              </div>
+            </div>
+
+          </div>
+
+          {/* QR Verification Seal */}
+          <div className="pt-2 flex items-center justify-between text-[9px] text-slate-500 font-mono border-t border-slate-200">
+            <span>OPERATOR: Jackson Hilliard (Yard Scale Manager)</span>
+            <div className="flex items-center gap-1">
+              <QrCode className="w-4 h-4 text-slate-800" />
+              <span>AUTH CODE: #{ticket.id}</span>
             </div>
           </div>
 
