@@ -58,6 +58,7 @@ export default function SettingsPage() {
     setTimeout(() => setCopiedField(null), 2500);
   };
 
+  const certbotInstallCmd = `sudo apt update && sudo apt install -y certbot python3-certbot-nginx`;
   const sslCertbotCmd = `sudo certbot --nginx -d ${currentDomain.trim()}`;
 
   const nginxConfigSnippet = `server {
@@ -258,23 +259,39 @@ export default function SettingsPage() {
                 {/* Step 2: SSL Certbot Command */}
                 <div className="p-3 bg-slate-900 rounded-xl border border-slate-800 space-y-1.5">
                   <div className="flex items-center justify-between text-emerald-400 font-bold">
-                    <span>2. Automatic Free HTTPS SSL Certificate</span>
+                    <span>2. Install Certbot & Request SSL</span>
                     <Badge variant="outline" className="text-[9px] border-emerald-500/40 text-emerald-300">LET'S ENCRYPT</Badge>
                   </div>
                   <p className="text-[11px] text-slate-300 font-sans">
-                    Run this command in terminal to enable HTTPS SSL:
+                    Run these commands in terminal to install Certbot & enable HTTPS:
                   </p>
-                  <div className="p-2 bg-slate-950 rounded border border-slate-800 flex items-center justify-between text-[10px] text-emerald-300 font-mono overflow-x-auto">
-                    <span>{sslCertbotCmd}</span>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => copyToClipboard(sslCertbotCmd, 'Certbot SSL Command')}
-                      className="h-6 px-2 text-[10px] text-slate-400 hover:text-white shrink-0 ml-2"
-                    >
-                      {copiedField === 'Certbot SSL Command' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-                    </Button>
+                  
+                  <div className="space-y-1">
+                    <div className="p-2 bg-slate-950 rounded border border-slate-800 flex items-center justify-between text-[10px] text-sky-300 font-mono overflow-x-auto">
+                      <span>{certbotInstallCmd}</span>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => copyToClipboard(certbotInstallCmd, 'Install Certbot Command')}
+                        className="h-6 px-2 text-[10px] text-slate-400 hover:text-white shrink-0 ml-2"
+                      >
+                        {copiedField === 'Install Certbot Command' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                      </Button>
+                    </div>
+
+                    <div className="p-2 bg-slate-950 rounded border border-slate-800 flex items-center justify-between text-[10px] text-emerald-300 font-mono overflow-x-auto">
+                      <span>{sslCertbotCmd}</span>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => copyToClipboard(sslCertbotCmd, 'Certbot SSL Command')}
+                        className="h-6 px-2 text-[10px] text-slate-400 hover:text-white shrink-0 ml-2"
+                      >
+                        {copiedField === 'Certbot SSL Command' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                      </Button>
+                    </div>
                   </div>
                 </div>
 
