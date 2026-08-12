@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { PullYardVehicle, PullYardVehicleStatus } from '@/types/scrap';
 import { storageService } from '@/services/storageService';
 import { generateSamplePhoto } from '@/utils/complianceUtils';
@@ -24,6 +24,7 @@ import {
   Car,
   Plus,
   Image,
+  RefreshCw,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -49,6 +50,34 @@ interface ParsedVehicleRow {
   validationError?: string;
 }
 
+// Quote-aware CSV line splitter
+function parseCsvLine(line: string, delimiter: string): string[] {
+  const result: string[] = [];
+  let current = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+    if (char === '"' || char === "'") {
+      inQuotes = !inQuotes;
+    } else if (char === delimiter && !inQuotes) {
+      result.push(current.trim().replace(/^["']|["']$/g, ''));
+      current = '';
+    } else {
+      current += char;
+    }
+  }
+  result.push(current.trim().replace(/^["']|["']$/g, ''));
+  return result;
+}
+
+// Delimiter auto-detector
+function detectDelimiter(firstLine: string): string {
+  if (firstLine.includes('\t')) return '\t';
+  if (firstLine.includes(';') && !firstLine.includes(',')) return ';';
+  return ',';
+}
+
 export const BulkVehicleUploadModal: React.FC<BulkVehicleUploadModalProps> = ({
   isOpen,
   onClose,
@@ -57,6 +86,8 @@ export const BulkVehicleUploadModal: React.FC<BulkVehicleUploadModalProps> = ({
   const [pasteText, setPasteText] = useState('');
   const [parsedRows, setParsedRows] = useState<ParsedVehicleRow[]>([]);
   const [activeTab, setActiveTab] = useState<'FILE' | 'PASTE'>('FILE');
+  const [isDragging, setIsDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Sample CSV Template Generator
   const downloadSampleCsv = () => {
@@ -80,78 +111,105 @@ export const BulkVehicleUploadModal: React.FC<BulkVehicleUploadModalProps> = ({
 
   const parseCsvText = (text: string) => {
     const lines = text.split(/\r?\n/).filter((line) => line.trim().length > 0);
-    if (lines.length < 2) {
-      toast.error('Spreadsheet text must contain a header line and at least 1 vehicle row.');
+    if (lines.length === 0) {
+      toast.error('The provided spreadsheet file or text is empty.');
       return;
     }
 
-    const header = lines[0].split(',').map((h) => h.trim().toLowerCase().replace(/[^a-z0-9]/g, ''));
-    
-    // Find column indexes
-    const idxSection = header.findIndex((h) => h.includes('section'));
-    const idxYear = header.findIndex((h) => h.includes('year'));
-    const idxMake = header.findIndex((h) => h.includes('make'));
-    const idxModel = header.findIndex((h) => h.includes('model'));
-    const idxColor = header.findIndex((h) => h.includes('color'));
-    const idxVin = header.findIndex((h) => h.includes('vin'));
-    const idxPrice = header.findIndex((h) => h.includes('price') || h.includes('payout') || h.includes('cost'));
-    const idxOrigin = header.findIndex((h) => h.includes('origin') || h.includes('source') || h.includes('tow'));
-    const idxStatus = header.findIndex((h) => h.includes('status'));
-    const idxPhoto = header.findIndex((h) => h.includes('photo') || h.includes('image') || h.includes('picture') || h.includes('url'));
-    const idxNotes = header.findIndex((h) => h.includes('note') || h.includes('desc'));
+    const delimiter = detectDelimiter(lines[0]);
+    const firstLineCols = parseCsvLine(lines[0], delimiter);
+    const firstLineLower = firstLineCols.map((h) => h.toLowerCase().replace(/[^a-z0-9]/g, ''));
+
+    // Flexible Header Synonyms Match
+    let idxSection = firstLineLower.findIndex((h) => h.includes('section') || h.includes('zone') || h.includes('category') || h.includes('dept'));
+    let idxYear = firstLineLower.findIndex((h) => h.includes('year') || h === 'yr');
+    let idxMake = firstLineLower.findIndex((h) => h.includes('make') || h.includes('brand') || h.includes('mfr') || h.includes('manufacturer') || h === 'car' || h === 'vehicle');
+    let idxModel = firstLineLower.findIndex((h) => h.includes('model') || h.includes('trim') || h.includes('series') || h.includes('type'));
+    let idxColor = firstLineLower.findIndex((h) => h.includes('color') || h.includes('paint') || h === 'clr');
+    let idxVin = firstLineLower.findIndex((h) => h.includes('vin') || h.includes('serial'));
+    let idxPrice = firstLineLower.findIndex((h) => h.includes('price') || h.includes('payout') || h.includes('cost') || h.includes('paid') || h.includes('amount') || h.includes('val'));
+    let idxOrigin = firstLineLower.findIndex((h) => h.includes('origin') || h.includes('source') || h.includes('tow') || h.includes('from') || h.includes('loc'));
+    let idxStatus = firstLineLower.findIndex((h) => h.includes('status') || h.includes('state') || h.includes('cond'));
+    let idxPhoto = firstLineLower.findIndex((h) => h.includes('photo') || h.includes('image') || h.includes('picture') || h.includes('url') || h.includes('img') || h.includes('link') || h.includes('pic'));
+    let idxNotes = firstLineLower.findIndex((h) => h.includes('note') || h.includes('desc') || h.includes('comment') || h.includes('info'));
+
+    // Check if first line is actually data (no headers)
+    const hasHeader = idxYear >= 0 || idxMake >= 0 || idxModel >= 0 || idxVin >= 0;
+    const startIdx = hasHeader ? 1 : 0;
 
     const parsed: ParsedVehicleRow[] = [];
 
-    for (let i = 1; i < lines.length; i++) {
-      const col = lines[i].split(',').map((c) => c.trim().replace(/^["']|["']$/g, ''));
-      if (col.length < 2) continue;
+    for (let i = startIdx; i < lines.length; i++) {
+      const col = parseCsvLine(lines[i], delimiter);
+      if (col.length < 1 || col.every((c) => !c.trim())) continue;
 
-      const rawSection = idxSection >= 0 ? col[idxSection] : '';
-      const year = idxYear >= 0 ? parseInt(col[idxYear]) || new Date().getFullYear() - 10 : 2010;
-      const make = idxMake >= 0 ? col[idxMake] || '' : '';
-      const model = idxModel >= 0 ? col[idxModel] || '' : '';
-      const color = idxColor >= 0 ? col[idxColor] || 'Unknown' : 'Unknown';
-      const vin = idxVin >= 0 ? col[idxVin] || '' : '';
-      const purchasePrice = idxPrice >= 0 ? parseFloat(col[idxPrice]) || 0 : 0;
-      const originSource = idxOrigin >= 0 ? col[idxOrigin] || 'Bulk CSV Import' : 'Bulk CSV Import';
-      const rawStatus = idxStatus >= 0 ? col[idxStatus].toUpperCase() : 'PENDING';
-      const photoUrl = idxPhoto >= 0 && col[idxPhoto] ? col[idxPhoto] : '';
-      const notes = idxNotes >= 0 ? col[idxNotes] || '' : '';
+      let year = idxYear >= 0 && col[idxYear] ? parseInt(col[idxYear]) : 0;
+      let make = idxMake >= 0 && col[idxMake] ? col[idxMake] : '';
+      let model = idxModel >= 0 && col[idxModel] ? col[idxModel] : '';
+      let color = idxColor >= 0 && col[idxColor] ? col[idxColor] : 'Unknown';
+      let vin = idxVin >= 0 && col[idxVin] ? col[idxVin] : '';
+      let purchasePrice = idxPrice >= 0 && col[idxPrice] ? parseFloat(col[idxPrice].replace(/[^0-9.]/g, '')) || 0 : 0;
+      let originSource = idxOrigin >= 0 && col[idxOrigin] ? col[idxOrigin] : 'Bulk CSV Import';
+      let rawStatus = idxStatus >= 0 && col[idxStatus] ? col[idxStatus].toUpperCase() : 'PENDING';
+      let photoUrl = idxPhoto >= 0 && col[idxPhoto] ? col[idxPhoto] : '';
+      let notes = idxNotes >= 0 && col[idxNotes] ? col[idxNotes] : '';
+      let rawSection = idxSection >= 0 && col[idxSection] ? col[idxSection] : '';
 
-      // Normalize section
+      // Fallback Smart Column Matchers if header is missing
+      if (!year) {
+        const yearCol = col.find((c) => /^(19\d{2}|20\d{2})$/.test(c.trim()));
+        if (yearCol) year = parseInt(yearCol.trim());
+      }
+      if (!vin) {
+        const vinCol = col.find((c) => c.trim().length === 17 && /^[A-HJ-NPR-Z0-9]+$/i.test(c.trim()));
+        if (vinCol) vin = vinCol.trim();
+      }
+      if (!make && col.length >= 2) {
+        // Find text column not matching numeric year
+        const textCols = col.filter((c) => c.trim() && !/^\d+$/.test(c.trim()) && !c.includes('http'));
+        if (textCols.length >= 1) make = textCols[0];
+        if (textCols.length >= 2 && !model) model = textCols[1];
+      }
+
+      // Default Year if missing
+      if (!year || isNaN(year)) year = new Date().getFullYear() - 10;
+
+      // Section Normalization
       let section: PullYardVehicle['section'] = 'Domestic Trucks & SUVs';
-      if (rawSection.toLowerCase().includes('ford') || make.toLowerCase().includes('ford')) {
+      const sectionMatchStr = `${rawSection} ${make}`.toLowerCase();
+
+      if (sectionMatchStr.includes('ford') || sectionMatchStr.includes('lincoln')) {
         section = 'Ford & Lincoln';
-      } else if (rawSection.toLowerCase().includes('gm') || rawSection.toLowerCase().includes('chevy') || make.toLowerCase().includes('chevrolet')) {
+      } else if (sectionMatchStr.includes('gm') || sectionMatchStr.includes('chevy') || sectionMatchStr.includes('chevrolet') || sectionMatchStr.includes('gmc') || sectionMatchStr.includes('cadillac') || sectionMatchStr.includes('buick')) {
         section = 'GM & Chevrolet';
-      } else if (rawSection.toLowerCase().includes('dodge') || rawSection.toLowerCase().includes('chrysler') || make.toLowerCase().includes('dodge')) {
+      } else if (sectionMatchStr.includes('dodge') || sectionMatchStr.includes('chrysler') || sectionMatchStr.includes('ram') || sectionMatchStr.includes('jeep')) {
         section = 'Chrysler & Dodge';
-      } else if (rawSection.toLowerCase().includes('asian') || rawSection.toLowerCase().includes('import') || ['toyota', 'honda', 'nissan'].includes(make.toLowerCase())) {
+      } else if (sectionMatchStr.includes('asian') || sectionMatchStr.includes('import') || ['toyota', 'honda', 'nissan', 'hyundai', 'kia', 'subaru', 'mazda', 'lexus', 'acura', 'infinity'].some((m) => sectionMatchStr.includes(m))) {
         section = 'Asian Imports';
-      } else if (rawSection.toLowerCase().includes('euro') || ['bmw', 'mercedes', 'audi', 'volkswagen'].includes(make.toLowerCase())) {
+      } else if (sectionMatchStr.includes('euro') || ['bmw', 'mercedes', 'audi', 'volkswagen', 'volvo', 'porsche', 'jaguar'].some((m) => sectionMatchStr.includes(m))) {
         section = 'European';
       }
 
-      // Normalize status
+      // Status Normalization
       let status: PullYardVehicleStatus = 'PENDING';
-      if (rawStatus.includes('AVAIL')) status = 'AVAILABLE';
-      if (rawStatus.includes('CRUSH') || rawStatus.includes('STRIP')) status = 'CRUSHED';
+      if (rawStatus.includes('AVAIL') || rawStatus.includes('YARD') || rawStatus.includes('READY')) status = 'AVAILABLE';
+      if (rawStatus.includes('CRUSH') || rawStatus.includes('STRIP') || rawStatus.includes('BAIL')) status = 'CRUSHED';
 
-      const isValid = Boolean(make && model);
-      const validationError = !isValid ? 'Missing Make or Model' : undefined;
+      const isValid = Boolean(make && make.trim().length > 0);
+      const validationError = !isValid ? 'Missing Make name' : undefined;
 
       parsed.push({
         section,
         year,
-        make,
-        model,
-        color,
-        vin: vin.toUpperCase(),
+        make: make.trim(),
+        model: model.trim() || 'Unspecified',
+        color: color.trim() || 'Unknown',
+        vin: vin.toUpperCase().trim(),
         purchasePrice,
-        originSource,
+        originSource: originSource.trim() || 'Bulk CSV Import',
         status,
-        photoUrl,
-        notes,
+        photoUrl: photoUrl.trim(),
+        notes: notes.trim(),
         isValid,
         validationError,
       });
@@ -159,15 +217,33 @@ export const BulkVehicleUploadModal: React.FC<BulkVehicleUploadModalProps> = ({
 
     setParsedRows(parsed);
     if (parsed.length > 0) {
-      toast.success(`Parsed ${parsed.length} vehicle rows from spreadsheet!`);
+      toast.success(`Successfully parsed ${parsed.length} vehicle records from CSV!`);
     } else {
-      toast.error('Could not parse any vehicle rows. Check CSV formatting.');
+      toast.error('Could not extract valid vehicle rows. Please check spreadsheet formatting.');
     }
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      toast.info(`Reading ${file.name}...`);
+      const reader = new FileReader();
+      reader.onload = (evt) => {
+        const text = evt.target?.result as string;
+        parseCsvText(text);
+      };
+      reader.readAsText(file);
+    }
+    // Reset file input so re-selecting the same file works
+    if (e.target) e.target.value = '';
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
+      toast.info(`Processing dropped file: ${file.name}...`);
       const reader = new FileReader();
       reader.onload = (evt) => {
         const text = evt.target?.result as string;
@@ -212,7 +288,7 @@ export const BulkVehicleUploadModal: React.FC<BulkVehicleUploadModalProps> = ({
       count++;
     });
 
-    toast.success(`Successfully imported ${count} vehicles with photos into yard inventory!`);
+    toast.success(`Successfully imported ${count} vehicles into yard inventory!`);
     onUploadSuccess();
     onClose();
   };
@@ -250,7 +326,7 @@ export const BulkVehicleUploadModal: React.FC<BulkVehicleUploadModalProps> = ({
                 activeTab === 'FILE' ? 'bg-emerald-600 text-white' : 'text-slate-400 hover:text-white'
               }`}
             >
-              <Upload className="w-3.5 h-3.5" /> 1. Upload CSV File
+              <Upload className="w-3.5 h-3.5" /> 1. Upload or Drop CSV File
             </button>
             <button
               type="button"
@@ -263,14 +339,23 @@ export const BulkVehicleUploadModal: React.FC<BulkVehicleUploadModalProps> = ({
             </button>
           </div>
 
-          {/* TAB 1: FILE UPLOAD BOX */}
+          {/* TAB 1: FILE UPLOAD & DROP BOX */}
           {activeTab === 'FILE' && (
-            <div className="border-2 border-dashed border-slate-800 rounded-xl p-6 bg-slate-900/50 text-center space-y-3 hover:border-emerald-500/50 transition-colors">
+            <div
+              onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+              onDragLeave={() => setIsDragging(false)}
+              onDrop={handleDrop}
+              className={`border-2 border-dashed rounded-xl p-6 text-center space-y-3 transition-colors ${
+                isDragging
+                  ? 'border-emerald-400 bg-emerald-950/40'
+                  : 'border-slate-800 bg-slate-900/50 hover:border-emerald-500/50'
+              }`}
+            >
               <div className="w-12 h-12 bg-emerald-500/10 text-emerald-400 rounded-2xl flex items-center justify-center mx-auto border border-emerald-500/20">
                 <FileSpreadsheet className="w-6 h-6" />
               </div>
               <div>
-                <p className="font-bold text-white text-sm">Select or drop your vehicle CSV spreadsheet file</p>
+                <p className="font-bold text-white text-sm">Select or Drag & Drop CSV Spreadsheet File</p>
                 <p className="text-[11px] text-slate-400 mt-0.5">
                   Supported CSV headers: Section, Year, Make, Model, Color, VIN, PurchasePrice, OriginSource, Status, <strong>PhotoUrl</strong>, Notes
                 </p>
@@ -279,6 +364,7 @@ export const BulkVehicleUploadModal: React.FC<BulkVehicleUploadModalProps> = ({
               <label className="cursor-pointer inline-flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs px-4 py-2.5 rounded-lg transition-colors shadow-lg shadow-emerald-950">
                 <Upload className="w-4 h-4" /> Browse & Upload CSV Spreadsheet
                 <input
+                  ref={fileInputRef}
                   type="file"
                   accept=".csv,.txt,.tsv"
                   onChange={handleFileUpload}
@@ -323,7 +409,14 @@ export const BulkVehicleUploadModal: React.FC<BulkVehicleUploadModalProps> = ({
                     </Badge>
                   )}
                 </div>
-                <span className="text-[11px] text-slate-400">Total parsed: {parsedRows.length} vehicles</span>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setParsedRows([])}
+                  className="text-slate-400 hover:text-white text-[11px] h-7 gap-1"
+                >
+                  <RefreshCw className="w-3 h-3" /> Clear Preview
+                </Button>
               </div>
 
               <div className="border border-slate-800 rounded-xl overflow-hidden max-h-[300px] overflow-y-auto">
