@@ -255,6 +255,7 @@ export interface CarIntakeRecord {
 
   purchasePrice?: number;
   originSource?: string;
+  customerAddress?: string;
   notes?: string;
   photoUrl?: string;
 
