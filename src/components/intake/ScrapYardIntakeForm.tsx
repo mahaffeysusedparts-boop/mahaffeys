@@ -48,6 +48,7 @@ import {
   Search,
   Upload,
   RefreshCw,
+  Hash,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -63,6 +64,11 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
 
   // Loaded or active ticket ID (if completing a pending ticket created in the field)
   const [activeTicketId, setActiveTicketId] = useState<string | null>(null);
+
+  // Editable Receipt / Ticket Number
+  const [customReceiptNumber, setCustomReceiptNumber] = useState<string>(
+    `T-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`
+  );
 
   const [metals] = useState<MetalGrade[]>(storageService.getMetals());
   const [customers] = useState<Customer[]>(storageService.getCustomers());
@@ -109,6 +115,12 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
 
   const complianceStats = calculateComplianceScore(complianceCaptures);
 
+  const handleAutoGenerateReceiptNumber = () => {
+    const newNum = `T-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
+    setCustomReceiptNumber(newNum);
+    toast.info(`Generated Receipt #${newNum}`);
+  };
+
   // Refresh pending tickets from shared storage
   const refreshPendingTickets = () => {
     const allTickets = storageService.getTickets();
@@ -144,7 +156,6 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
     if (profile.vehicleLicensePlate) setVehicleLicensePlate(profile.vehicleLicensePlate);
     setIsDlScanned(true);
 
-    // Auto-link to existing customer record if ID # or name matches
     const matchedCustomer = customers.find(
       (c) =>
         (c.idNumber && profile.idNumber && c.idNumber.toLowerCase() === profile.idNumber.toLowerCase()) ||
@@ -190,6 +201,7 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
   // Load a pending ticket from the Pending Group into the Office PC Scale Workstation
   const handleLoadPendingTicket = (pending: Ticket) => {
     setActiveTicketId(pending.id);
+    setCustomReceiptNumber(pending.id);
     setSelectedCustomerId(pending.customerId || '');
     setCustomerName(pending.customerName);
     setCustomerIdNumber(pending.customerIdNumber || '');
@@ -220,7 +232,7 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
     }
 
     const currentOp = storageService.getSettings().operatorName;
-    const ticketId = activeTicketId || `T-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
+    const ticketId = customReceiptNumber.trim() || `T-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
 
     const pendingTicket: Ticket = {
       id: ticketId,
@@ -248,12 +260,12 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
       description: `Customer ${customerName} added to the pending finalization queue.`,
     });
 
-    // Reset form for next customer
     resetForm();
   };
 
   const resetForm = () => {
     setActiveTicketId(null);
+    setCustomReceiptNumber(`T-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`);
     setSelectedCustomerId('');
     setCustomerName('');
     setCustomerIdNumber('');
@@ -364,6 +376,10 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
       toast.error('Please enter customer name for state compliance record');
       return;
     }
+    if (!customReceiptNumber.trim()) {
+      toast.error('Please enter a Receipt / Ticket Number');
+      return;
+    }
 
     if (payoutMethod === 'Cash' && exceedsCashLimit) {
       toast.error(`Cash payouts are limited by law to $${maxCashLimit.toFixed(2)}. Payout must be issued by Check.`);
@@ -376,7 +392,16 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
     }
 
     const currentOp = storageService.getSettings().operatorName;
-    const finalTicketId = activeTicketId || `T-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
+    const finalTicketId = customReceiptNumber.trim();
+
+    // If activeTicketId was loaded and changed, update ticket ID
+    if (activeTicketId && activeTicketId !== finalTicketId) {
+      const res = storageService.updateTicketId(activeTicketId, finalTicketId);
+      if (!res.success) {
+        toast.error(res.message || "Failed to update receipt number");
+        return;
+      }
+    }
 
     const completedTicket: Ticket = {
       id: finalTicketId,
@@ -553,6 +578,42 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
           </CardContent>
         </Card>
       )}
+
+      {/* EDITABLE RECEIPT / TICKET NUMBER BAR */}
+      <Card className="bg-slate-900 border-slate-800 text-white p-3 rounded-xl shadow-lg">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <Hash className="w-5 h-5 text-amber-400 shrink-0" />
+            <div>
+              <Label className="text-xs font-bold text-slate-300 uppercase tracking-wider block">
+                Receipt / Ticket Number (Editable)
+              </Label>
+              <p className="text-[10px] text-slate-400">
+                Custom invoice or printed voucher # to print on customer & yard copy
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Input
+              value={customReceiptNumber}
+              onChange={(e) => setCustomReceiptNumber(e.target.value)}
+              placeholder="e.g. T-2025-1001 or INV-8821"
+              className="bg-slate-950 border-slate-700 text-amber-300 font-mono font-extrabold text-sm h-10 w-52 text-center"
+            />
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={handleAutoGenerateReceiptNumber}
+              className="border-slate-700 bg-slate-800 text-slate-300 hover:text-white text-xs h-10 gap-1 shrink-0"
+              title="Auto-Generate New Ticket Number"
+            >
+              <RefreshCw className="w-3.5 h-3.5 text-emerald-400" /> New #
+            </Button>
+          </div>
+        </div>
+      </Card>
 
       {/* STEP 1: INITIAL INTAKE & CUSTOMER COMPLIANCE PAGE */}
       {currentStep === 1 && (
@@ -768,7 +829,11 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
                 </CardHeader>
 
                 <CardContent className="p-4 space-y-4">
-                  <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-2 text-xs">
+                  <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-2 text-xs font-mono">
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Receipt / Ticket #:</span>
+                      <span className="text-amber-400 font-bold">{customReceiptNumber}</span>
+                    </div>
                     <div className="flex justify-between">
                       <span className="text-slate-400">Seller Name:</span>
                       <span className="text-white font-bold">{customerName || 'Not Entered'}</span>
@@ -826,11 +891,9 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
                 <span className="font-bold text-white">{customerName}</span>
                 <span className="text-slate-400 ml-2 font-mono">({customerIdNumber || 'DL On File'})</span>
                 <span className="text-emerald-400 ml-2">| Tag: {vehicleLicensePlate || 'Verified'}</span>
-                {activeTicketId && (
-                  <Badge className="ml-2 bg-amber-500/20 text-amber-300 border-amber-500/30 font-mono text-[10px]">
-                    Ticket #{activeTicketId}
-                  </Badge>
-                )}
+                <Badge className="ml-2 bg-amber-500/20 text-amber-300 border-amber-500/30 font-mono text-[10px]">
+                  Receipt #{customReceiptNumber}
+                </Badge>
               </div>
             </div>
 
@@ -840,7 +903,7 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
               onClick={() => setCurrentStep(1)}
               className="border-slate-700 text-slate-300 hover:bg-slate-800 text-xs"
             >
-              Edit Details
+              Edit Step 1 Details
             </Button>
           </div>
 
@@ -1083,6 +1146,10 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
                   {/* Summary Amount */}
                   <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-2">
                     <div className="flex justify-between text-xs text-slate-400 font-mono">
+                      <span>Receipt / Ticket #:</span>
+                      <span className="text-amber-400 font-bold">{customReceiptNumber}</span>
+                    </div>
+                    <div className="flex justify-between text-xs text-slate-400 font-mono">
                       <span>Total Billable Weight:</span>
                       <span className="text-white font-bold">{totalBillableWeight.toLocaleString()} LBS</span>
                     </div>
@@ -1198,7 +1265,7 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
                     disabled={lines.length === 0}
                     className="w-full h-12 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-slate-950 font-extrabold shadow-lg shadow-emerald-950 text-sm tracking-wide"
                   >
-                    <CheckCircle2 className="w-5 h-5 mr-2" /> Complete Ticket & Issue Voucher
+                    <CheckCircle2 className="w-5 h-5 mr-2" /> Complete Ticket #{customReceiptNumber} & Issue Voucher
                   </Button>
                 </CardContent>
               </Card>

@@ -23,6 +23,8 @@ import {
   Truck,
   FileCheck,
   Video,
+  Hash,
+  RefreshCw,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -38,6 +40,11 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
   // References for device camera / file capture
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Editable Receipt / Ticket Number
+  const [customReceiptNumber, setCustomReceiptNumber] = useState<string>(
+    `T-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`
+  );
 
   // Vehicle Details
   const [vin, setVin] = useState<string>('');
@@ -71,6 +78,12 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
 
   const [payoutMethod, setPayoutMethod] = useState<'Cash' | 'Check' | 'ACH Direct Transfer'>('Cash');
   const [checkNumber, setCheckNumber] = useState<string>('CHK-' + Math.floor(1000 + Math.random() * 9000));
+
+  const handleAutoGenerateReceiptNumber = () => {
+    const newNum = `T-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
+    setCustomReceiptNumber(newNum);
+    toast.info(`Generated Receipt #${newNum}`);
+  };
 
   // Handle local image file upload for vehicle photo
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -119,6 +132,10 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
       toast.error('Please enter the vehicle VIN number');
       return;
     }
+    if (!customReceiptNumber.trim()) {
+      toast.error('Please enter a Receipt / Ticket Number');
+      return;
+    }
     if (purchasePrice < 0 || isNaN(purchasePrice)) {
       toast.error('Please enter a valid Purchase Price ($)');
       return;
@@ -160,7 +177,7 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
     };
 
     const newTicket: Ticket = {
-      id: `T-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
+      id: customReceiptNumber.trim(),
       ticketType: 'CAR_SALVAGE',
       createdAt: new Date().toISOString(),
       status: 'PENDING',
@@ -238,6 +255,42 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
           </Badge>
         </div>
       </div>
+
+      {/* EDITABLE RECEIPT / TICKET NUMBER BAR */}
+      <Card className="bg-slate-900 border-slate-800 text-white p-3 rounded-xl shadow-lg">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <Hash className="w-5 h-5 text-amber-400 shrink-0" />
+            <div>
+              <Label className="text-xs font-bold text-slate-300 uppercase tracking-wider block">
+                Receipt / Ticket Number (Editable)
+              </Label>
+              <p className="text-[10px] text-slate-400">
+                Set a custom receipt # or use auto-generated voucher number
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Input
+              value={customReceiptNumber}
+              onChange={(e) => setCustomReceiptNumber(e.target.value)}
+              placeholder="e.g. T-2025-1001"
+              className="bg-slate-950 border-slate-700 text-amber-300 font-mono font-extrabold text-sm h-10 w-52 text-center"
+            />
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={handleAutoGenerateReceiptNumber}
+              className="border-slate-700 bg-slate-800 text-slate-300 hover:text-white text-xs h-10 gap-1 shrink-0"
+              title="Auto-Generate New Ticket Number"
+            >
+              <RefreshCw className="w-3.5 h-3.5 text-emerald-400" /> New #
+            </Button>
+          </div>
+        </div>
+      </Card>
 
       {/* Main Intake Layout Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -631,6 +684,10 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
                 <span className="text-xs font-mono text-amber-400 font-bold uppercase tracking-wider block">
                   INTAKE SUMMARY
                 </span>
+                <div className="flex justify-between items-baseline pt-1">
+                  <span className="text-xs text-slate-400 font-mono">Receipt #:</span>
+                  <span className="text-amber-300 font-mono font-bold text-sm">{customReceiptNumber}</span>
+                </div>
                 <div className="flex justify-between items-baseline pt-1">
                   <span className="text-sm text-slate-300 font-medium">Purchase Payout:</span>
                   <span className="text-3xl font-black text-emerald-400 font-mono">

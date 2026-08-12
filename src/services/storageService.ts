@@ -864,8 +864,8 @@ export const INITIAL_TICKETS: Ticket[] = [
     totalDeductions: 0,
     finalPayout: 0,
     payoutMethod: 'Cash',
-    operatorName: 'iPad Yard Station 1',
-    notes: 'Scanned at yard entrance on iPad. Driver waiting at Office PC scale.',
+    operatorName: 'Yard Station 1',
+    notes: 'Scanned at yard entrance. Driver waiting at Office PC scale.',
   }
 ];
 
@@ -1191,6 +1191,44 @@ export const storageService = {
     }
 
     return ticket;
+  },
+
+  updateTicketId(oldId: string, newId: string): { success: boolean; message?: string } {
+    const cleanNewId = newId.trim();
+    if (!cleanNewId) {
+      return { success: false, message: "Receipt / Ticket number cannot be empty" };
+    }
+
+    const tickets = this.getTickets();
+    const existingTarget = tickets.find((t) => t.id === cleanNewId);
+    if (existingTarget && oldId !== cleanNewId) {
+      return { success: false, message: `Receipt number "${cleanNewId}" is already used by another ticket` };
+    }
+
+    const ticketIndex = tickets.findIndex((t) => t.id === oldId);
+    if (ticketIndex === -1) {
+      return { success: false, message: "Original ticket not found" };
+    }
+
+    // Update ticket ID
+    tickets[ticketIndex].id = cleanNewId;
+    sharedStorage.setItem(STORAGE_KEYS.TICKETS, JSON.stringify(tickets));
+
+    // Update associated cash drawer logs referencing this ticket
+    const cashLogs = this.getCashDrawerLogs();
+    let updatedCashLogs = false;
+    cashLogs.forEach((log) => {
+      if (log.ticketId === oldId) {
+        log.ticketId = cleanNewId;
+        log.notes = log.notes?.replace(oldId, cleanNewId);
+        updatedCashLogs = true;
+      }
+    });
+    if (updatedCashLogs) {
+      sharedStorage.setItem(STORAGE_KEYS.CASH_DRAWER, JSON.stringify(cashLogs));
+    }
+
+    return { success: true };
   },
 
   getNMVTISLogs(): NMVTISReportLog[] {

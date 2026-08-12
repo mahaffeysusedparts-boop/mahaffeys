@@ -7,6 +7,7 @@ import { ReceiptModal } from '@/components/receipts/ReceiptModal';
 import { calculateComplianceScore } from '@/utils/complianceUtils';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -17,6 +18,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogDescription,
+  DialogFooter,
 } from '@/components/ui/dialog';
 import {
   Receipt,
@@ -28,6 +30,8 @@ import {
   Download,
   Ban,
   ShieldCheck,
+  Edit3,
+  Hash,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -39,9 +43,34 @@ export default function TicketsPage() {
   const [inspectionTicket, setInspectionTicket] = useState<Ticket | null>(null);
   const [receiptOpen, setReceiptOpen] = useState(false);
 
+  // Edit Receipt Number Modal
+  const [editReceiptTicket, setEditReceiptTicket] = useState<Ticket | null>(null);
+  const [newReceiptNumber, setNewReceiptNumber] = useState('');
+
+  const refreshData = () => {
+    setTickets(storageService.getTickets());
+  };
+
   const handlePrint = (ticket: Ticket) => {
     setSelectedTicket(ticket);
     setReceiptOpen(true);
+  };
+
+  const handleOpenEditReceipt = (ticket: Ticket) => {
+    setEditReceiptTicket(ticket);
+    setNewReceiptNumber(ticket.id);
+  };
+
+  const handleSaveReceiptNumber = () => {
+    if (!editReceiptTicket) return;
+    const res = storageService.updateTicketId(editReceiptTicket.id, newReceiptNumber);
+    if (!res.success) {
+      toast.error(res.message || 'Could not update receipt number');
+      return;
+    }
+    toast.success(`Receipt number updated from #${editReceiptTicket.id} to #${newReceiptNumber.trim()}!`);
+    refreshData();
+    setEditReceiptTicket(null);
   };
 
   const handleVoidTicket = (id: string) => {
@@ -173,7 +202,7 @@ export default function TicketsPage() {
               <Table>
                 <TableHeader className="bg-slate-950">
                   <TableRow className="border-slate-800 hover:bg-slate-950 text-xs">
-                    <TableHead className="text-slate-400">Ticket ID</TableHead>
+                    <TableHead className="text-slate-400">Receipt / Ticket #</TableHead>
                     <TableHead className="text-slate-400">Type</TableHead>
                     <TableHead className="text-slate-400">Date & Time</TableHead>
                     <TableHead className="text-slate-400">Customer / Seller</TableHead>
@@ -195,7 +224,17 @@ export default function TicketsPage() {
                       <TableRow key={t.id} className="border-slate-800 hover:bg-slate-800/50 text-xs">
                         
                         <TableCell className="font-mono font-bold text-amber-400">
-                          {t.id}
+                          <div className="flex items-center gap-1">
+                            <span>#{t.id}</span>
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEditReceipt(t)}
+                              className="text-slate-500 hover:text-amber-300 p-0.5"
+                              title="Edit Receipt Number"
+                            >
+                              <Edit3 className="w-3 h-3" />
+                            </button>
+                          </div>
                         </TableCell>
 
                         <TableCell>
@@ -259,6 +298,10 @@ export default function TicketsPage() {
                             <Badge variant="outline" className="border-emerald-500/40 text-emerald-400 text-[10px]">
                               PAID
                             </Badge>
+                          ) : t.status === 'PENDING' ? (
+                            <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/30 text-[10px]">
+                              PENDING
+                            </Badge>
                           ) : (
                             <Badge variant="outline" className="border-red-500/40 text-red-400 text-[10px]">
                               VOIDED
@@ -267,6 +310,16 @@ export default function TicketsPage() {
                         </TableCell>
 
                         <TableCell className="text-right space-x-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleOpenEditReceipt(t)}
+                            className="h-7 px-2 text-amber-400 hover:text-amber-300 hover:bg-slate-800 text-xs"
+                            title="Edit Receipt #"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                          </Button>
+
                           <Button
                             variant="ghost"
                             size="sm"
@@ -314,6 +367,50 @@ export default function TicketsPage() {
         onOpenChange={setReceiptOpen}
       />
 
+      {/* EDIT RECEIPT NUMBER MODAL */}
+      {editReceiptTicket && (
+        <Dialog open={!!editReceiptTicket} onOpenChange={() => setEditReceiptTicket(null)}>
+          <DialogContent className="bg-slate-950 text-slate-100 border-slate-800 sm:max-w-[420px]">
+            <DialogHeader>
+              <DialogTitle className="text-base font-bold text-white flex items-center gap-2">
+                <Hash className="w-5 h-5 text-amber-400" /> Edit Receipt / Ticket Number
+              </DialogTitle>
+              <DialogDescription className="text-xs text-slate-400">
+                Change the receipt number for customer {editReceiptTicket.customerName}
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-3 py-2 text-xs font-mono">
+              <div className="p-2.5 bg-slate-900 rounded-lg border border-slate-800 space-y-1">
+                <div>Current Receipt #: <strong className="text-amber-300">{editReceiptTicket.id}</strong></div>
+                <div>Customer: <strong className="text-white">{editReceiptTicket.customerName}</strong></div>
+                <div>Payout: <strong className="text-emerald-400">${editReceiptTicket.finalPayout.toFixed(2)}</strong></div>
+              </div>
+
+              <div>
+                <Label className="text-slate-300 font-sans">New Receipt / Ticket # *</Label>
+                <Input
+                  value={newReceiptNumber}
+                  onChange={(e) => setNewReceiptNumber(e.target.value)}
+                  placeholder="e.g. T-2025-1001 or INV-8821"
+                  className="bg-slate-900 border-slate-800 text-amber-300 font-mono font-extrabold text-sm h-11 mt-1"
+                />
+              </div>
+            </div>
+
+            <DialogFooter className="pt-2 border-t border-slate-800">
+              <Button variant="ghost" onClick={() => setEditReceiptTicket(null)} className="text-slate-400 text-xs">
+                Cancel
+              </Button>
+              <Button onClick={handleSaveReceiptNumber} className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs">
+                Update Receipt Number
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* INSPECTION MODAL */}
       {inspectionTicket && (
         <Dialog open={!!inspectionTicket} onOpenChange={() => setInspectionTicket(null)}>
           <DialogContent className="max-w-2xl bg-slate-950 text-slate-100 border-slate-800 p-6">
