@@ -50,6 +50,8 @@ export default function SettingsPage() {
   };
 
   const currentDomain = settings.customDomain || 'app.mahaffeysusedparts.com';
+  const publicIp = '168.220.187.68';
+  const privateIp = '192.168.1.210';
 
   const copyToClipboard = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
@@ -66,7 +68,7 @@ export default function SettingsPage() {
     server_name ${currentDomain.trim()};
 
     location / {
-        proxy_pass http://127.0.0.1:3000;
+        proxy_pass http://127.0.0.1:8080;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection 'upgrade';
@@ -252,7 +254,8 @@ export default function SettingsPage() {
                   <div className="p-2 bg-slate-950 rounded border border-slate-800 space-y-0.5 text-[10px] text-slate-200">
                     <p><strong className="text-slate-400">Type:</strong> A</p>
                     <p><strong className="text-slate-400">Host / Name:</strong> {currentDomain.split('.')[0] || 'app'}</p>
-                    <p><strong className="text-slate-400">Points to:</strong> Your Linux Server Public IP (e.g. 192.168.1.210 or WAN IP)</p>
+                    <p><strong className="text-slate-400">Public WAN IP:</strong> {publicIp}</p>
+                    <p><strong className="text-slate-400">Private LAN IP:</strong> {privateIp}</p>
                   </div>
                 </div>
 
@@ -479,7 +482,7 @@ export default function SettingsPage() {
             <div className="flex items-start gap-3 text-xs text-slate-400">
               <Server className="mt-0.5 h-5 w-5 shrink-0 text-sky-400" />
               <div>
-                <p className="font-semibold text-slate-200">Shared records are stored on your Linux PC.</p>
+                <p className="font-semibold text-slate-200">Shared records are stored on your Linux PC ({privateIp}).</p>
                 <p className="mt-1">JSON imports migrate yard records only. User passwords remain protected and must be created through secure account registration.</p>
               </div>
             </div>
