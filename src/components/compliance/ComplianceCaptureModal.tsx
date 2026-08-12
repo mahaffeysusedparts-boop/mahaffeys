@@ -27,6 +27,8 @@ import {
   Sparkles,
   Loader2,
   Wand2,
+  FileSignature,
+  RotateCcw,
 } from "lucide-react";
 import { ComplianceCaptures } from "@/types/scrap";
 import {
@@ -65,6 +67,7 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
       vehiclePhotoUrl: undefined,
       licensePlatePhotoUrl: undefined,
       loadPhotoUrl: undefined,
+      signatureUrl: undefined,
     }
   );
 
@@ -74,6 +77,10 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
   const [aiPlateResult, setAiPlateResult] = useState<AILicensePlateResult | null>(null);
   const [isAiAnalyzing, setIsAiAnalyzing] = useState(false);
   const [useLiveCamera, setUseLiveCamera] = useState(false);
+
+  // Signature Pad Canvas State
+  const sigCanvasRef = useRef<HTMLCanvasElement>(null);
+  const [isDrawingSig, setIsDrawingSig] = useState(false);
 
   // References for Device Camera & File inputs
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -105,7 +112,6 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
     setUseLiveCamera(false);
   };
 
-  // Run AI Vision OCR analysis on captured/uploaded photo
   const runAiAnalysis = async (targetKey: keyof ComplianceCaptures, imageDataUrl: string) => {
     setIsAiAnalyzing(true);
     try {
@@ -231,6 +237,63 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
     if (key === 'licensePlatePhotoUrl') setAiPlateResult(null);
   };
 
+  // Signature Pad Handlers
+  const startDrawingSig = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    const canvas = sigCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    setIsDrawingSig(true);
+    const rect = canvas.getBoundingClientRect();
+    const x = ('touches' in e) ? e.touches[0].clientX - rect.left : e.clientX - rect.left;
+    const y = ('touches' in e) ? e.touches[0].clientY - rect.top : e.clientY - rect.top;
+
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+  };
+
+  const drawSig = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    if (!isDrawingSig) return;
+    const canvas = sigCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const x = ('touches' in e) ? e.touches[0].clientX - rect.left : e.clientX - rect.left;
+    const y = ('touches' in e) ? e.touches[0].clientY - rect.top : e.clientY - rect.top;
+
+    ctx.strokeStyle = '#020617';
+    ctx.lineWidth = 3;
+    ctx.lineCap = 'round';
+    ctx.lineTo(x, y);
+    ctx.stroke();
+  };
+
+  const stopDrawingSig = () => {
+    setIsDrawingSig(false);
+  };
+
+  const handleClearSignature = () => {
+    const canvas = sigCanvasRef.current;
+    if (canvas) {
+      const ctx = canvas.getContext('2d');
+      if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+    setCaptures((prev) => ({ ...prev, signatureUrl: undefined }));
+    toast.info("Signature cleared");
+  };
+
+  const handleSaveSignature = () => {
+    const canvas = sigCanvasRef.current;
+    if (canvas) {
+      const dataUrl = canvas.toDataURL('image/png');
+      setCaptures((prev) => ({ ...prev, signatureUrl: dataUrl }));
+      toast.success("Seller digital signature captured!");
+    }
+  };
+
   const handleSave = () => {
     stopCameraStream();
     onSaveCaptures(captures, scannedProfile);
@@ -241,7 +304,6 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
     <Dialog open={isOpen} onOpenChange={(open) => { if (!open) stopCameraStream(); onClose(); }}>
       <DialogContent className="max-w-4xl max-h-[94vh] overflow-y-auto bg-slate-950 text-slate-100 border-slate-800 p-4 sm:p-6">
         
-        {/* Device Camera Native Input */}
         <input
           type="file"
           ref={cameraInputRef}
@@ -251,7 +313,6 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
           className="hidden"
         />
 
-        {/* Regular File Upload Input */}
         <input
           type="file"
           ref={fileInputRef}
@@ -270,11 +331,11 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
               </div>
               <div>
                 <DialogTitle className="text-lg sm:text-xl font-bold tracking-tight text-white flex items-center gap-2">
-                  5-Point Photo & AI Compliance Studio
+                  Photo & Digital Signature Compliance Studio
                   <Sparkles className="w-4 h-4 text-amber-400" />
                 </DialogTitle>
                 <DialogDescription className="text-slate-400 text-xs mt-0.5">
-                  AI OCR Auto-Fills Seller Driver License, Address, and Vehicle License Plates
+                  AI OCR Auto-Fills Seller Driver License, Address, Vehicle Tags & Captures Seller Signature
                 </DialogDescription>
               </div>
             </div>
@@ -304,7 +365,6 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
           </div>
         </DialogHeader>
 
-        {/* Live Device Web Camera Stream overlay if active */}
         {useLiveCamera && (
           <div className="p-4 bg-slate-900 border-2 border-emerald-500/50 rounded-2xl space-y-3">
             <div className="flex items-center justify-between text-xs font-bold text-emerald-400">
@@ -329,13 +389,14 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
         )}
 
         {/* Live Thumbnails Bar */}
-        <div className={`grid grid-cols-2 ${isCarSalvage ? 'sm:grid-cols-4' : 'sm:grid-cols-5'} gap-2.5 my-3 p-2.5 bg-slate-900 rounded-xl border border-slate-800`}>
+        <div className={`grid grid-cols-2 ${isCarSalvage ? 'sm:grid-cols-5' : 'sm:grid-cols-6'} gap-2 my-3 p-2.5 bg-slate-900 rounded-xl border border-slate-800`}>
           {[
             ...(!isCarSalvage ? [{ id: 'idPhotoUrl', title: 'DL / State ID', icon: CreditCard, val: captures.idPhotoUrl, tab: 'id' }] : []),
             { id: 'personPhotoUrl', title: 'Seller Face', icon: UserCheck, val: captures.personPhotoUrl, tab: 'person' },
             { id: 'vehiclePhotoUrl', title: 'Vehicle 45°', icon: Car, val: captures.vehiclePhotoUrl, tab: 'vehicle' },
             { id: 'licensePlatePhotoUrl', title: 'License Plate', icon: Scan, val: captures.licensePlatePhotoUrl, tab: 'plate' },
             { id: 'loadPhotoUrl', title: 'Cargo / Load', icon: Package, val: captures.loadPhotoUrl, tab: 'load' },
+            { id: 'signatureUrl', title: 'Signature', icon: FileSignature, val: captures.signatureUrl, tab: 'signature' },
           ].map((item) => {
             const Icon = item.icon;
             const isDone = !!item.val;
@@ -351,7 +412,7 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
               >
                 <div className="aspect-video bg-slate-950 rounded-lg overflow-hidden relative flex items-center justify-center mb-1 border border-slate-800/80">
                   {item.val ? (
-                    <img src={item.val} alt={item.title} className="w-full h-full object-cover" />
+                    <img src={item.val} alt={item.title} className="w-full h-full object-contain p-0.5 bg-white" />
                   ) : (
                     <Icon className="w-5 h-5 text-slate-500" />
                   )}
@@ -363,14 +424,14 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
                 </div>
                 <div className="text-[11px] font-bold text-slate-200 truncate">{item.title}</div>
                 <div className="text-[9px] font-semibold text-slate-500">
-                  {isDone ? "AI VERIFIED" : "TAP TO CAPTURE"}
+                  {isDone ? "VERIFIED" : "TAP TO CAPTURE"}
                 </div>
               </div>
             );
           })}
         </div>
 
-        {/* AI Extracted Data Card Banner (If DL or Plate AI OCR analyzed) */}
+        {/* AI Extracted Data Card Banner */}
         {(aiAnalysis || aiPlateResult) && (
           <Card className="bg-gradient-to-r from-purple-950/70 via-slate-900 to-slate-900 border-2 border-purple-500/50 text-white shadow-xl">
             <CardHeader className="py-2.5 px-4 bg-slate-950/60 border-b border-purple-500/30 flex flex-row items-center justify-between">
@@ -412,7 +473,7 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
 
         {/* Workspace Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className={`grid grid-cols-2 ${isCarSalvage ? 'sm:grid-cols-4' : 'sm:grid-cols-5'} bg-slate-900 border border-slate-800 p-1 rounded-xl h-auto`}>
+          <TabsList className={`grid grid-cols-2 ${isCarSalvage ? 'sm:grid-cols-5' : 'sm:grid-cols-6'} bg-slate-900 border border-slate-800 p-1 rounded-xl h-auto`}>
             {!isCarSalvage && (
               <TabsTrigger value="id" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white text-xs gap-1.5 h-10 font-bold">
                 <CreditCard className="w-4 h-4" /> ID Scan
@@ -429,6 +490,9 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
             </TabsTrigger>
             <TabsTrigger value="load" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white text-xs gap-1.5 h-10 font-bold">
               <Package className="w-4 h-4" /> Cargo
+            </TabsTrigger>
+            <TabsTrigger value="signature" className="data-[state=active]:bg-emerald-600 data-[state=active]:text-white text-xs gap-1.5 h-10 font-bold">
+              <FileSignature className="w-4 h-4 text-emerald-300" /> Signature
             </TabsTrigger>
           </TabsList>
 
@@ -719,6 +783,69 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
               </CardContent>
             </Card>
           </TabsContent>
+
+          {/* TAB 6: DIGITAL SELLER SIGNATURE */}
+          <TabsContent value="signature" className="mt-3 space-y-4">
+            <Card className="bg-slate-900 border-slate-800 text-slate-100">
+              <CardHeader className="pb-3 border-b border-slate-800">
+                <CardTitle className="text-sm font-semibold flex items-center justify-between">
+                  <span className="flex items-center gap-2 text-emerald-400">
+                    <FileSignature className="w-4 h-4" /> Seller Digital Signature Pad
+                  </span>
+                  {captures.signatureUrl ? (
+                    <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30">Signature Saved</Badge>
+                  ) : (
+                    <Badge variant="outline" className="border-amber-500/30 text-amber-300">Sign Below</Badge>
+                  )}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-4 space-y-4">
+                <div className="space-y-2">
+                  <p className="text-xs text-slate-300">
+                    Have seller sign on touch screen or canvas below to print on official yard compliance voucher:
+                  </p>
+
+                  <div className="bg-white rounded-xl border-2 border-slate-300 p-2 shadow-inner text-slate-900 relative">
+                    <canvas
+                      ref={sigCanvasRef}
+                      width={600}
+                      height={180}
+                      onMouseDown={startDrawingSig}
+                      onMouseMove={drawSig}
+                      onMouseUp={stopDrawingSig}
+                      onMouseLeave={stopDrawingSig}
+                      onTouchStart={startDrawingSig}
+                      onTouchMove={drawSig}
+                      onTouchEnd={stopDrawingSig}
+                      className="w-full h-44 bg-white touch-none cursor-crosshair rounded"
+                    />
+                    <div className="absolute bottom-2 left-4 text-[10px] text-slate-400 font-serif italic select-none pointer-events-none">
+                      Sign here: X _______________________
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-3 pt-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={handleClearSignature}
+                      className="border-slate-700 bg-slate-800 text-slate-300 hover:text-white text-xs gap-1.5"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5 text-amber-400" /> Clear Pad
+                    </Button>
+
+                    <Button
+                      size="sm"
+                      onClick={handleSaveSignature}
+                      className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs gap-1.5 shadow"
+                    >
+                      <CheckCircle2 className="w-4 h-4" /> Save Digital Signature
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
         </Tabs>
 
         {/* Footer actions */}
@@ -730,7 +857,7 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
             onClick={handleSave}
             className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-extrabold px-6 h-11 gap-1.5 shadow-lg shadow-emerald-950"
           >
-            <CheckCircle2 className="w-4 h-4" /> Save Photo Suite & Auto-Fill Fields
+            <CheckCircle2 className="w-4 h-4" /> Save Suite & Transfer to Intake
           </Button>
         </DialogFooter>
       </DialogContent>

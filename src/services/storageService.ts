@@ -705,6 +705,7 @@ export const INITIAL_TICKETS: Ticket[] = [
     status: 'COMPLETED',
     customerId: 'cust-102',
     customerName: 'Marcus Vance (Vance Towing)',
+    customerPhone: '(555) 712-4091',
     customerIdNumber: 'DL-4481029-GA',
     vehicleLicensePlate: 'TOW-912',
     carRecord: {
@@ -749,6 +750,7 @@ export const INITIAL_TICKETS: Ticket[] = [
     status: 'COMPLETED',
     customerId: 'cust-101',
     customerName: 'Robert Henderson',
+    customerPhone: '(555) 382-9102',
     customerIdNumber: 'DL-9823145-GA',
     vehicleLicensePlate: '7ABC89',
     complianceCaptures: sampleScrapCaptures,
@@ -795,6 +797,7 @@ export const INITIAL_TICKETS: Ticket[] = [
     status: 'COMPLETED',
     customerId: 'cust-103',
     customerName: 'Sarah Jenkins',
+    customerPhone: '(555) 201-9988',
     customerIdNumber: 'ID-881920-GA',
     vehicleLicensePlate: 'BKN-402',
     carRecord: {
@@ -845,6 +848,7 @@ export const INITIAL_TICKETS: Ticket[] = [
     status: 'PENDING',
     customerId: 'cust-101',
     customerName: 'Robert Henderson',
+    customerPhone: '(555) 382-9102',
     customerIdNumber: 'DL-9823145-GA',
     vehicleLicensePlate: '7ABC89',
     complianceCaptures: sampleScrapCaptures,
@@ -1154,11 +1158,15 @@ export const storageService = {
       });
     }
 
+    // Save/update associated customer record with phone & total payouts
     if (ticket.customerId) {
       const customers = this.getCustomers();
       const cust = customers.find((c) => c.id === ticket.customerId);
       if (cust) {
         cust.totalPayouts += ticket.finalPayout;
+        if (ticket.customerPhone) {
+          cust.phone = ticket.customerPhone;
+        }
         let totalLbs = 0;
         if (ticket.ticketType === 'CAR_SALVAGE' && ticket.carRecord) {
           totalLbs = ticket.carRecord.vehicleWeightLbs;
@@ -1173,6 +1181,27 @@ export const storageService = {
           cust.capturedPlates = [...(cust.capturedPlates || []), ticket.vehicleLicensePlate];
         }
         this.saveCustomer(cust);
+      }
+    } else if (ticket.customerName && ticket.customerPhone) {
+      // Create new customer record if phone is provided but customer hasn't been saved yet
+      const customers = this.getCustomers();
+      const existing = customers.find(c => c.fullName.toLowerCase() === ticket.customerName.toLowerCase() || (c.phone && c.phone === ticket.customerPhone));
+      if (!existing) {
+        this.saveCustomer({
+          id: `cust-${Date.now()}`,
+          fullName: ticket.customerName,
+          phone: ticket.customerPhone,
+          idType: 'Driver License',
+          idNumber: ticket.customerIdNumber || 'ON-FILE',
+          idState: 'GA',
+          address: 'Address On File',
+          vehicleLicensePlate: ticket.vehicleLicensePlate,
+          createdAt: new Date().toISOString(),
+          totalPayouts: ticket.finalPayout,
+          totalWeightLbs: ticket.scrapLines ? ticket.scrapLines.reduce((acc, l) => acc + l.billableWeight, 0) : 0,
+          idPhotoUrl: ticket.complianceCaptures?.idPhotoUrl,
+          capturedPlates: ticket.vehicleLicensePlate ? [ticket.vehicleLicensePlate] : [],
+        });
       }
     }
 
@@ -1196,11 +1225,9 @@ export const storageService = {
       return { success: false, message: "Original ticket not found" };
     }
 
-    // Update ticket ID
     tickets[ticketIndex].id = cleanNewId;
     sharedStorage.setItem(STORAGE_KEYS.TICKETS, JSON.stringify(tickets));
 
-    // Update associated cash drawer logs referencing this ticket
     const cashLogs = this.getCashDrawerLogs();
     let updatedCashLogs = false;
     cashLogs.forEach((log) => {

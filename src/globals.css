@@ -114,3 +114,47 @@
     min-height: 40px;
   }
 }
+
+/* Print Overrides: Ensures modal dialogs and signature blocks print completely */
+@media print {
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+
+  header, nav, .print\:hidden {
+    display: none !important;
+  }
+
+  /* Reset Radix Dialog Overlay/Content for Print */
+  [role="dialog"], [data-state="open"] {
+    position: static !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    box-shadow: none !important;
+    border: none !important;
+    transform: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* Force printable receipt elements to stay visible */
+  .printable-receipt-container {
+    overflow: visible !important;
+    max-height: none !important;
+    height: auto !important;
+  }
+
+  .printable-receipt-card {
+    background-color: #ffffff !important;
+    color: #000000 !important;
+    border: 1px solid #000000 !important;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+}

@@ -199,6 +199,7 @@ export interface ComplianceCaptures {
   vehiclePhotoUrl?: string;
   licensePlatePhotoUrl?: string;
   loadPhotoUrl?: string;
+  signatureUrl?: string;
   nmvtisReported?: boolean;
   nmvtisReportedAt?: string;
   nmvtisBatchId?: string;
@@ -266,6 +267,7 @@ export interface Ticket {
   
   customerId?: string;
   customerName: string;
+  customerPhone?: string;
   customerIdNumber?: string;
   vehicleLicensePlate?: string;
   

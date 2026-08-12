@@ -49,6 +49,7 @@ import {
   Upload,
   RefreshCw,
   Hash,
+  Phone,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -62,7 +63,7 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
   // Step 2: Office PC Scale (Weight Entry, Metal Lines & Statutory Payout)
   const [currentStep, setCurrentStep] = useState<1 | 2>(1);
 
-  // Loaded or active ticket ID (if completing a pending ticket created in the field)
+  // Loaded or active ticket ID
   const [activeTicketId, setActiveTicketId] = useState<string | null>(null);
 
   // Editable Receipt / Ticket Number
@@ -81,6 +82,7 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
   // Customer Credentials
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>('');
   const [customerName, setCustomerName] = useState<string>('');
+  const [customerPhone, setCustomerPhone] = useState<string>('');
   const [customerIdNumber, setCustomerIdNumber] = useState<string>('');
   const [vehicleLicensePlate, setVehicleLicensePlate] = useState<string>('');
   const [isDlScanned, setIsDlScanned] = useState<boolean>(false);
@@ -92,6 +94,7 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
     vehiclePhotoUrl: undefined,
     licensePlatePhotoUrl: undefined,
     loadPhotoUrl: undefined,
+    signatureUrl: undefined,
   });
   const [isComplianceModalOpen, setIsComplianceModalOpen] = useState(false);
 
@@ -121,7 +124,7 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
     toast.info(`Generated Receipt #${newNum}`);
   };
 
-  // Refresh pending tickets from shared storage
+  // Refresh pending tickets
   const refreshPendingTickets = () => {
     const allTickets = storageService.getTickets();
     const pendings = allTickets.filter((t) => t.status === 'PENDING' && t.ticketType === 'SCRAP_METAL');
@@ -137,6 +140,7 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
     const cust = customers.find((c) => c.id === custId);
     if (cust) {
       setCustomerName(cust.fullName);
+      setCustomerPhone(cust.phone || '');
       setCustomerIdNumber(cust.idNumber);
       if (cust.vehicleLicensePlate) setVehicleLicensePlate(cust.vehicleLicensePlate);
       if (cust.idPhotoUrl) {
@@ -149,7 +153,6 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
     }
   };
 
-  // Helper to apply extracted DL scan result and match registered database customer
   const applyDlScanResult = (profile: DLScanResult, photoDataUrl?: string) => {
     if (profile.fullName) setCustomerName(profile.fullName);
     if (profile.idNumber) setCustomerIdNumber(profile.idNumber);
@@ -164,6 +167,7 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
 
     if (matchedCustomer) {
       setSelectedCustomerId(matchedCustomer.id);
+      if (matchedCustomer.phone) setCustomerPhone(matchedCustomer.phone);
     }
 
     if (photoDataUrl) {
@@ -198,12 +202,12 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
     }
   };
 
-  // Load a pending ticket from the Pending Group into the Office PC Scale Workstation
   const handleLoadPendingTicket = (pending: Ticket) => {
     setActiveTicketId(pending.id);
     setCustomReceiptNumber(pending.id);
     setSelectedCustomerId(pending.customerId || '');
     setCustomerName(pending.customerName);
+    setCustomerPhone(pending.customerPhone || '');
     setCustomerIdNumber(pending.customerIdNumber || '');
     setVehicleLicensePlate(pending.vehicleLicensePlate || '');
     setIsDlScanned(true);
@@ -224,7 +228,6 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
     });
   };
 
-  // SAVE INTO PENDING GROUP
   const handleSaveAsPendingGroup = () => {
     if (!customerName.trim()) {
       toast.error('Please enter customer/seller name before saving to pending group');
@@ -241,6 +244,7 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
       status: 'PENDING',
       customerId: selectedCustomerId || undefined,
       customerName,
+      customerPhone: customerPhone.trim() || undefined,
       customerIdNumber,
       vehicleLicensePlate,
       scrapLines: lines,
@@ -268,6 +272,7 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
     setCustomReceiptNumber(`T-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`);
     setSelectedCustomerId('');
     setCustomerName('');
+    setCustomerPhone('');
     setCustomerIdNumber('');
     setVehicleLicensePlate('');
     setIsDlScanned(false);
@@ -279,6 +284,7 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
       vehiclePhotoUrl: undefined,
       licensePlatePhotoUrl: undefined,
       loadPhotoUrl: undefined,
+      signatureUrl: undefined,
     });
     setCurrentStep(1);
   };
@@ -344,7 +350,6 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
   const totalBillableWeight = lines.reduce((acc, l) => acc + l.billableWeight, 0);
   const totalPayout = lines.reduce((acc, l) => acc + l.lineTotal, 0);
 
-  // Statutory Cash Limit Calculation
   const hasNonFerrous = lines.some(
     (l) => l.metalCategory === 'Non-Ferrous' || l.metalCategory === 'Precious' || l.metalCategory === 'E-Waste' || l.metalCategory === 'Batteries & Auto'
   );
@@ -366,7 +371,6 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
     toast.success('Intake Details Transferred! Ready for Scale Weighing.');
   };
 
-  // Complete ticket on Scale Computer
   const handleSubmitTicket = () => {
     if (lines.length === 0) {
       toast.error('Add at least one scrap line item to complete ticket');
@@ -394,7 +398,6 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
     const currentOp = storageService.getSettings().operatorName;
     const finalTicketId = customReceiptNumber.trim();
 
-    // If activeTicketId was loaded and changed, update ticket ID
     if (activeTicketId && activeTicketId !== finalTicketId) {
       const res = storageService.updateTicketId(activeTicketId, finalTicketId);
       if (!res.success) {
@@ -410,6 +413,7 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
       status: 'COMPLETED',
       customerId: selectedCustomerId || undefined,
       customerName,
+      customerPhone: customerPhone.trim() || undefined,
       customerIdNumber,
       vehicleLicensePlate,
       scrapLines: lines,
@@ -436,6 +440,7 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
     return (
       t.id.toLowerCase().includes(q) ||
       t.customerName.toLowerCase().includes(q) ||
+      (t.customerPhone && t.customerPhone.toLowerCase().includes(q)) ||
       (t.customerIdNumber && t.customerIdNumber.toLowerCase().includes(q)) ||
       (t.vehicleLicensePlate && t.vehicleLicensePlate.toLowerCase().includes(q))
     );
@@ -466,7 +471,7 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
             </div>
             <p className="text-xs text-slate-400">
               {currentStep === 1
-                ? 'Part 1: Record seller details, ID photo & photo compliance captures'
+                ? 'Part 1: Record seller details, phone #, ID & compliance captures'
                 : 'Part 2: Scale weight entry & final voucher processing'}
             </p>
           </div>
@@ -474,7 +479,6 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
 
         {/* Action Controls & Pending Queue Indicator */}
         <div className="flex items-center gap-2 flex-wrap">
-          {/* Pending Group Quick Trigger */}
           <Button
             size="sm"
             variant="outline"
@@ -490,7 +494,6 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
             )}
           </Button>
 
-          {/* Step Selector Pills */}
           <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800">
             <Button
               size="sm"
@@ -516,7 +519,7 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
         </div>
       </div>
 
-      {/* PENDING SCRAP INTAKES GROUP (Always visible banner if pending tickets exist) */}
+      {/* PENDING SCRAP INTAKES GROUP */}
       {pendingTickets.length > 0 && (
         <Card className="bg-slate-900 border-2 border-amber-500/40 text-white shadow-xl overflow-hidden">
           <CardHeader className="py-3 px-4 bg-gradient-to-r from-amber-950/80 to-slate-950 border-b border-amber-500/30 flex flex-row items-center justify-between">
@@ -560,9 +563,9 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
                   </div>
 
                   <div className="text-[11px] text-slate-400 space-y-0.5 font-mono">
+                    {ticket.customerPhone && <div>Phone: <span className="text-emerald-400 font-bold">{ticket.customerPhone}</span></div>}
                     {ticket.customerIdNumber && <div>ID #: <span className="text-amber-300">{ticket.customerIdNumber}</span></div>}
                     {ticket.vehicleLicensePlate && <div>Tag: <span className="text-slate-200">{ticket.vehicleLicensePlate}</span></div>}
-                    {ticket.notes && <div className="text-slate-500 text-[10px] truncate">{ticket.notes}</div>}
                   </div>
 
                   <Button
@@ -638,7 +641,6 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
                   </div>
 
                   <div className="flex items-center gap-2">
-                    {/* Primary DL Scan / Upload Button */}
                     <label className="cursor-pointer inline-flex items-center gap-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-extrabold text-xs px-3.5 py-2 rounded-lg transition-colors shadow-lg shadow-blue-950">
                       <CreditCard className="w-4 h-4 text-amber-300" /> Capture / Upload Driver License
                       <input
@@ -664,6 +666,7 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
                         variant="ghost"
                         onClick={() => {
                           setCustomerName('');
+                          setCustomerPhone('');
                           setCustomerIdNumber('');
                           setVehicleLicensePlate('');
                           setSelectedCustomerId('');
@@ -683,7 +686,7 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
                     </div>
                   )}
 
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <Label className="text-xs text-slate-300">Select Registered Customer</Label>
                       <Select value={selectedCustomerId} onValueChange={handleCustomerSelect}>
@@ -693,7 +696,7 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
                         <SelectContent className="bg-slate-900 border-slate-800 text-white">
                           {customers.map((c) => (
                             <SelectItem key={c.id} value={c.id} className="text-xs">
-                              {c.fullName} ({c.idNumber || 'No ID'})
+                              {c.fullName} ({c.phone || c.idNumber || 'No Phone/ID'})
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -714,6 +717,20 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
                         }`}
                       />
                     </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <Label className="text-xs text-slate-300 flex items-center gap-1">
+                        <Phone className="w-3 h-3 text-emerald-400" /> Phone Number *
+                      </Label>
+                      <Input
+                        value={customerPhone}
+                        onChange={(e) => setCustomerPhone(e.target.value)}
+                        placeholder="(555) 000-0000"
+                        className="bg-slate-950 border-slate-800 text-emerald-400 font-mono font-bold text-xs mt-1 h-11"
+                      />
+                    </div>
 
                     <div>
                       <Label className="text-xs text-slate-300 flex items-center justify-between">
@@ -729,21 +746,21 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
                         }`}
                       />
                     </div>
-                  </div>
 
-                  <div>
-                    <Label className="text-xs text-slate-300 flex items-center justify-between">
-                      <span>Vehicle License Plate Tag</span>
-                      {isDlScanned && vehicleLicensePlate && <span className="text-[10px] text-emerald-400 font-mono">AUTOFILLED</span>}
-                    </Label>
-                    <Input
-                      value={vehicleLicensePlate}
-                      onChange={(e) => setVehicleLicensePlate(e.target.value)}
-                      placeholder="e.g. TOW-912 (GA)"
-                      className={`bg-slate-950 border-slate-800 text-slate-200 font-mono uppercase text-xs mt-1 h-11 max-w-sm ${
-                        isDlScanned && vehicleLicensePlate ? 'ring-1 ring-emerald-500/50 bg-emerald-950/20' : ''
-                      }`}
-                    />
+                    <div>
+                      <Label className="text-xs text-slate-300 flex items-center justify-between">
+                        <span>Vehicle License Plate Tag</span>
+                        {isDlScanned && vehicleLicensePlate && <span className="text-[10px] text-emerald-400 font-mono">AUTOFILLED</span>}
+                      </Label>
+                      <Input
+                        value={vehicleLicensePlate}
+                        onChange={(e) => setVehicleLicensePlate(e.target.value)}
+                        placeholder="e.g. TOW-912 (GA)"
+                        className={`bg-slate-950 border-slate-800 text-slate-200 font-mono uppercase text-xs mt-1 h-11 ${
+                          isDlScanned && vehicleLicensePlate ? 'ring-1 ring-emerald-500/50 bg-emerald-950/20' : ''
+                        }`}
+                      />
+                    </div>
                   </div>
                 </CardContent>
               </Card>
@@ -805,13 +822,13 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
 
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 border-t border-slate-800">
                     <p className="text-xs text-slate-400">
-                      5-point photo verification & ID scan suite.
+                      5-point photo verification, digital signatures & ID scan suite.
                     </p>
                     <Button
                       onClick={() => setIsComplianceModalOpen(true)}
                       className="bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs gap-2 min-h-[44px]"
                     >
-                      <Camera className="w-4 h-4" /> Launch Camera Studio
+                      <Camera className="w-4 h-4" /> Launch Camera & Signature Studio
                     </Button>
                   </div>
                 </CardContent>
@@ -819,7 +836,7 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
 
             </div>
 
-            {/* Right Column: Step 1 Confirmation & Save as Pending Group Options */}
+            {/* Right Column: Step 1 Confirmation */}
             <div className="space-y-6">
               <Card className="bg-slate-900 border-slate-800 text-white shadow-xl">
                 <CardHeader className="py-3 px-4 bg-slate-950/60 border-b border-slate-800">
@@ -839,6 +856,10 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
                       <span className="text-white font-bold">{customerName || 'Not Entered'}</span>
                     </div>
                     <div className="flex justify-between">
+                      <span className="text-slate-400">Phone #:</span>
+                      <span className="text-emerald-400 font-bold">{customerPhone || 'Not Entered'}</span>
+                    </div>
+                    <div className="flex justify-between">
                       <span className="text-slate-400">License / ID #:</span>
                       <span className="text-amber-300 font-mono font-bold">{customerIdNumber || 'Pending DL Photo'}</span>
                     </div>
@@ -848,7 +869,6 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
                     </div>
                   </div>
 
-                  {/* SAVE TO PENDING GROUP BUTTON */}
                   <Button
                     onClick={handleSaveAsPendingGroup}
                     className="w-full h-12 bg-amber-600 hover:bg-amber-500 text-slate-950 font-extrabold text-xs sm:text-sm gap-2 shadow-lg"
@@ -861,7 +881,6 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
                     <div className="relative flex justify-center text-[10px] uppercase text-slate-500"><span className="bg-slate-900 px-2">OR</span></div>
                   </div>
 
-                  {/* PROCEED DIRECTLY TO STEP 2 */}
                   <Button
                     onClick={handleProceedToStep2}
                     variant="outline"
@@ -889,7 +908,8 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
               </div>
               <div>
                 <span className="font-bold text-white">{customerName}</span>
-                <span className="text-slate-400 ml-2 font-mono">({customerIdNumber || 'DL On File'})</span>
+                {customerPhone && <span className="text-emerald-400 ml-2 font-mono">({customerPhone})</span>}
+                <span className="text-slate-400 ml-2 font-mono">ID: {customerIdNumber || 'DL On File'}</span>
                 <span className="text-emerald-400 ml-2">| Tag: {vehicleLicensePlate || 'Verified'}</span>
                 <Badge className="ml-2 bg-amber-500/20 text-amber-300 border-amber-500/30 font-mono text-[10px]">
                   Receipt #{customReceiptNumber}
@@ -1023,7 +1043,6 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
                       </div>
                     </div>
 
-                    {/* Touch weight quick adjustments */}
                     <div className="flex items-center gap-1.5 pt-1 text-xs">
                       <span className="text-slate-500 font-mono text-[10px] hidden sm:inline">Quick Adjust:</span>
                       <button
@@ -1166,14 +1185,13 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
                     </div>
                   </div>
 
-                  {/* STATUTORY PAYOUT OPTIONS (Cash Capped vs Check Issue) */}
+                  {/* STATUTORY PAYOUT OPTIONS */}
                   <div className="space-y-2">
                     <Label className="text-xs text-slate-300 font-bold block">
                       Select Payout Method *
                     </Label>
 
                     <div className="grid grid-cols-2 gap-2">
-                      {/* Cash Option */}
                       <button
                         type="button"
                         disabled={exceedsCashLimit}
@@ -1195,7 +1213,6 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
                         </span>
                       </button>
 
-                      {/* Check Option */}
                       <button
                         type="button"
                         onClick={() => setPayoutMethod('Check')}
@@ -1215,7 +1232,6 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
                       </button>
                     </div>
 
-                    {/* Exceeds Cash Limit Statutory Notice */}
                     {exceedsCashLimit && (
                       <div className="p-3 bg-amber-950/40 border border-amber-500/40 rounded-lg text-amber-200 text-xs space-y-1 flex items-start gap-2">
                         <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
@@ -1228,7 +1244,6 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
                       </div>
                     )}
 
-                    {/* CHECK NUMBER RECORDING SECTION */}
                     {payoutMethod === 'Check' && (
                       <div className="p-3 bg-slate-950 border-2 border-emerald-500/40 rounded-xl space-y-2 mt-2">
                         <div className="flex items-center justify-between">
@@ -1300,7 +1315,7 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
             <div className="relative">
               <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-500" />
               <Input
-                placeholder="Filter pending by seller name, ID, or vehicle tag..."
+                placeholder="Filter pending by seller name, phone, ID, or vehicle tag..."
                 value={pendingSearch}
                 onChange={(e) => setPendingSearch(e.target.value)}
                 className="bg-slate-950 border-slate-800 text-xs pl-8 h-9"
@@ -1331,7 +1346,7 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
                           </Badge>
                         </div>
                         <p className="text-xs text-slate-400 font-mono mt-0.5">
-                          ID #: {ticket.customerIdNumber || 'On File'} | Vehicle Tag: {ticket.vehicleLicensePlate || 'N/A'}
+                          Phone: <span className="text-emerald-400">{ticket.customerPhone || 'N/A'}</span> | ID #: {ticket.customerIdNumber || 'On File'} | Vehicle Tag: {ticket.vehicleLicensePlate || 'N/A'}
                         </p>
                         <p className="text-[10px] text-slate-500 mt-0.5">
                           Saved: {new Date(ticket.createdAt).toLocaleTimeString()} ({ticket.operatorName})
@@ -1347,7 +1362,6 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
                       </Button>
                     </div>
 
-                    {/* Photo Thumbnails */}
                     {ticket.complianceCaptures && (
                       <div className="flex items-center gap-2 pt-2 border-t border-slate-900">
                         <span className="text-[10px] text-slate-500 uppercase font-mono">Photos:</span>
