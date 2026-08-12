@@ -266,7 +266,7 @@ export interface Ticket {
   id: string;
   ticketType: IntakeType;
   createdAt: string;
-  status: 'COMPLETED' | 'VOIDED' | 'DRAFT';
+  status: 'COMPLETED' | 'VOIDED' | 'DRAFT' | 'PENDING';
   
   customerId?: string;
   customerName: string;

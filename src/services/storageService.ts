@@ -849,6 +849,23 @@ export const INITIAL_TICKETS: Ticket[] = [
     checkNumber: 'CHK-9021',
     operatorName: 'Scale Tech Station 1',
     notes: 'Missing title state affidavit filed on record.',
+  },
+  {
+    id: 'T-2025-1004',
+    ticketType: 'SCRAP_METAL',
+    createdAt: new Date(Date.now() - 1000 * 60 * 12).toISOString(),
+    status: 'PENDING',
+    customerId: 'cust-101',
+    customerName: 'Robert Henderson',
+    customerIdNumber: 'DL-9823145-GA',
+    vehicleLicensePlate: '7ABC89',
+    complianceCaptures: sampleScrapCaptures,
+    grossTotal: 0,
+    totalDeductions: 0,
+    finalPayout: 0,
+    payoutMethod: 'Cash',
+    operatorName: 'iPad Yard Station 1',
+    notes: 'Scanned at yard entrance on iPad. Driver waiting at Office PC scale.',
   }
 ];
 

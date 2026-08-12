@@ -12,6 +12,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
   Scale,
   Plus,
   Trash2,
@@ -30,6 +36,11 @@ import {
   AlertTriangle,
   FileCheck,
   Check,
+  Tablet,
+  Laptop,
+  Clock,
+  ListFilter,
+  RefreshCw,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -39,12 +50,19 @@ interface ScrapYardIntakeFormProps {
 }
 
 export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack, onTicketCreated }) => {
-  // Step 1: Initial Intake & Customer/Compliance Studio
-  // Step 2: Weight Entry, Scale Lines & Payout Options
+  // Step 1: iPad / Field Intake (Customer & Compliance Studio)
+  // Step 2: Office PC Scale (Weight Entry, Metal Lines & Statutory Payout)
   const [currentStep, setCurrentStep] = useState<1 | 2>(1);
+
+  // Loaded or active ticket ID (if completing a pending ticket created on iPad)
+  const [activeTicketId, setActiveTicketId] = useState<string | null>(null);
 
   const [metals] = useState<MetalGrade[]>(storageService.getMetals());
   const [customers] = useState<Customer[]>(storageService.getCustomers());
+
+  // Pending Tickets Queue from iPad Intakes
+  const [pendingTickets, setPendingTickets] = useState<Ticket[]>([]);
+  const [isPendingModalOpen, setIsPendingModalOpen] = useState(false);
 
   // Customer Credentials
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>('');
@@ -81,6 +99,17 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
   const [notes, setNotes] = useState<string>('');
 
   const complianceStats = calculateComplianceScore(complianceCaptures);
+
+  // Load pending tickets on mount and whenever modal opens
+  const refreshPendingTickets = () => {
+    const allTickets = storageService.getTickets();
+    const pendings = allTickets.filter((t) => t.status === 'PENDING' && t.ticketType === 'SCRAP_METAL');
+    setPendingTickets(pendings);
+  };
+
+  useEffect(() => {
+    refreshPendingTickets();
+  }, []);
 
   const handleCustomerSelect = (custId: string) => {
     setSelectedCustomerId(custId);
@@ -131,6 +160,88 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
       };
       reader.readAsDataURL(file);
     }
+  };
+
+  // Load a pending ticket from iPad queue into Office PC Scale workstation
+  const handleLoadPendingTicket = (pending: Ticket) => {
+    setActiveTicketId(pending.id);
+    setSelectedCustomerId(pending.customerId || '');
+    setCustomerName(pending.customerName);
+    setCustomerIdNumber(pending.customerIdNumber || '');
+    setVehicleLicensePlate(pending.vehicleLicensePlate || '');
+    if (pending.complianceCaptures) {
+      setComplianceCaptures(pending.complianceCaptures);
+    }
+    if (pending.scrapLines && pending.scrapLines.length > 0) {
+      setLines(pending.scrapLines);
+    } else {
+      setLines([]);
+    }
+    setNotes(pending.notes || '');
+
+    setCurrentStep(2);
+    setIsPendingModalOpen(false);
+    toast.success(`Loaded Pending Ticket #${pending.id} onto Office PC Scale!`, {
+      description: `Customer: ${pending.customerName} | Ready for scale weighing & payout.`,
+    });
+  };
+
+  // SAVE AS PENDING ON IPAD (Part 1 complete, waiting for Office PC Scale)
+  const handleSaveAsPendingFromIpad = () => {
+    if (!customerName.trim()) {
+      toast.error('Please enter customer/seller name before saving');
+      return;
+    }
+
+    const currentOp = storageService.getSettings().operatorName;
+    const ticketId = activeTicketId || `T-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
+
+    const pendingTicket: Ticket = {
+      id: ticketId,
+      ticketType: 'SCRAP_METAL',
+      createdAt: new Date().toISOString(),
+      status: 'PENDING',
+      customerId: selectedCustomerId || undefined,
+      customerName,
+      customerIdNumber,
+      vehicleLicensePlate,
+      scrapLines: lines,
+      complianceCaptures,
+      grossTotal: 0,
+      totalDeductions: 0,
+      finalPayout: 0,
+      payoutMethod: 'Cash',
+      operatorName: `${currentOp} (iPad Field Intake)`,
+      notes: notes || 'Scanned on iPad. Waiting for scale weighing at Office PC.',
+    };
+
+    storageService.saveTicket(pendingTicket);
+    refreshPendingTickets();
+
+    toast.success(`Saved Part 1 Intake #${pendingTicket.id} as PENDING!`, {
+      description: `Customer ${customerName} can now proceed to the Office PC scale house.`,
+    });
+
+    // Reset iPad form for next customer
+    resetForm();
+  };
+
+  const resetForm = () => {
+    setActiveTicketId(null);
+    setSelectedCustomerId('');
+    setCustomerName('');
+    setCustomerIdNumber('');
+    setVehicleLicensePlate('');
+    setLines([]);
+    setNotes('');
+    setComplianceCaptures({
+      personPhotoUrl: generateSamplePhoto('person'),
+      idPhotoUrl: generateSamplePhoto('id'),
+      vehiclePhotoUrl: generateSamplePhoto('vehicle'),
+      licensePlatePhotoUrl: generateSamplePhoto('plate'),
+      loadPhotoUrl: generateSamplePhoto('load'),
+    });
+    setCurrentStep(1);
   };
 
   const selectedMetal = metals.find((m) => m.id === selectedMetalId) || metals[0];
@@ -216,9 +327,10 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
       return;
     }
     setCurrentStep(2);
-    toast.success('Part 1 Saved! Proceeding to Weight Entry & Payout Page');
+    toast.success('Part 1 Details Transferred! Ready for Office PC Scale Weighing.');
   };
 
+  // Complete ticket on Office PC
   const handleSubmitTicket = () => {
     if (lines.length === 0) {
       toast.error('Add at least one scrap line item to complete ticket');
@@ -235,9 +347,10 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
     }
 
     const currentOp = storageService.getSettings().operatorName;
+    const finalTicketId = activeTicketId || `T-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
 
-    const newTicket: Ticket = {
-      id: `T-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
+    const completedTicket: Ticket = {
+      id: finalTicketId,
       ticketType: 'SCRAP_METAL',
       createdAt: new Date().toISOString(),
       status: 'COMPLETED',
@@ -256,9 +369,10 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
       notes,
     };
 
-    storageService.saveTicket(newTicket);
-    toast.success(`Scrap Ticket #${newTicket.id} Completed & Signed by Jackson Hilliard!`);
-    onTicketCreated(newTicket);
+    storageService.saveTicket(completedTicket);
+    refreshPendingTickets();
+    toast.success(`Scrap Ticket #${completedTicket.id} Completed on Office PC! Voucher Issued.`);
+    onTicketCreated(completedTicket);
   };
 
   const popularMetals = metals.filter((m) => m.isPopular).slice(0, 6);
@@ -280,46 +394,65 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-xl font-bold text-white font-mono">
-                Scrap Yard Metal Recycling Station
+                Scrap Yard Intake Station
               </h1>
               <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-500/40 text-xs font-mono">
-                STEP {currentStep} OF 2: {currentStep === 1 ? 'INTAKE & DL VERIFICATION' : 'WEIGHT ENTRY & PAYOUT'}
+                {currentStep === 1 ? 'STEP 1: IPAD FIELD INTAKE' : 'STEP 2: OFFICE PC SCALE'}
               </Badge>
             </div>
             <p className="text-xs text-slate-400">
               {currentStep === 1
-                ? 'Part 1: Customer details, DL picture OCR scan & 5-point compliance photo studio'
-                : 'Part 2: Scale weight entry, metal classification & statutory cash capping ($25 non-ferrous / $100 ferrous)'}
+                ? 'Part 1 (iPad): Customer profile, DL scan & 5-point photo studio'
+                : 'Part 2 (Office PC): Scale weight entry & statutory payout voucher'}
             </p>
           </div>
         </div>
 
-        {/* Step Indicator Pills */}
-        <div className="flex items-center gap-2">
+        {/* Action Controls & Pending Queue Indicator */}
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Pending iPad Tickets Queue Drawer Trigger */}
           <Button
             size="sm"
-            variant={currentStep === 1 ? 'default' : 'outline'}
-            onClick={() => setCurrentStep(1)}
-            className={`text-xs font-bold ${
-              currentStep === 1 ? 'bg-emerald-600 text-white' : 'border-slate-800 bg-slate-950 text-slate-400'
-            }`}
+            variant="outline"
+            onClick={() => { refreshPendingTickets(); setIsPendingModalOpen(true); }}
+            className="relative bg-amber-500/10 border-amber-500/40 hover:bg-amber-500/20 text-amber-300 font-bold text-xs gap-1.5"
           >
-            1. Intake & ID Scan
+            <Clock className="w-3.5 h-3.5 text-amber-400" />
+            <span>Pending iPad Queue</span>
+            {pendingTickets.length > 0 && (
+              <Badge className="ml-1 bg-amber-500 text-slate-950 font-black text-[10px] px-1.5 py-0">
+                {pendingTickets.length}
+              </Badge>
+            )}
           </Button>
-          <Button
-            size="sm"
-            variant={currentStep === 2 ? 'default' : 'outline'}
-            onClick={handleProceedToStep2}
-            className={`text-xs font-bold ${
-              currentStep === 2 ? 'bg-emerald-600 text-white' : 'border-slate-800 bg-slate-950 text-slate-400'
-            }`}
-          >
-            2. Scale Weight & Payout
-          </Button>
+
+          {/* Step Selector Pills */}
+          <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800">
+            <Button
+              size="sm"
+              variant={currentStep === 1 ? 'default' : 'ghost'}
+              onClick={() => setCurrentStep(1)}
+              className={`text-xs font-bold gap-1 ${
+                currentStep === 1 ? 'bg-emerald-600 text-white' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Tablet className="w-3.5 h-3.5" /> 1. iPad Intake
+            </Button>
+            <Button
+              size="sm"
+              variant={currentStep === 2 ? 'default' : 'ghost'}
+              onClick={handleProceedToStep2}
+              className={`text-xs font-bold gap-1 ${
+                currentStep === 2 ? 'bg-emerald-600 text-white' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Laptop className="w-3.5 h-3.5" /> 2. Office PC
+            </Button>
+          </div>
         </div>
       </div>
 
-      {/* STEP 1: INITIAL INTAKE & CUSTOMER COMPLIANCE PAGE */}
+      {/* STEP 1: INITIAL INTAKE & CUSTOMER COMPLIANCE PAGE (IPAD FIELD MODE) */}
       {currentStep === 1 && (
         <div className="space-y-6">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -330,7 +463,7 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
               <Card className="bg-slate-900 border-slate-800 text-white shadow-xl">
                 <CardHeader className="py-3.5 px-4 bg-slate-950/80 border-b border-slate-800 flex flex-row items-center justify-between">
                   <CardTitle className="text-sm font-bold tracking-wide uppercase text-slate-300 flex items-center gap-2">
-                    <User className="w-4 h-4 text-emerald-400" /> Customer / Seller Profile
+                    <User className="w-4 h-4 text-emerald-400" /> Customer / Seller Profile (iPad Field Input)
                   </CardTitle>
 
                   <label className="cursor-pointer inline-flex items-center gap-1.5 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs px-3.5 py-2 rounded-lg transition-colors shadow-md">
@@ -401,7 +534,7 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
                   <div className="flex items-center gap-2">
                     <ShieldCheck className="w-5 h-5 text-blue-400" />
                     <CardTitle className="text-sm font-bold tracking-wide uppercase text-white">
-                      State Legal Compliance & Photo Studio
+                      State Legal Compliance & iPad Camera Studio
                     </CardTitle>
                   </div>
 
@@ -458,7 +591,7 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
                       onClick={() => setIsComplianceModalOpen(true)}
                       className="bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs gap-2 min-h-[44px]"
                     >
-                      <Camera className="w-4 h-4" /> Launch iPad Camera Studio & ID Scan
+                      <Camera className="w-4 h-4" /> Launch iPad Camera Studio
                     </Button>
                   </div>
                 </CardContent>
@@ -466,12 +599,12 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
 
             </div>
 
-            {/* Right Column: Step 1 Confirmation Card */}
+            {/* Right Column: Step 1 Confirmation & Save as Pending Options */}
             <div className="space-y-6">
               <Card className="bg-slate-900 border-slate-800 text-white shadow-xl">
                 <CardHeader className="py-3 px-4 bg-slate-950/60 border-b border-slate-800">
                   <CardTitle className="text-sm font-bold tracking-wide uppercase text-slate-300 flex items-center gap-2">
-                    <FileCheck className="w-4 h-4 text-emerald-400" /> Step 1 Intake Confirmation
+                    <FileCheck className="w-4 h-4 text-emerald-400" /> Part 1 iPad Dispatch Options
                   </CardTitle>
                 </CardHeader>
 
@@ -491,11 +624,26 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
                     </div>
                   </div>
 
+                  {/* SAVE AS PENDING ON IPAD BUTTON */}
+                  <Button
+                    onClick={handleSaveAsPendingFromIpad}
+                    className="w-full h-12 bg-amber-600 hover:bg-amber-500 text-slate-950 font-extrabold text-xs sm:text-sm gap-2 shadow-lg"
+                  >
+                    <Clock className="w-4 h-4 text-slate-950" /> Save as Pending (Send to Office PC)
+                  </Button>
+
+                  <div className="relative my-2">
+                    <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-800" /></div>
+                    <div className="relative flex justify-center text-[10px] uppercase text-slate-500"><span className="bg-slate-900 px-2">OR</span></div>
+                  </div>
+
+                  {/* PROCEED DIRECTLY TO STEP 2 */}
                   <Button
                     onClick={handleProceedToStep2}
-                    className="w-full h-12 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-sm gap-2 shadow-lg shadow-emerald-950"
+                    variant="outline"
+                    className="w-full h-11 border-emerald-500/50 bg-emerald-950/30 text-emerald-300 hover:bg-emerald-900/50 font-bold text-xs gap-2"
                   >
-                    Save & Proceed to Weight & Payout Page <ArrowRight className="w-5 h-5" />
+                    Proceed Directly to Scale Weight <ArrowRight className="w-4 h-4" />
                   </Button>
                 </CardContent>
               </Card>
@@ -505,20 +653,25 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
         </div>
       )}
 
-      {/* STEP 2: WEIGHING, SCRAP LINES & PAYOUT PAGE */}
+      {/* STEP 2: WEIGHING, SCRAP LINES & PAYOUT PAGE (OFFICE PC WORKSTATION) */}
       {currentStep === 2 && (
         <div className="space-y-6">
           
           {/* Summary Banner from Step 1 */}
           <div className="bg-slate-900 border border-slate-800 p-3.5 rounded-xl flex items-center justify-between text-xs">
             <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-emerald-500/20 text-emerald-400 font-bold">
-                STEP 1 SAVED
+              <div className="p-2 rounded-lg bg-emerald-500/20 text-emerald-400 font-bold flex items-center gap-1.5">
+                <Laptop className="w-4 h-4" /> OFFICE PC WORKSTATION
               </div>
               <div>
                 <span className="font-bold text-white">{customerName}</span>
                 <span className="text-slate-400 ml-2 font-mono">({customerIdNumber || 'DL On File'})</span>
                 <span className="text-emerald-400 ml-2">| Tag: {vehicleLicensePlate || 'Verified'}</span>
+                {activeTicketId && (
+                  <Badge className="ml-2 bg-amber-500/20 text-amber-300 border-amber-500/30 font-mono text-[10px]">
+                    Pending Ticket #{activeTicketId}
+                  </Badge>
+                )}
               </div>
             </div>
 
@@ -540,7 +693,7 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
               <Card className="bg-slate-900 border-slate-800 text-white shadow-lg">
                 <CardHeader className="py-3 px-4 bg-slate-950/60 border-b border-slate-800 flex flex-row items-center justify-between">
                   <CardTitle className="text-sm font-bold tracking-wide uppercase text-slate-300 flex items-center gap-2">
-                    <Scale className="w-4 h-4 text-emerald-400" /> Live Scale Item Entry
+                    <Scale className="w-4 h-4 text-emerald-400" /> Office Scale Entry
                   </CardTitle>
 
                   <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800 text-xs">
@@ -569,7 +722,7 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
                   
                   {/* Quick Metal Touch Pills */}
                   <div className="space-y-1.5">
-                    <Label className="text-xs text-slate-400 font-semibold block">Quick Select Popular Metals (1-Tap):</Label>
+                    <Label className="text-xs text-slate-400 font-semibold block">Select Metal Grade (1-Tap):</Label>
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                       {popularMetals.map((m) => (
                         <button
@@ -877,22 +1030,89 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
         </div>
       )}
 
-      {/* Sticky Bottom Bar for iPad */}
-      {currentStep === 2 && (
-        <div className="fixed bottom-0 left-0 right-0 bg-slate-900/95 border-t border-slate-800 p-3 shadow-2xl z-30 sm:hidden flex items-center justify-between backdrop-blur">
-          <div>
-            <span className="text-[10px] text-slate-400 block font-mono">BILLABLE TOTAL:</span>
-            <span className="text-xl font-black text-emerald-400 font-mono">${totalPayout.toFixed(2)}</span>
+      {/* PENDING IPAD TICKETS QUEUE DIALOG */}
+      <Dialog open={isPendingModalOpen} onOpenChange={setIsPendingModalOpen}>
+        <DialogContent className="sm:max-w-[620px] bg-slate-900 border-slate-800 text-white">
+          <DialogHeader className="border-b border-slate-800 pb-3 flex flex-row items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Clock className="w-5 h-5 text-amber-400" />
+              <DialogTitle className="text-base font-bold font-mono">
+                Pending iPad Intakes ({pendingTickets.length})
+              </DialogTitle>
+            </div>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={refreshPendingTickets}
+              className="text-slate-400 hover:text-white text-xs h-8"
+            >
+              <RefreshCw className="w-3.5 h-3.5 mr-1" /> Refresh Queue
+            </Button>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2 max-h-[60vh] overflow-y-auto">
+            {pendingTickets.length === 0 ? (
+              <div className="p-8 text-center text-slate-400 text-xs space-y-2">
+                <Tablet className="w-8 h-8 text-slate-600 mx-auto" />
+                <p className="font-bold text-slate-300">No Pending iPad Intakes</p>
+                <p className="text-[11px] text-slate-500">
+                  When field yard employees save Step 1 on an iPad, the ticket appears here ready for the Office PC scale operator.
+                </p>
+              </div>
+            ) : (
+              pendingTickets.map((ticket) => (
+                <div
+                  key={ticket.id}
+                  className="bg-slate-950 border border-slate-800 hover:border-amber-500/50 p-4 rounded-xl space-y-3 transition-all"
+                >
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-white text-sm">{ticket.customerName}</span>
+                        <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/30 text-[10px]">
+                          #{ticket.id}
+                        </Badge>
+                      </div>
+                      <p className="text-xs text-slate-400 font-mono mt-0.5">
+                        ID #: {ticket.customerIdNumber || 'On File'} | Vehicle Tag: {ticket.vehicleLicensePlate || 'N/A'}
+                      </p>
+                      <p className="text-[10px] text-slate-500 mt-0.5">
+                        Saved: {new Date(ticket.createdAt).toLocaleTimeString()} ({ticket.operatorName})
+                      </p>
+                    </div>
+
+                    <Button
+                      size="sm"
+                      onClick={() => handleLoadPendingTicket(ticket)}
+                      className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs gap-1 shadow-md shrink-0"
+                    >
+                      Load on Office Scale <ArrowRight className="w-3.5 h-3.5" />
+                    </Button>
+                  </div>
+
+                  {/* Thumbnail Preview */}
+                  {ticket.complianceCaptures && (
+                    <div className="flex items-center gap-2 pt-2 border-t border-slate-900">
+                      <span className="text-[10px] text-slate-500 uppercase font-mono">Photos:</span>
+                      {[
+                        ticket.complianceCaptures.idPhotoUrl,
+                        ticket.complianceCaptures.personPhotoUrl,
+                        ticket.complianceCaptures.vehiclePhotoUrl,
+                      ].map((url, i) =>
+                        url ? (
+                          <div key={i} className="w-7 h-7 rounded bg-slate-800 overflow-hidden border border-slate-700">
+                            <img src={url} alt="thumb" className="w-full h-full object-cover" />
+                          </div>
+                        ) : null
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))
+            )}
           </div>
-          <Button
-            onClick={handleSubmitTicket}
-            disabled={lines.length === 0}
-            className="bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs h-11 px-5"
-          >
-            <CheckCircle2 className="w-4 h-4 mr-1.5" /> Issue Voucher (${totalPayout.toFixed(0)})
-          </Button>
-        </div>
-      )}
+        </DialogContent>
+      </Dialog>
 
       <ComplianceCaptureModal
         isOpen={isComplianceModalOpen}
