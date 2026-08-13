@@ -36,6 +36,21 @@ function setStatus(status: ConnectionStatus) {
   listeners.forEach((listener) => listener(status));
 }
 
+const STATE_CHUNK_SIZE = 500 * 1024;
+
+async function uploadSerializedState(key: string, serialized: string) {
+  const uploadId = crypto.randomUUID();
+  const total = Math.max(1, Math.ceil(serialized.length / STATE_CHUNK_SIZE));
+
+  for (let index = 0; index < total; index += 1) {
+    const chunk = serialized.slice(index * STATE_CHUNK_SIZE, (index + 1) * STATE_CHUNK_SIZE);
+    await apiRequest(`/api/state/${encodeURIComponent(key)}/chunk`, {
+      method: "POST",
+      body: JSON.stringify({ uploadId, index, total, chunk }),
+    });
+  }
+}
+
 function mergeRecords(localValue: unknown, serverValue: unknown) {
   if (!Array.isArray(localValue) || !Array.isArray(serverValue)) return serverValue;
   const localRecords = localValue.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object" && "id" in item);
@@ -64,10 +79,7 @@ async function flushWrites(): Promise<void> {
       const [key, serialized] = pendingWrites.entries().next().value as [string, string];
       pendingWrites.delete(key);
       try {
-        await apiRequest(`/api/state/${encodeURIComponent(key)}`, {
-          method: "PUT",
-          body: JSON.stringify({ value: JSON.parse(serialized) }),
-        });
+        await uploadSerializedState(key, serialized);
         setStatus("connected");
         retryCount = 0;
       } catch (error) {
@@ -172,9 +184,11 @@ export const sharedStorage = {
   },
 
   async importState(state: Record<string, unknown>) {
-    await apiRequest("/api/state/import", { method: "POST", body: JSON.stringify({ state }) });
     for (const [key, value] of Object.entries(state)) {
-      if ((SHARED_KEYS as readonly string[]).includes(key)) localStorage.setItem(key, JSON.stringify(value));
+      if (!(SHARED_KEYS as readonly string[]).includes(key)) continue;
+      const serialized = JSON.stringify(value);
+      await uploadSerializedState(key, serialized);
+      localStorage.setItem(key, serialized);
     }
     remoteEnabled = true;
     setStatus("connected");

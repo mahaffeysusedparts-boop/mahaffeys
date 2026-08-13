@@ -48,6 +48,18 @@ async function initializeSchema() {
       updated_at TIMESTAMPTZ NOT NULL,
       updated_by TEXT REFERENCES users(id) ON DELETE SET NULL
     );
+
+    CREATE TABLE IF NOT EXISTS state_upload_chunks (
+      upload_id UUID NOT NULL,
+      state_key TEXT NOT NULL,
+      chunk_index INTEGER NOT NULL,
+      total_chunks INTEGER NOT NULL,
+      chunk_data TEXT NOT NULL,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (upload_id, chunk_index)
+    );
+    CREATE INDEX IF NOT EXISTS state_upload_chunks_created_at_idx ON state_upload_chunks(created_at);
   `);
 }
 
