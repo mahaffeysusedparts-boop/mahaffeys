@@ -1,4 +1,4 @@
-import React, { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import React, { lazy, Suspense, useCallback, useDeferredValue, useEffect, useMemo, useState } from "react";
 import { storageService } from "@/services/storageService";
 import { sharedStorage } from "@/services/sharedStorage";
 import { PullYardVehicle } from "@/types/scrap";
@@ -47,15 +47,18 @@ const PartsInterchangeModal = lazy(() =>
   })),
 );
 const FALLBACK_VEHICLE_PHOTO = generateSamplePhoto("vehicle");
+const INVENTORY_PAGE_SIZE = 24;
 
 export default function PublicInventoryPage() {
   const [vehicles, setVehicles] = useState<PullYardVehicle[]>([]);
   const [search, setSearch] = useState("");
   const [selectedSection, setSelectedSection] = useState<string>("ALL");
   const [partFilter, setPartFilter] = useState<string>("ALL");
+  const [visibleCount, setVisibleCount] = useState(INVENTORY_PAGE_SIZE);
   const [selectedVehicle, setSelectedVehicle] = useState<PullYardVehicle | null>(null);
   const [interchangeOpen, setInterchangeOpen] = useState(false);
   const [lastUpdatedTime, setLastUpdatedTime] = useState<string>(new Date().toLocaleTimeString());
+  const deferredSearch = useDeferredValue(search);
 
   // Notify Me Request State
   const [notifyOpen, setNotifyOpen] = useState(false);
@@ -91,7 +94,7 @@ export default function PublicInventoryPage() {
   }, [loadData]);
 
   const filteredVehicles = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    const q = deferredSearch.trim().toLowerCase();
     const normalizedPartFilter = partFilter.toLowerCase();
 
     return vehicles.filter((v) => {
@@ -109,7 +112,16 @@ export default function PublicInventoryPage() {
 
       return matchesSearch && matchesSection && matchesPart;
     });
-  }, [partFilter, search, selectedSection, vehicles]);
+  }, [deferredSearch, partFilter, selectedSection, vehicles]);
+
+  const visibleVehicles = useMemo(
+    () => filteredVehicles.slice(0, visibleCount),
+    [filteredVehicles, visibleCount],
+  );
+
+  useEffect(() => {
+    setVisibleCount(INVENTORY_PAGE_SIZE);
+  }, [deferredSearch, partFilter, selectedSection]);
 
   const handleSendNotifyRequest = () => {
     if (!reqPhone.trim()) {
@@ -270,15 +282,16 @@ export default function PublicInventoryPage() {
               </Button>
             </Card>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {filteredVehicles.map((veh) => {
-                const daysAgo = Math.floor(
-                  (Date.now() - new Date(veh.dateSetInYard).getTime()) / (1000 * 60 * 60 * 24)
-                );
-                const displayPhoto = veh.photoUrl || FALLBACK_VEHICLE_PHOTO;
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {visibleVehicles.map((veh) => {
+                  const daysAgo = Math.floor(
+                    (Date.now() - new Date(veh.dateSetInYard).getTime()) / (1000 * 60 * 60 * 24)
+                  );
+                  const displayPhoto = veh.photoUrl || FALLBACK_VEHICLE_PHOTO;
 
-                return (
-                  <Card
+                  return (
+                    <Card
                     key={veh.id}
                     onClick={() => setSelectedVehicle(veh)}
                     className="group bg-slate-900 border-2 border-slate-800 hover:border-amber-500/70 transition-all duration-300 cursor-pointer shadow-xl overflow-hidden flex flex-col justify-between [content-visibility:auto] [contain-intrinsic-size:420px]"
@@ -359,9 +372,26 @@ export default function PublicInventoryPage() {
                       <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                     </div>
                   </Card>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+
+              {visibleVehicles.length < filteredVehicles.length && (
+                <div className="mt-6 flex flex-col items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setVisibleCount((count) => count + INVENTORY_PAGE_SIZE)}
+                    className="border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-800"
+                  >
+                    Load {Math.min(INVENTORY_PAGE_SIZE, filteredVehicles.length - visibleVehicles.length)} more vehicles
+                  </Button>
+                  <span className="text-xs text-slate-500">
+                    Showing {visibleVehicles.length} of {filteredVehicles.length} matches
+                  </span>
+                </div>
+              )}
+            </>
           )}
         </div>
 

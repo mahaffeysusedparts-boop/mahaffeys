@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { lazy, memo, Suspense, useDeferredValue, useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -8,15 +8,20 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Car, Search, Calendar, MapPin, Wrench } from "lucide-react";
-import * as storageService from "@/services/storageService";
+import { storageService } from "@/services/storageService";
 import { PullYardVehicle } from "@/types/scrap";
-import { format, differenceInDays } from 'date-fns';
-import { PartsInterchangeModal } from "@/components/inventory/PartsInterchangeModal";
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
 
-const VehicleCard = ({ vehicle, onInterchangeClick }: { vehicle: PullYardVehicle, onInterchangeClick: (vehicle: PullYardVehicle) => void }) => {
-  const daysInYard = differenceInDays(new Date(), new Date(vehicle.dateSetInYard));
+const PartsInterchangeModal = lazy(() =>
+  import("@/components/inventory/PartsInterchangeModal").then((module) => ({
+    default: module.PartsInterchangeModal,
+  })),
+);
+const INVENTORY_PAGE_SIZE = 24;
+
+const VehicleCard = memo(({ vehicle, onInterchangeClick }: { vehicle: PullYardVehicle, onInterchangeClick: (vehicle: PullYardVehicle) => void }) => {
+  const daysInYard = Math.floor((Date.now() - new Date(vehicle.dateSetInYard).getTime()) / 86_400_000);
   const isNewArrival = daysInYard <= 7;
 
   return (
