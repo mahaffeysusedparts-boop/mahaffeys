@@ -40,9 +40,35 @@ interface CarIntakeFormProps {
   onTicketCreated: (ticket: Ticket) => void;
 }
 
+const compressVehiclePhoto = (file: File): Promise<string> => new Promise((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onerror = () => reject(new Error('Unable to read the selected photo'));
+  reader.onload = () => {
+    const image = new Image();
+    image.onerror = () => reject(new Error('Unable to process the selected photo'));
+    image.onload = () => {
+      const maxDimension = 1280;
+      const scale = Math.min(1, maxDimension / Math.max(image.width, image.height));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(image.width * scale));
+      canvas.height = Math.max(1, Math.round(image.height * scale));
+      const context = canvas.getContext('2d');
+      if (!context) {
+        reject(new Error('Photo compression is unavailable'));
+        return;
+      }
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL('image/jpeg', 0.76));
+    };
+    image.src = reader.result as string;
+  };
+  reader.readAsDataURL(file);
+});
+
 export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCreated }) => {
   // Vehicle Picture Capture State
   const [photoUrl, setPhotoUrl] = useState<string>('');
+  const [isSaving, setIsSaving] = useState(false);
   
   // References for device camera / file capture
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -146,26 +172,28 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
   };
 
   // Handle local image file upload for vehicle photo
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = async (event) => {
-        if (event.target?.result) {
-          const url = event.target.result as string;
-          setPhotoUrl(url);
-          toast.success('Vehicle photo captured successfully');
-          try {
-            const plateRes = await analyzeLicensePlateImage(url);
-            if (plateRes.plateNumber && !plateRes.plateNumber.startsWith("TAG-")) {
-              toast.info(`AI Vision detected Tag: ${plateRes.plateNumber}`);
-            }
-          } catch (err) {
-            console.warn("Plate OCR error:", err);
-          }
+    if (!file) return;
+
+    try {
+      const url = await compressVehiclePhoto(file);
+      setPhotoUrl(url);
+      toast.success('Vehicle photo captured successfully');
+      try {
+        const plateRes = await analyzeLicensePlateImage(url);
+        if (plateRes.plateNumber && !plateRes.plateNumber.startsWith("TAG-")) {
+          toast.info(`AI Vision detected Tag: ${plateRes.plateNumber}`);
         }
-      };
-      reader.readAsDataURL(file);
+      } catch (err) {
+        console.warn("Plate OCR error:", err);
+      }
+    } catch (error) {
+      toast.error('Could not process vehicle photo', {
+        description: error instanceof Error ? error.message : 'Choose a different image and try again.',
+      });
+    } finally {
+      e.target.value = '';
     }
   };
 
@@ -208,10 +236,7 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
   };
 
   const handleSubmitTicket = () => {
-    if (!vin.trim()) {
-      toast.error('Please enter the vehicle VIN or tap "No VIN"');
-      return;
-    }
+    if (isSaving) return;
     if (!customReceiptNumber.trim()) {
       toast.error('Please enter a Receipt / Ticket Number');
       return;
@@ -223,9 +248,10 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
 
     const currentOp = storageService.getSettings().operatorName;
     const finalCustomerName = sellerName.trim() || (originSource.trim() ? `Tow Origin: ${originSource}` : 'Tow Intake');
+    const pendingVin = vin.trim() || `PENDING-${customReceiptNumber.trim()}`;
 
     const carRecord: CarIntakeRecord = {
-      vin: vin.toUpperCase().trim(),
+      vin: pendingVin.toUpperCase(),
       year,
       make,
       model,
@@ -276,9 +302,21 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
       notes,
     };
 
-    storageService.saveTicket(newTicket);
-    toast.success(`Tow Intake Complete! Ticket #${newTicket.id} saved to Pending Group.`);
-    onTicketCreated(newTicket);
+    setIsSaving(true);
+    try {
+      storageService.saveTicket(newTicket);
+      toast.success(`Ticket #${newTicket.id} saved to the Pending Group.`);
+      onTicketCreated(newTicket);
+    } catch (error) {
+      const storageFull = error instanceof DOMException && error.name === 'QuotaExceededError';
+      toast.error('Car intake could not be saved', {
+        description: storageFull
+          ? 'Browser storage is full. Remove older records or use a smaller vehicle photo, then try again.'
+          : error instanceof Error ? error.message : 'Please try again.',
+      });
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -850,10 +888,13 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
               </div>
 
               <Button
+                type="button"
                 onClick={handleSubmitTicket}
-                className="w-full h-12 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black shadow-xl shadow-amber-950 text-sm tracking-wide"
+                disabled={isSaving}
+                className="w-full h-12 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black shadow-xl shadow-amber-950 text-sm tracking-wide rounded-xl"
               >
-                <CheckCircle2 className="w-5 h-5 mr-2" /> Save to Pending Group
+                {isSaving ? <RefreshCw className="w-5 h-5 mr-2 animate-spin" /> : <CheckCircle2 className="w-5 h-5 mr-2" />}
+                {isSaving ? 'Saving Pending Intake…' : 'Save to Pending Group'}
               </Button>
             </CardContent>
           </Card>
