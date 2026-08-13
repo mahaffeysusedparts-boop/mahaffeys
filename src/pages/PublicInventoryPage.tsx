@@ -1,8 +1,7 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { storageService } from "@/services/storageService";
 import { sharedStorage } from "@/services/sharedStorage";
 import { PullYardVehicle } from "@/types/scrap";
-import { PartsInterchangeModal } from "@/components/inventory/PartsInterchangeModal";
 import { Navbar } from "@/components/layout/Navbar";
 import { generateSamplePhoto } from "@/utils/complianceUtils";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -42,6 +41,11 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
+const PartsInterchangeModal = lazy(() =>
+  import("@/components/inventory/PartsInterchangeModal").then((module) => ({
+    default: module.PartsInterchangeModal,
+  })),
+);
 const FALLBACK_VEHICLE_PHOTO = generateSamplePhoto("vehicle");
 
 export default function PublicInventoryPage() {
@@ -511,10 +515,12 @@ export default function PublicInventoryPage() {
 
       {/* Parts Interchange Search Modal */}
       {interchangeOpen && (
-        <PartsInterchangeModal
-          isOpen
-          onClose={() => setInterchangeOpen(false)}
-        />
+        <Suspense fallback={null}>
+          <PartsInterchangeModal
+            isOpen
+            onClose={() => setInterchangeOpen(false)}
+          />
+        </Suspense>
       )}
     </div>
   );
