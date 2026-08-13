@@ -79,10 +79,7 @@ export default function Index() {
 
         {/* View 2: Car Salvage Intake Form */}
         {activeMode === 'CAR_SALVAGE' && (
-          <CarIntakeForm
-            onBack={handleResetIntake}
-            onTicketCreated={handleTicketCreated}
-          />
+          <CarIntakeForm onBack={handleResetIntake} />
         )}
 
         {/* View 3: Standard Scrap Yard Metal Intake Form */}
