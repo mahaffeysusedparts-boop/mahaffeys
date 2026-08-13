@@ -15,6 +15,23 @@ services:
       timeout: 5s
       retries: 12
 
+  storage-agent:
+    build:
+      context: .
+      dockerfile: deploy/docker/storage-agent.Dockerfile
+    container_name: mahaffeys-storage-agent
+    restart: unless-stopped
+    privileged: true
+    volumes:
+      - /dev:/dev
+      - /sys:/sys:ro
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3010/health').then(response => { if (!response.ok) process.exit(1) }).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+
   mahaffeys:
     build: .
     container_name: mahaffeys-app
@@ -22,12 +39,15 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      storage-agent:
+        condition: service_healthy
     environment:
       NODE_ENV: production
       NITRO_HOST: 0.0.0.0
       NITRO_PORT: 3000
       NITRO_DATABASE_URL: postgresql://mahaffeys:${POSTGRES_PASSWORD}@postgres:5432/mahaffeys
       NITRO_COOKIE_SECURE: ${NITRO_COOKIE_SECURE:-false}
+      NITRO_STORAGE_AGENT_URL: http://storage-agent:3010
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(response => { if (!response.ok) process.exit(1) }).catch(() => process.exit(1))"]
       interval: 10s

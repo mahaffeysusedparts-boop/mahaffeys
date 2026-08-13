@@ -67,6 +67,21 @@ export interface EnclosureBay {
   available: boolean;
 }
 
+export interface StorageSnapshot {
+  disks: StorageDisk[];
+  bays: EnclosureBay[];
+  arrays: RaidArray[];
+  capabilities: {
+    linux: boolean;
+    mdadmInstalled: boolean;
+    privileged: boolean;
+    accessMode: string;
+    automaticBayMapping: boolean;
+  };
+  discoveryError: string | null;
+  checkedAt: string;
+}
+
 async function command(command: string, args: string[]) {
   try {
     return await execFileAsync(command, args, { timeout: 20_000, maxBuffer: 4 * 1024 * 1024 });
@@ -78,6 +93,24 @@ async function command(command: string, args: string[]) {
         ? `${command} is not installed on this Linux server`
         : (detail.stderr?.trim() || `${command} could not complete the storage operation`),
     });
+  }
+}
+
+async function requestStorageAgent<T>(path: string, init?: RequestInit): Promise<T | null> {
+  const baseUrl = process.env.NITRO_STORAGE_AGENT_URL?.replace(/\/$/, "");
+  if (!baseUrl) return null;
+  try {
+    const response = await fetch(`${baseUrl}${path}`, {
+      ...init,
+      signal: AbortSignal.timeout(25_000),
+      headers: { "Content-Type": "application/json", ...init?.headers },
+    });
+    const body = await response.json().catch(() => null) as T | { message?: string } | null;
+    if (!response.ok) throw createError({ statusCode: response.status, statusMessage: (body as { message?: string } | null)?.message || "Storage agent request failed" });
+    return body as T;
+  } catch (error) {
+    if (error && typeof error === "object" && "statusCode" in error) throw error;
+    throw createError({ statusCode: 503, statusMessage: "Docker storage agent is unavailable" });
   }
 }
 
@@ -215,7 +248,10 @@ async function readMdadmCapabilities() {
   }
 }
 
-export async function getStorageSnapshot() {
+export async function getStorageSnapshot(): Promise<StorageSnapshot> {
+  const agentSnapshot = await requestStorageAgent<StorageSnapshot>("/snapshot");
+  if (agentSnapshot) return agentSnapshot;
+
   let devices: LsblkDevice[] = [];
   let discoveryError: string | null = null;
   try {
@@ -279,6 +315,12 @@ export function validateDevicePath(value: unknown) {
 }
 
 export async function runMdadm(args: string[]) {
+  if (process.env.NITRO_STORAGE_AGENT_URL) {
+    return requestStorageAgent<{ accepted: boolean }>("/mdadm", {
+      method: "POST",
+      body: JSON.stringify({ args }),
+    });
+  }
   if (typeof process.getuid === "function" && process.getuid() === 0) {
     return command("mdadm", args);
   }

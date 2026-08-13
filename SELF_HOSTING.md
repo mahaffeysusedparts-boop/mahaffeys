@@ -41,6 +41,8 @@ sudo docker compose up --build -d
 
 The application will now be running and accessible at `http://192.168.1.210`.
 
+Docker Compose also starts a private `storage-agent` container. It installs `mdadm`, receives no published host port, validates every requested block-device operation, and is the only container granted host device privileges. The public Mahaffeys web container remains unprivileged. RAID operations affect real host disks and should only be confirmed after checking the selected device serial numbers.
+
 ### Managing the Docker Deployment
 
 - **View logs:** `sudo docker compose logs -f`

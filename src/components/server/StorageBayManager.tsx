@@ -52,7 +52,7 @@ interface StorageSnapshot {
     linux: boolean;
     mdadmInstalled: boolean;
     privileged: boolean;
-    accessMode: "root" | "sudo" | "none";
+    accessMode: "root" | "sudo" | "agent" | "none";
     automaticBayMapping: boolean;
   };
   discoveryError: string | null;
@@ -195,10 +195,12 @@ export function StorageBayManager() {
                   : "The app service needs root access or restricted passwordless sudo access to mdadm."}
               </div>
             </div>
-          ) : snapshot?.capabilities.accessMode === "sudo" ? (
+          ) : snapshot?.capabilities.accessMode === "sudo" || snapshot?.capabilities.accessMode === "agent" ? (
             <div className="flex gap-3 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm text-emerald-100">
               <Check className="mt-0.5 h-5 w-5 shrink-0 text-emerald-400" />
-              RAID management is enabled through restricted sudo access to mdadm.
+              {snapshot.capabilities.accessMode === "agent"
+                ? "RAID management is connected to the private Docker storage agent."
+                : "RAID management is enabled through restricted sudo access to mdadm."}
             </div>
           ) : null}
 
