@@ -191,8 +191,8 @@ export const PartsInterchangeModal: React.FC<PartsInterchangeModalProps> = ({
                       </div>
 
                       <div className="p-2 rounded-xl bg-amber-950/80 border border-amber-500/40 text-amber-300 text-center font-mono shrink-0">
-                        <span className="text-xs font-black block">{vehicle.rowNumber}</span>
-                        <span className="text-[9px] text-amber-400/80">{vehicle.spaceNumber}</span>
+                        <span className="text-xs font-black block">{vehicle.rowNumber ?? '—'}</span>
+                        <span className="text-[9px] text-amber-400/80">{vehicle.section}</span>
                       </div>
                     </div>
 

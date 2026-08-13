@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { PullYardVehicle } from '@/types/scrap';
-import QRCode from 'qrcode.react';
+import { QRCodeSVG } from 'qrcode.react';
 import { format } from 'date-fns';
 import { Button } from '@/components/ui/button';
 import { Printer } from 'lucide-react';
@@ -36,7 +36,7 @@ export const VehicleWindowTag: React.FC<VehicleWindowTagProps> = ({ vehicle, yar
             <p className="text-md text-gray-600">{vehicle.color}</p>
           </div>
           <div className="col-span-1 flex justify-center items-center">
-            <QRCode value={vehicleUrl} size={100} />
+            <QRCodeSVG value={vehicleUrl} size={100} />
           </div>
         </div>
 
@@ -65,7 +65,7 @@ export const VehicleWindowTag: React.FC<VehicleWindowTagProps> = ({ vehicle, yar
           Print Tag
         </Button>
       </div>
-      <style jsx global>{`
+      <style>{`
         @media print {
           body * {
             visibility: hidden;
