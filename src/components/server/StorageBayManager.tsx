@@ -52,6 +52,7 @@ interface StorageSnapshot {
     linux: boolean;
     mdadmInstalled: boolean;
     privileged: boolean;
+    accessMode: "root" | "sudo" | "none";
     automaticBayMapping: boolean;
   };
   discoveryError: string | null;
@@ -187,7 +188,17 @@ export function StorageBayManager() {
           {snapshot && !managementReady ? (
             <div className="flex gap-3 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-100">
               <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-amber-400" />
-              <div><strong>Monitoring only.</strong> RAID controls require mdadm and the app service to run with storage-management privileges.</div>
+              <div>
+                <strong>Monitoring only.</strong>{" "}
+                {!snapshot.capabilities.mdadmInstalled
+                  ? "mdadm is not installed on this Linux server."
+                  : "The app service needs root access or restricted passwordless sudo access to mdadm."}
+              </div>
+            </div>
+          ) : snapshot?.capabilities.accessMode === "sudo" ? (
+            <div className="flex gap-3 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm text-emerald-100">
+              <Check className="mt-0.5 h-5 w-5 shrink-0 text-emerald-400" />
+              RAID management is enabled through restricted sudo access to mdadm.
             </div>
           ) : null}
 

@@ -193,6 +193,27 @@ async function readArrays(devices: LsblkDevice[]): Promise<RaidArray[]> {
   }));
 }
 
+async function readMdadmCapabilities() {
+  let installed = true;
+  try {
+    await execFileAsync("mdadm", ["--version"], { timeout: 5_000 });
+  } catch (error) {
+    installed = (error as NodeJS.ErrnoException).code !== "ENOENT";
+  }
+
+  const runningAsRoot = typeof process.getuid === "function" && process.getuid() === 0;
+  if (!installed || runningAsRoot) {
+    return { installed, canManage: installed && runningAsRoot, accessMode: runningAsRoot ? "root" : "none" };
+  }
+
+  try {
+    await execFileAsync("sudo", ["-n", "mdadm", "--version"], { timeout: 5_000 });
+    return { installed: true, canManage: true, accessMode: "sudo" };
+  } catch {
+    return { installed: true, canManage: false, accessMode: "none" };
+  }
+}
+
 export async function getStorageSnapshot() {
   let devices: LsblkDevice[] = [];
   let discoveryError: string | null = null;
@@ -224,13 +245,7 @@ export async function getStorageSnapshot() {
     };
   }));
 
-  let mdadmInstalled = true;
-  try {
-    await execFileAsync("mdadm", ["--version"], { timeout: 5_000 });
-  } catch {
-    mdadmInstalled = false;
-  }
-  const bays = await readEnclosureBays();
+  const [bays, mdadm] = await Promise.all([readEnclosureBays(), readMdadmCapabilities()]);
 
   return {
     disks,
@@ -238,8 +253,9 @@ export async function getStorageSnapshot() {
     arrays: await readArrays(devices),
     capabilities: {
       linux: process.platform === "linux",
-      mdadmInstalled,
-      privileged: typeof process.getuid === "function" && process.getuid() === 0,
+      mdadmInstalled: mdadm.installed,
+      privileged: mdadm.canManage,
+      accessMode: mdadm.accessMode,
       automaticBayMapping: bays.length > 0 || disks.some((disk) => disk.bay !== null),
     },
     discoveryError,
@@ -262,5 +278,8 @@ export function validateDevicePath(value: unknown) {
 }
 
 export async function runMdadm(args: string[]) {
-  return command("mdadm", args);
+  if (typeof process.getuid === "function" && process.getuid() === 0) {
+    return command("mdadm", args);
+  }
+  return command("sudo", ["-n", "mdadm", ...args]);
 }
