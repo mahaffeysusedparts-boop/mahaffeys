@@ -37,6 +37,9 @@ const STORAGE_KEYS = {
   IP_CAMERAS: 'mahaffeys_ip_cameras',
 };
 
+let pullVehicleCacheSource: string | null = null;
+let pullVehicleCache: PullYardVehicle[] | null = null;
+
 export const INITIAL_IP_CAMERAS: IpCamera[] = [
   {
     id: 'cam-101',
@@ -975,8 +978,15 @@ export const storageService = {
   getPullYardVehicles(): PullYardVehicle[] {
     const data = sharedStorage.getItem(STORAGE_KEYS.PULL_YARD_VEHICLES);
     if (!data) {
-      sharedStorage.setItem(STORAGE_KEYS.PULL_YARD_VEHICLES, JSON.stringify(INITIAL_PULL_VEHICLES));
+      const serialized = JSON.stringify(INITIAL_PULL_VEHICLES);
+      sharedStorage.setItem(STORAGE_KEYS.PULL_YARD_VEHICLES, serialized);
+      pullVehicleCacheSource = serialized;
+      pullVehicleCache = INITIAL_PULL_VEHICLES;
       return INITIAL_PULL_VEHICLES;
+    }
+
+    if (data === pullVehicleCacheSource && pullVehicleCache) {
+      return pullVehicleCache;
     }
 
     const vehicles = JSON.parse(data) as Array<Omit<PullYardVehicle, 'status' | 'dismantlingLog'> & {
@@ -984,7 +994,8 @@ export const storageService = {
       dismantlingLog?: PullYardVehicle['dismantlingLog'];
     }>;
 
-    return vehicles.map((vehicle) => ({
+    pullVehicleCacheSource = data;
+    pullVehicleCache = vehicles.map((vehicle) => ({
       ...vehicle,
       status:
         vehicle.status === 'CRUSHED' || vehicle.status === 'STRIPPED_SHELL' || vehicle.status === 'READY_FOR_CRUSHER'
@@ -999,6 +1010,7 @@ export const storageService = {
         oilDrained: false,
       },
     }));
+    return pullVehicleCache;
   },
 
   savePullYardVehicle(veh: PullYardVehicle): PullYardVehicle {
@@ -1009,13 +1021,19 @@ export const storageService = {
     } else {
       vehicles.unshift(veh);
     }
-    sharedStorage.setItem(STORAGE_KEYS.PULL_YARD_VEHICLES, JSON.stringify(vehicles));
+    const serialized = JSON.stringify(vehicles);
+    sharedStorage.setItem(STORAGE_KEYS.PULL_YARD_VEHICLES, serialized);
+    pullVehicleCacheSource = serialized;
+    pullVehicleCache = vehicles;
     return veh;
   },
 
   deletePullYardVehicle(vehicleId: string): void {
     const vehicles = this.getPullYardVehicles().filter((vehicle) => vehicle.id !== vehicleId);
-    sharedStorage.setItem(STORAGE_KEYS.PULL_YARD_VEHICLES, JSON.stringify(vehicles));
+    const serialized = JSON.stringify(vehicles);
+    sharedStorage.setItem(STORAGE_KEYS.PULL_YARD_VEHICLES, serialized);
+    pullVehicleCacheSource = serialized;
+    pullVehicleCache = vehicles;
   },
 
   getCoreReturns(): CoreReturnLog[] {

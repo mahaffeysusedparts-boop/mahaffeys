@@ -25,10 +25,16 @@ const VehicleCard = memo(({ vehicle, onInterchangeClick }: { vehicle: PullYardVe
   const isNewArrival = daysInYard <= 7;
 
   return (
-    <Card className="flex flex-col overflow-hidden transition-all hover:shadow-lg">
+    <Card className="flex flex-col overflow-hidden transition-all hover:shadow-lg [content-visibility:auto] [contain-intrinsic-size:380px]">
       <CardHeader className="p-0">
         <div className="relative">
-          <img src={vehicle.photoUrl || '/placeholder.svg'} alt={`${vehicle.year} ${vehicle.make} ${vehicle.model}`} className="w-full h-48 object-cover" />
+          <img
+            src={vehicle.photoUrl || '/placeholder.svg'}
+            alt={`${vehicle.year} ${vehicle.make} ${vehicle.model}`}
+            loading="lazy"
+            decoding="async"
+            className="w-full h-48 object-cover"
+          />
           {isNewArrival && (
             <Badge className="absolute top-2 right-2 bg-green-500 text-white">New Arrival</Badge>
           )}
@@ -40,7 +46,7 @@ const VehicleCard = memo(({ vehicle, onInterchangeClick }: { vehicle: PullYardVe
         <div className="mt-2 space-y-1 text-sm">
           <div className="flex items-center">
             <Calendar className="w-4 h-4 mr-2" />
-            <span>Arrived: {format(new Date(vehicle.dateSetInYard), 'MMM d, yyyy')}</span>
+            <span>Arrived: {new Date(vehicle.dateSetInYard).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span>
           </div>
           <div className="flex items-center">
             <MapPin className="w-4 h-4 mr-2" />
@@ -56,13 +62,17 @@ const VehicleCard = memo(({ vehicle, onInterchangeClick }: { vehicle: PullYardVe
       </CardFooter>
     </Card>
   );
-};
+});
+
+VehicleCard.displayName = "VehicleCard";
 
 export default function PublicVehicleInventoryPage() {
   const [vehicles, setVehicles] = useState<PullYardVehicle[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [sortBy, setSortBy] = useState("dateSetInYard_desc");
+  const [visibleCount, setVisibleCount] = useState(INVENTORY_PAGE_SIZE);
   const [selectedVehicleForInterchange, setSelectedVehicleForInterchange] = useState<PullYardVehicle | null>(null);
+  const deferredSearchTerm = useDeferredValue(searchTerm);
 
   useEffect(() => {
     const allVehicles = storageService.getPullYardVehicles();
@@ -71,8 +81,9 @@ export default function PublicVehicleInventoryPage() {
   }, []);
 
   const filteredAndSortedVehicles = useMemo(() => {
-    let result = vehicles.filter(v =>
-      `${v.year} ${v.make} ${v.model} ${v.vin}`.toLowerCase().includes(searchTerm.toLowerCase())
+    const query = deferredSearchTerm.trim().toLowerCase();
+    const result = vehicles.filter(v =>
+      `${v.year} ${v.make} ${v.model} ${v.vin}`.toLowerCase().includes(query)
     );
 
     const [sortField, sortDir] = sortBy.split('_');
@@ -85,7 +96,7 @@ export default function PublicVehicleInventoryPage() {
       } else if (sortField === 'year') {
         valA = a.year;
         valB = b.year;
-      } else { // make
+      } else {
         valA = a.make.toLowerCase();
         valB = b.make.toLowerCase();
       }
@@ -96,7 +107,16 @@ export default function PublicVehicleInventoryPage() {
     });
 
     return result;
-  }, [vehicles, searchTerm, sortBy]);
+  }, [deferredSearchTerm, sortBy, vehicles]);
+
+  const visibleVehicles = useMemo(
+    () => filteredAndSortedVehicles.slice(0, visibleCount),
+    [filteredAndSortedVehicles, visibleCount],
+  );
+
+  useEffect(() => {
+    setVisibleCount(INVENTORY_PAGE_SIZE);
+  }, [deferredSearchTerm, sortBy]);
 
   return (
     <div className="flex flex-col min-h-screen bg-gray-50 dark:bg-gray-900">
@@ -137,11 +157,27 @@ export default function PublicVehicleInventoryPage() {
         </div>
 
         {filteredAndSortedVehicles.length > 0 ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {filteredAndSortedVehicles.map(vehicle => (
-              <VehicleCard key={vehicle.id} vehicle={vehicle} onInterchangeClick={setSelectedVehicleForInterchange} />
-            ))}
-          </div>
+          <>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+              {visibleVehicles.map(vehicle => (
+                <VehicleCard key={vehicle.id} vehicle={vehicle} onInterchangeClick={setSelectedVehicleForInterchange} />
+              ))}
+            </div>
+
+            {visibleVehicles.length < filteredAndSortedVehicles.length && (
+              <div className="mt-8 flex flex-col items-center gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setVisibleCount((count) => count + INVENTORY_PAGE_SIZE)}
+                >
+                  Load {Math.min(INVENTORY_PAGE_SIZE, filteredAndSortedVehicles.length - visibleVehicles.length)} more vehicles
+                </Button>
+                <span className="text-sm text-muted-foreground">
+                  Showing {visibleVehicles.length} of {filteredAndSortedVehicles.length} vehicles
+                </span>
+              </div>
+            )}
+          </>
         ) : (
           <Alert className="max-w-2xl mx-auto">
             <Car className="h-4 w-4" />
@@ -154,10 +190,15 @@ export default function PublicVehicleInventoryPage() {
       </main>
       <Footer />
       {selectedVehicleForInterchange && (
-        <PartsInterchangeModal
-          vehicle={selectedVehicleForInterchange}
-          onClose={() => setSelectedVehicleForInterchange(null)}
-        />
+        <Suspense fallback={null}>
+          <PartsInterchangeModal
+            isOpen
+            onClose={() => setSelectedVehicleForInterchange(null)}
+            initialMake={selectedVehicleForInterchange.make}
+            initialModel={selectedVehicleForInterchange.model}
+            initialYear={selectedVehicleForInterchange.year}
+          />
+        </Suspense>
       )}
     </div>
   );
