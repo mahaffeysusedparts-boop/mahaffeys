@@ -12,7 +12,7 @@ const ALLOWED_KEYS = new Set([
 
 export default defineHandler(async (event) => {
   const admin = await requireAdmin(event);
-  const body = await readBody<{ state?: Record<string, unknown> }>(event);
+  const body = await readBody<{ state?: Record<string, unknown> }>(event, { limit: 25 * 1024 * 1024 });
   if (!body.state || typeof body.state !== "object") throw createError({ statusCode: 400, statusMessage: "Shared state is required" });
   const now = new Date();
   await withTransaction(async (client) => {

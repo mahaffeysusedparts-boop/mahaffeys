@@ -14,7 +14,7 @@ export default defineHandler(async (event) => {
   const user = await requireUser(event);
   const key = getRouterParam(event, "key");
   if (!key || !ALLOWED_KEYS.has(key)) throw createError({ statusCode: 400, statusMessage: "Invalid shared data key" });
-  const body = await readBody<{ value?: unknown }>(event);
+  const body = await readBody<{ value?: unknown }>(event, { limit: 25 * 1024 * 1024 });
   if (!("value" in body)) throw createError({ statusCode: 400, statusMessage: "A value is required" });
   const now = new Date();
   await query(`
