@@ -1,5 +1,3 @@
-"use client";
-
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -11,7 +9,6 @@ import { ProtectedRoute } from "./components/auth/ProtectedRoute";
 import DashboardPage from "./pages/DashboardPage";
 import IntakePage from "./pages/IntakePage";
 import PublicInventoryPage from "./pages/PublicInventoryPage";
-import PublicVehiclesPage from "./pages/PublicVehiclesPage";
 import TicketsPage from "./pages/TicketsPage";
 import PricingPage from "./pages/PricingPage";
 import CustomersPage from "./pages/CustomersPage";
@@ -21,13 +18,11 @@ import ContainersPage from "./pages/ContainersPage";
 import CashDrawerPage from "./pages/CashDrawerPage";
 import YardMapPage from "./pages/YardMapPage";
 import PullAPartPage from "./pages/PullAPartPage";
-import MobileYardPage from "./pages/MobileYardPage";
 import SystemHealthPage from "./pages/SystemHealthPage";
 import ServerAdminPage from "./pages/ServerAdminPage";
 import UserManagementPage from "./pages/UserManagementPage";
 import LoginPage from "./pages/LoginPage";
 import PendingApprovalPage from "./pages/PendingApprovalPage";
-import CamerasPage from "./pages/CamerasPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -45,9 +40,8 @@ const App = () => (
             <Route path="/login" element={<LoginPage />} />
             <Route path="/pending-approval" element={<PendingApprovalPage />} />
 
-            {/* PUBLIC YARD PARTS & VEHICLES CATALOG EXCEPTIONS (Guest Accessible) */}
+            {/* PUBLIC YARD PARTS CATALOG EXCEPTION (Guest Accessible) */}
             <Route path="/inventory" element={<PublicInventoryPage />} />
-            <Route path="/vehicles" element={<PublicVehiclesPage />} />
 
             {/* PROTECTED WORKSTATION ROUTES */}
             <Route
@@ -75,14 +69,6 @@ const App = () => (
               }
             />
             <Route
-              path="/mobile-yard"
-              element={
-                <ProtectedRoute>
-                  <MobileYardPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
               path="/pull-a-part"
               element={
                 <ProtectedRoute>
@@ -95,14 +81,6 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <CompliancePage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/cameras"
-              element={
-                <ProtectedRoute>
-                  <CamerasPage />
                 </ProtectedRoute>
               }
             />

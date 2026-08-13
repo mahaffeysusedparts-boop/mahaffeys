@@ -34,9 +34,7 @@ export interface UserRow {
 }
 
 const SESSION_COOKIE = "mahaffeys_session";
-const DEFAULT_PERSISTENT_LIFETIME = 60 * 60 * 24 * 30; // 30 days
-const SESSION_ONLY_LIFETIME = 60 * 60 * 24 * 1; // 1 day
-
+const SESSION_LIFETIME_SECONDS = 60 * 60 * 24 * 14;
 const asIso = (value: Date | string) => value instanceof Date ? value.toISOString() : value;
 
 export function toPublicUser(row: UserRow): PublicUser {
@@ -72,24 +70,21 @@ function tokenHash(token: string) {
   return createHash("sha256").update(token).digest("hex");
 }
 
-export async function createSession(event: H3Event, userId: string, remember: boolean = true) {
+export async function createSession(event: H3Event, userId: string) {
   const token = randomBytes(32).toString("base64url");
   const now = new Date();
-  const lifetimeSeconds = remember ? DEFAULT_PERSISTENT_LIFETIME : SESSION_ONLY_LIFETIME;
-  const expiresAt = new Date(now.getTime() + lifetimeSeconds * 1000);
-
+  const expiresAt = new Date(now.getTime() + SESSION_LIFETIME_SECONDS * 1000);
   await query("DELETE FROM sessions WHERE expires_at <= NOW()");
   await query(
     "INSERT INTO sessions (token_hash, user_id, expires_at, created_at) VALUES ($1, $2, $3, $4)",
     [tokenHash(token), userId, expiresAt, now],
   );
-
   setCookie(event, SESSION_COOKIE, token, {
     httpOnly: true,
     secure: process.env.NITRO_COOKIE_SECURE === "true",
     sameSite: "strict",
     path: "/",
-    maxAge: lifetimeSeconds,
+    maxAge: SESSION_LIFETIME_SECONDS,
   });
 }
 

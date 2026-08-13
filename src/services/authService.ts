@@ -68,10 +68,10 @@ export const authService = {
     return response.user;
   },
 
-  async login(username: string, password: string, remember: boolean = true) {
+  async login(username: string, password: string) {
     const response = await apiRequest<{ user: UserAccount }>("/api/auth/login", {
       method: "POST",
-      body: JSON.stringify({ username, password, remember }),
+      body: JSON.stringify({ username, password }),
     });
     currentUser = response.user;
     if (response.user.role === "admin") await this.refreshUsers();

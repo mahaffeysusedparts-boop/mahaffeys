@@ -1,5 +1,3 @@
-"use client";
-
 import React, { useState, useEffect } from "react";
 import { Navbar } from "@/components/layout/Navbar";
 import { storageService } from "@/services/storageService";
@@ -38,9 +36,6 @@ import {
   Shield,
   ChevronRight,
   Camera,
-  Smartphone,
-  Layers3,
-  Truck,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -127,15 +122,15 @@ export default function DashboardPage() {
 
             {/* Quick Action Launchers */}
             <div className="flex flex-col sm:flex-row items-center gap-3 shrink-0">
-              <Link to="/mobile-yard" className="w-full sm:w-auto">
-                <Button className="w-full sm:w-auto bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-xs px-5 h-11 gap-2 shadow-lg shadow-amber-950">
-                  <Smartphone className="w-4 h-4" /> Mobile Field Yard Ops
-                </Button>
-              </Link>
-
               <Link to="/intake" className="w-full sm:w-auto">
                 <Button className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs px-5 h-11 gap-2 shadow-lg shadow-emerald-950">
                   <Plus className="w-4 h-4" /> Start New Intake
+                </Button>
+              </Link>
+
+              <Link to="/pull-a-part" className="w-full sm:w-auto">
+                <Button variant="outline" className="w-full sm:w-auto border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs h-11 gap-2">
+                  <Wrench className="w-4 h-4 text-amber-400" /> Pull-A-Part Suite
                 </Button>
               </Link>
             </div>
@@ -339,11 +334,9 @@ export default function DashboardPage() {
 
             <CardContent className="p-4 space-y-2">
               {[
-                { title: "Mobile Field Yard Ops", path: "/mobile-yard", icon: Smartphone, color: "text-amber-400" },
                 { title: "Car Salvage & Scrap Intake", path: "/intake", icon: Scale, color: "text-emerald-400" },
-                { title: "Public Cars On Yard", path: "/vehicles", icon: Car, color: "text-amber-400" },
-                { title: "Public Parts Catalog", path: "/inventory", icon: Wrench, color: "text-sky-400" },
-                { title: "Pull-A-Part Row Operations", path: "/pull-a-part", icon: Wrench, color: "text-amber-400" },
+                { title: "Public Vehicle Inventory", path: "/inventory", icon: Car, color: "text-amber-400" },
+                { title: "Pull-A-Part Row Operations", path: "/pull-a-part", icon: Wrench, color: "text-sky-400" },
                 { title: "Compliance & NMVTIS Hub", path: "/compliance", icon: ShieldCheck, color: "text-purple-400" },
                 { title: "IP Camera Feeds", path: "/cameras", icon: Camera, color: "text-sky-400" },
                 { title: "Cash Drawer Station", path: "/cash-drawer", icon: Banknote, color: "text-emerald-400" },

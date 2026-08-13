@@ -1,5 +1,3 @@
-"use client";
-
 export type IntakeType = 'CAR_SALVAGE' | 'SCRAP_METAL';
 
 export type ScaleConnectionMode = 'WEB_SERIAL' | 'WEBSOCKET';
@@ -114,59 +112,26 @@ export interface VehicleDismantlingLog {
   wheelsRemoved: number;
   gasDrained: boolean;
   oilDrained: boolean;
-  coolantDrained?: boolean;
-  batteryPulled?: boolean;
   notes?: string;
   updatedAt?: string;
-  updatedBy?: string;
-}
-
-export interface VehicleRelocationLog {
-  id: string;
-  vehicleId: string;
-  vehicleDesc: string;
-  fromLocation: string;
-  toLocation: string;
-  operatorName: string;
-  timestamp: string;
-  reason?: string;
 }
 
 export interface PullYardVehicle {
   id: string;
-  stockNumber?: string;
   section: 'Domestic Trucks & SUVs' | 'Ford & Lincoln' | 'GM & Chevrolet' | 'Chrysler & Dodge' | 'Asian Imports' | 'European';
-  rowNumber?: string;
-  spaceNumber?: string;
   year: number;
   make: string;
   model: string;
   color: string;
   vin: string;
-  dateSetInYard: string; // Arrival Date & Time ISO
-  entryTimestamp?: string;
+  dateSetInYard: string;
   status: PullYardVehicleStatus;
   partsRemaining: string[];
   dismantlingLog: VehicleDismantlingLog;
-  relocationHistory?: VehicleRelocationLog[];
   photoUrl?: string;
   purchasePrice?: number;
   originSource?: string;
   notes?: string;
-  intakeOperator?: string;
-}
-
-export interface VehicleArrivalSubscription {
-  id: string;
-  make: string;
-  model: string;
-  yearStart?: number;
-  yearEnd?: number;
-  contactName?: string;
-  contactPhoneOrEmail: string;
-  createdAt: string;
-  isFulfilled?: boolean;
-  notifiedAt?: string;
 }
 
 export interface CoreReturnLog {

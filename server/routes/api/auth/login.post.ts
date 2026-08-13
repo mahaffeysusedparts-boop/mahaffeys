@@ -4,7 +4,7 @@ import { createSession, toPublicUser, verifyPassword, type UserRow } from "../..
 import { query } from "../../../utils/db";
 
 export default defineHandler(async (event) => {
-  const body = await readBody<{ username?: string; password?: string; remember?: boolean }>(event);
+  const body = await readBody<{ username?: string; password?: string }>(event);
   const identifier = body.username?.trim().toLowerCase();
   if (!identifier || !body.password) {
     throw createError({ statusCode: 400, statusMessage: "Username and password are required" });
@@ -18,7 +18,6 @@ export default defineHandler(async (event) => {
   if (row.status === "disabled" || row.status === "rejected") {
     throw createError({ statusCode: 403, statusMessage: "Account access is disabled or rejected" });
   }
-
-  await createSession(event, row.id, body.remember ?? true);
+  await createSession(event, row.id);
   return { user: toPublicUser(row) };
 });

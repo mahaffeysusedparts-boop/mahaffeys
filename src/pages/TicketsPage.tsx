@@ -4,7 +4,6 @@ import { storageService } from '@/services/storageService';
 import { sharedStorage } from '@/services/sharedStorage';
 import { Navbar } from '@/components/layout/Navbar';
 import { ReceiptModal } from '@/components/receipts/ReceiptModal';
-import { AddHistoricalTicketModal } from '@/components/tickets/AddHistoricalTicketModal';
 import { calculateComplianceScore } from '@/utils/complianceUtils';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -33,8 +32,6 @@ import {
   ShieldCheck,
   Edit3,
   Hash,
-  Plus,
-  History,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -45,7 +42,6 @@ export default function TicketsPage() {
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
   const [inspectionTicket, setInspectionTicket] = useState<Ticket | null>(null);
   const [receiptOpen, setReceiptOpen] = useState(false);
-  const [addHistoricalModalOpen, setAddHistoricalModalOpen] = useState(false);
 
   // Edit Receipt Number Modal
   const [editReceiptTicket, setEditReceiptTicket] = useState<Ticket | null>(null);
@@ -152,13 +148,6 @@ export default function TicketsPage() {
                 ${totalPayoutSum.toLocaleString('en-US', { minimumFractionDigits: 2 })}
               </span>
             </div>
-
-            <Button
-              onClick={() => setAddHistoricalModalOpen(true)}
-              className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs gap-1.5 shadow"
-            >
-              <History className="w-4 h-4 text-slate-950" /> Add Past Transaction
-            </Button>
 
             <Button
               onClick={handleExportCSV}
@@ -376,12 +365,6 @@ export default function TicketsPage() {
         ticket={selectedTicket}
         open={receiptOpen}
         onOpenChange={setReceiptOpen}
-      />
-
-      <AddHistoricalTicketModal
-        isOpen={addHistoricalModalOpen}
-        onClose={() => setAddHistoricalModalOpen(false)}
-        onSuccess={refreshData}
       />
 
       {/* EDIT RECEIPT NUMBER MODAL */}

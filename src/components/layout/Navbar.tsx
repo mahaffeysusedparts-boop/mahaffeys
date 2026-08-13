@@ -1,5 +1,3 @@
-"use client";
-
 import React, { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { ScaleStatus, YardSettings } from '@/types/scrap';
@@ -47,8 +45,6 @@ import {
   Lock,
   Shield,
   Camera,
-  Smartphone,
-  Sparkles,
 } from 'lucide-react';
 
 export const Navbar: React.FC = () => {
@@ -74,11 +70,9 @@ export const Navbar: React.FC = () => {
 
   const navItems = [
     { label: 'Dashboard', path: '/', icon: LayoutDashboard },
-    { label: 'Mobile Field Ops', path: '/mobile-yard', icon: Smartphone, isNew: true },
     { label: 'Scrap Metal Scale', path: '/intake', icon: Scale },
-    { label: 'Cars On Yard', path: '/vehicles', icon: Car },
-    { label: 'Junk Yard Dismantling', path: '/pull-a-part', icon: Wrench },
-    { label: 'Parts Price Sheet', path: '/inventory', icon: DollarSign },
+    { label: 'Junk Yard Cars', path: '/pull-a-part', icon: Car },
+    { label: 'Public Inventory', path: '/inventory', icon: Wrench },
     { label: 'Compliance & NMVTIS', path: '/compliance', icon: ShieldCheck },
     { label: 'IP Cameras', path: '/cameras', icon: Camera },
     { label: 'Ticket Ledger', path: '/tickets', icon: Receipt },
