@@ -43,6 +43,7 @@ import {
   AILicenseAnalysisResult,
   AILicensePlateResult,
 } from "@/services/aiVisionService";
+import { uploadDataUrl } from "@/services/mediaService";
 import { toast } from "sonner";
 
 interface ComplianceCaptureModalProps {
@@ -78,6 +79,7 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
   const [aiAnalysis, setAiAnalysis] = useState<AILicenseAnalysisResult | null>(null);
   const [aiPlateResult, setAiPlateResult] = useState<AILicensePlateResult | null>(null);
   const [isAiAnalyzing, setIsAiAnalyzing] = useState(false);
+  const [isSavingUploads, setIsSavingUploads] = useState(false);
   const [useLiveCamera, setUseLiveCamera] = useState(false);
 
   // IP Cameras List
@@ -195,14 +197,24 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
       }
     };
     img.onerror = async () => {
-      // Fallback SVG frame
-      const fallbackSvg = `data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='640' height='480' viewBox='0 0 640 480'><rect width='640' height='480' fill='%230f172a'/><text x='320' y='240' fill='%2338bdf8' font-family='monospace' font-size='16' font-weight='bold' text-anchor='middle'>IP CAM SNAPSHOT (${cam.name})</text></svg>`;
+      const canvas = document.createElement("canvas");
+      canvas.width = 640;
+      canvas.height = 480;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      ctx.fillStyle = "#0f172a";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = "#38bdf8";
+      ctx.font = "bold 16px monospace";
+      ctx.textAlign = "center";
+      ctx.fillText(`IP CAM SNAPSHOT (${cam.name})`, 320, 240);
+      const fallbackImage = canvas.toDataURL("image/jpeg", 0.85);
       setCaptures((prev) => ({
         ...prev,
-        [targetKey]: fallbackSvg,
+        [targetKey]: fallbackImage,
       }));
       toast.success(`Captured snapshot from IP Camera "${cam.name}"!`);
-      await runAiAnalysis(targetKey, fallbackSvg);
+      await runAiAnalysis(targetKey, fallbackImage);
     };
     img.src = `${snapUrl}?t=${Date.now()}`;
   };
@@ -344,10 +356,27 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
     }
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     stopCameraStream();
-    onSaveCaptures(captures, scannedProfile);
-    onClose();
+    setIsSavingUploads(true);
+    try {
+      const uploadedCaptures = Object.fromEntries(await Promise.all(
+        Object.entries(captures).map(async ([key, value]) => [
+          key,
+          typeof value === "string" && value.startsWith("data:")
+            ? await uploadDataUrl(value, `${key}.jpg`)
+            : value,
+        ]),
+      )) as ComplianceCaptures;
+      onSaveCaptures(uploadedCaptures, scannedProfile);
+      onClose();
+    } catch (error) {
+      toast.error("Could not save compliance images", {
+        description: error instanceof Error ? error.message : "Try the upload again.",
+      });
+    } finally {
+      setIsSavingUploads(false);
+    }
   };
 
   return (
@@ -1026,9 +1055,11 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
           </Button>
           <Button
             onClick={handleSave}
+            disabled={isSavingUploads}
             className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-extrabold px-6 h-11 gap-1.5 shadow-lg shadow-emerald-950"
           >
-            <CheckCircle2 className="w-4 h-4" /> Save Suite & Transfer to Intake
+            {isSavingUploads ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+            {isSavingUploads ? "Saving images..." : "Save Suite & Transfer to Intake"}
           </Button>
         </DialogFooter>
       </DialogContent>

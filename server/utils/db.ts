@@ -60,6 +60,17 @@ async function initializeSchema() {
       PRIMARY KEY (upload_id, chunk_index)
     );
     CREATE INDEX IF NOT EXISTS state_upload_chunks_created_at_idx ON state_upload_chunks(created_at);
+
+    CREATE TABLE IF NOT EXISTS media_uploads (
+      id UUID PRIMARY KEY,
+      file_name TEXT NOT NULL,
+      content_type TEXT NOT NULL,
+      byte_size INTEGER NOT NULL,
+      content BYTEA NOT NULL,
+      uploaded_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS media_uploads_created_at_idx ON media_uploads(created_at);
   `);
 }
 

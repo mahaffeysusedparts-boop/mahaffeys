@@ -23,13 +23,15 @@ Create a `.env` file in the root of the Mahaffeys project directory. This file w
 nano .env
 ```
 
-Add the following line to the file:
+Add the following values to the file:
 
 ```ini
-POSTGRES_PASSWORD=jhilliard
+POSTGRES_PASSWORD=replace-with-a-long-random-password
+APP_PORT=8080
+NITRO_COOKIE_SECURE=false
 ```
 
-**Security Note:** For a real-world deployment, it is strongly recommended to replace `jhilliard` with a long, randomly generated password.
+Use a unique database password and never commit the real `.env` file. Keep `NITRO_COOKIE_SECURE=false` for LAN-only HTTP access; change it to `true` when the site is later served over HTTPS.
 
 ### 3. Build and Run
 
@@ -39,9 +41,9 @@ From the project root directory, build and start all services in the background:
 sudo docker compose up --build -d
 ```
 
-The application will now be running and accessible at `http://192.168.1.210`.
+The application will now be available at `http://SERVER_LAN_IP:8080`. Set `APP_PORT=80` if you want to access it without the port suffix.
 
-Docker Compose also starts a private `storage-agent` container. It installs `mdadm`, receives no published host port, validates every requested block-device operation, and is the only container granted host device privileges. The public Mahaffeys web container remains unprivileged. RAID operations affect real host disks and should only be confirmed after checking the selected device serial numbers.
+The PostgreSQL volume stores users, sessions, application records, and uploaded images across container updates and restarts. Docker Compose also starts a private `storage-agent` container. It installs `mdadm`, receives no published host port, validates every requested block-device operation, and is the only container granted host device privileges. The public Mahaffeys web container remains unprivileged. RAID operations affect real host disks and should only be confirmed after checking the selected device serial numbers.
 
 ### Managing the Docker Deployment
 

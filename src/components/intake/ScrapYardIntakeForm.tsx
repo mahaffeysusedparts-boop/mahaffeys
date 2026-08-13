@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Customer, MetalGrade, ScrapTicketLine, Ticket, WeightUnit, ComplianceCaptures } from '@/types/scrap';
 import { storageService } from '@/services/storageService';
+import { uploadDataUrl } from '@/services/mediaService';
 import { LiveScaleGauge } from '../scale/LiveScaleGauge';
 import { ComplianceCaptureModal } from '../compliance/ComplianceCaptureModal';
 import {
@@ -193,10 +194,17 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
-      reader.onload = (event) => {
+      reader.onload = async (event) => {
         const dataUrl = event.target?.result as string;
         const profile = extractDataFromDLPhoto(dataUrl);
-        applyDlScanResult(profile, dataUrl);
+        try {
+          const url = await uploadDataUrl(dataUrl, file.name);
+          applyDlScanResult(profile, url);
+        } catch (error) {
+          toast.error("Could not save the ID image", {
+            description: error instanceof Error ? error.message : "Try the upload again.",
+          });
+        }
       };
       reader.readAsDataURL(file);
     }

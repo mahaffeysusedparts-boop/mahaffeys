@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import { CarIntakeRecord, Ticket } from '@/types/scrap';
 import { storageService } from '@/services/storageService';
 import { analyzeDriverLicenseImage, analyzeLicensePlateImage, analyzeVinImage } from '@/services/aiVisionService';
+import { uploadDataUrl } from '@/services/mediaService';
 import { decodeVin, VinDecodeResult } from '@/services/vinService';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -183,11 +184,12 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
     if (!file) return;
 
     try {
-      const url = await compressVehiclePhoto(file);
+      const dataUrl = await compressVehiclePhoto(file);
+      const url = await uploadDataUrl(dataUrl, file.name);
       setPhotoUrl(url);
-      toast.success('Vehicle photo captured successfully');
+      toast.success('Vehicle photo saved to the server');
       try {
-        const plateRes = await analyzeLicensePlateImage(url);
+        const plateRes = await analyzeLicensePlateImage(dataUrl);
         if (plateRes.plateNumber && !plateRes.plateNumber.startsWith("TAG-")) {
           toast.info(`AI Vision detected Tag: ${plateRes.plateNumber}`);
         }
@@ -195,7 +197,7 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
         console.warn("Plate OCR error:", err);
       }
     } catch (error) {
-      toast.error('Could not process vehicle photo', {
+      toast.error('Could not save vehicle photo', {
         description: error instanceof Error ? error.message : 'Choose a different image and try again.',
       });
     } finally {
