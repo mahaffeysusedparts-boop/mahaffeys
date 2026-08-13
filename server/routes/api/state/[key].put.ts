@@ -7,7 +7,7 @@ const ALLOWED_KEYS = new Set([
   "mahaffeys_metals", "mahaffeys_car_rates", "mahaffeys_customers", "mahaffeys_tickets",
   "mahaffeys_settings", "mahaffeys_nmvtis_logs", "mahaffeys_cat_codes", "mahaffeys_container_drops",
   "mahaffeys_cash_drawer", "mahaffeys_yard_bays", "mahaffeys_pull_parts", "mahaffeys_pull_yard_vehicles",
-  "mahaffeys_core_returns", "mahaffeys_admission_passes", "mahaffeys_ip_cameras",
+  "mahaffeys_removed_inventory_vehicles", "mahaffeys_core_returns", "mahaffeys_admission_passes", "mahaffeys_ip_cameras",
 ]);
 
 export default defineHandler(async (event) => {

@@ -21,6 +21,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogFooter,
@@ -709,16 +710,19 @@ export default function PullAPartPage() {
                             </Button>
 
                             <Button
+                              type="button"
                               size="sm"
                               variant="ghost"
                               onClick={() => handleOpenEditVeh(v)}
                               className="h-7 w-7 p-0 text-slate-300 hover:text-white hover:bg-slate-800"
                               title="Edit Vehicle Details"
+                              aria-label={`Edit ${v.year} ${v.make} ${v.model}`}
                             >
                               <Edit3 className="w-3.5 h-3.5 text-emerald-400" />
                             </Button>
 
                             <Button
+                              type="button"
                               size="sm"
                               variant="ghost"
                               onClick={() => setSelectedVehForTicket(v)}
@@ -729,11 +733,13 @@ export default function PullAPartPage() {
                             </Button>
 
                             <Button
+                              type="button"
                               size="sm"
                               variant="ghost"
                               onClick={() => setDeletingVehicle(v)}
                               className="h-7 w-7 p-0 text-rose-400 hover:text-rose-300 hover:bg-rose-950/50"
                               title="Delete Vehicle"
+                              aria-label={`Delete ${v.year} ${v.make} ${v.model}`}
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </Button>
@@ -1088,6 +1094,29 @@ export default function PullAPartPage() {
             </Button>
             <Button onClick={handleSaveVeh} className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold">
               {editingVeh ? "Update Vehicle" : "Add Vehicle"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(deletingVehicle)} onOpenChange={(open) => { if (!open) setDeletingVehicle(null); }}>
+        <DialogContent className="border-rose-900/70 bg-slate-950 text-slate-100 sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-rose-300">
+              <Trash2 className="h-5 w-5" /> Remove vehicle?
+            </DialogTitle>
+            <DialogDescription className="text-slate-400">
+              {deletingVehicle
+                ? `${deletingVehicle.year} ${deletingVehicle.make} ${deletingVehicle.model} will be removed from vehicle inventory. This cannot be undone.`
+                : "This vehicle will be removed from inventory."}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="pt-2">
+            <Button type="button" variant="ghost" onClick={() => setDeletingVehicle(null)} className="text-slate-300">
+              Cancel
+            </Button>
+            <Button type="button" onClick={handleConfirmRemoveVehicle} className="bg-rose-600 font-bold text-white hover:bg-rose-500">
+              <Trash2 className="mr-2 h-4 w-4" /> Delete Vehicle
             </Button>
           </DialogFooter>
         </DialogContent>

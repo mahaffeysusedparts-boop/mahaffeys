@@ -32,6 +32,7 @@ const STORAGE_KEYS = {
   YARD_BAYS: 'mahaffeys_yard_bays',
   PULL_PARTS: 'mahaffeys_pull_parts',
   PULL_YARD_VEHICLES: 'mahaffeys_pull_yard_vehicles',
+  REMOVED_INVENTORY_VEHICLES: 'mahaffeys_removed_inventory_vehicles',
   CORE_RETURNS: 'mahaffeys_core_returns',
   ADMISSION_PASSES: 'mahaffeys_admission_passes',
   IP_CAMERAS: 'mahaffeys_ip_cameras',
@@ -39,6 +40,14 @@ const STORAGE_KEYS = {
 
 let pullVehicleCacheSource: string | null = null;
 let pullVehicleCache: PullYardVehicle[] | null = null;
+
+const getRemovedInventoryVehicleIds = () => new Set<string>(
+  JSON.parse(sharedStorage.getItem(STORAGE_KEYS.REMOVED_INVENTORY_VEHICLES) || "[]") as string[],
+);
+
+const saveRemovedInventoryVehicleIds = (ids: Set<string>) => {
+  sharedStorage.setItem(STORAGE_KEYS.REMOVED_INVENTORY_VEHICLES, JSON.stringify([...ids]));
+};
 
 const sectionForMake = (make: string): PullYardVehicle['section'] => {
   const normalized = make.toLowerCase();
@@ -1058,16 +1067,20 @@ export const storageService = {
 
   getInventoryVehicles(): PullYardVehicle[] {
     const vehicles = this.getPullYardVehicles();
+    const removedIds = getRemovedInventoryVehicleIds();
     const linkedTicketIds = new Set(vehicles.map((vehicle) => vehicle.sourceTicketId).filter(Boolean));
     const knownVins = new Set(vehicles.map((vehicle) => vehicle.vin.toUpperCase()));
     const recovered = this.getTickets()
       .map(vehicleFromTicket)
       .filter((vehicle): vehicle is PullYardVehicle => Boolean(
-        vehicle && !linkedTicketIds.has(vehicle.sourceTicketId) && !knownVins.has(vehicle.vin.toUpperCase()),
+        vehicle
+        && !removedIds.has(vehicle.id)
+        && !linkedTicketIds.has(vehicle.sourceTicketId)
+        && !knownVins.has(vehicle.vin.toUpperCase()),
       ));
-    return [...recovered, ...vehicles].sort(
-      (a, b) => new Date(b.dateSetInYard).getTime() - new Date(a.dateSetInYard).getTime(),
-    );
+    return [...recovered, ...vehicles]
+      .filter((vehicle) => !removedIds.has(vehicle.id))
+      .sort((a, b) => new Date(b.dateSetInYard).getTime() - new Date(a.dateSetInYard).getTime());
   },
 
   savePullYardVehicle(veh: PullYardVehicle): PullYardVehicle {
@@ -1082,10 +1095,20 @@ export const storageService = {
     sharedStorage.setItem(STORAGE_KEYS.PULL_YARD_VEHICLES, serialized);
     pullVehicleCacheSource = serialized;
     pullVehicleCache = vehicles;
+
+    const removedIds = getRemovedInventoryVehicleIds();
+    if (removedIds.delete(veh.id)) saveRemovedInventoryVehicleIds(removedIds);
     return veh;
   },
 
   deletePullYardVehicle(vehicleId: string): void {
+    const inventoryVehicle = this.getInventoryVehicles().find((vehicle) => vehicle.id === vehicleId);
+    if (inventoryVehicle?.sourceTicketId) {
+      const removedIds = getRemovedInventoryVehicleIds();
+      removedIds.add(vehicleId);
+      saveRemovedInventoryVehicleIds(removedIds);
+    }
+
     const vehicles = this.getPullYardVehicles().filter((vehicle) => vehicle.id !== vehicleId);
     const serialized = JSON.stringify(vehicles);
     sharedStorage.setItem(STORAGE_KEYS.PULL_YARD_VEHICLES, serialized);

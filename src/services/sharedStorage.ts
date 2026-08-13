@@ -14,6 +14,7 @@ const SHARED_KEYS = [
   "mahaffeys_yard_bays",
   "mahaffeys_pull_parts",
   "mahaffeys_pull_yard_vehicles",
+  "mahaffeys_removed_inventory_vehicles",
   "mahaffeys_core_returns",
   "mahaffeys_admission_passes",
   "mahaffeys_ip_cameras",
