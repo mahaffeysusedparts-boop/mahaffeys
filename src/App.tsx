@@ -9,6 +9,7 @@ import { ProtectedRoute } from "./components/auth/ProtectedRoute";
 import DashboardPage from "./pages/DashboardPage";
 import IntakePage from "./pages/IntakePage";
 import PublicInventoryPage from "./pages/PublicInventoryPage";
+import PublicVehicleInventoryPage from "./pages/PublicVehicleInventoryPage";
 import TicketsPage from "./pages/TicketsPage";
 import PricingPage from "./pages/PricingPage";
 import CustomersPage from "./pages/CustomersPage";
@@ -42,6 +43,7 @@ const App = () => (
 
             {/* PUBLIC YARD PARTS CATALOG EXCEPTION (Guest Accessible) */}
             <Route path="/inventory" element={<PublicInventoryPage />} />
+            <Route path="/vehicles" element={<PublicVehicleInventoryPage />} />
 
             {/* PROTECTED WORKSTATION ROUTES */}
             <Route

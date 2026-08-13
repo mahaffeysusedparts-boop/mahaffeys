@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { storageService } from "@/services/storageService";
 import { sharedStorage } from "@/services/sharedStorage";
 import { PullYardVehicle } from "@/types/scrap";
@@ -42,6 +42,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
+const FALLBACK_VEHICLE_PHOTO = generateSamplePhoto("vehicle");
+
 export default function PublicInventoryPage() {
   const [vehicles, setVehicles] = useState<PullYardVehicle[]>([]);
   const [search, setSearch] = useState("");
@@ -57,24 +59,16 @@ export default function PublicInventoryPage() {
   const [reqModel, setReqModel] = useState("Civic");
   const [reqPhone, setReqPhone] = useState("");
 
-  const loadData = () => {
+  const loadData = useCallback(() => {
     const list = storageService.getPullYardVehicles();
     setVehicles(list);
     setLastUpdatedTime(new Date().toLocaleTimeString());
-  };
+  }, []);
 
-  // Real-time synchronization
+  // Reload only when inventory can actually change instead of reparsing it every two seconds.
   useEffect(() => {
     loadData();
 
-    // 1. Live 2-second background ticker to keep workstation updates live
-    const timer = setInterval(() => {
-      const currentList = storageService.getPullYardVehicles();
-      setVehicles(currentList);
-      setLastUpdatedTime(new Date().toLocaleTimeString());
-    }, 2000);
-
-    // 2. Cross-tab window storage listener
     const handleStorageChange = (e: StorageEvent) => {
       if (!e.key || e.key === "mahaffeys_pull_yard_vehicles") {
         loadData();
@@ -82,37 +76,36 @@ export default function PublicInventoryPage() {
     };
     window.addEventListener("storage", handleStorageChange);
 
-    // 3. Shared database connection listener
-    const unsubscribeShared = sharedStorage.subscribe(() => {
-      loadData();
+    const unsubscribeShared = sharedStorage.subscribe((status) => {
+      if (status === "connected") loadData();
     });
 
     return () => {
-      clearInterval(timer);
       window.removeEventListener("storage", handleStorageChange);
       unsubscribeShared();
     };
-  }, []);
+  }, [loadData]);
 
-  // Filter vehicles
-  const filteredVehicles = vehicles.filter((v) => {
-    const q = search.toLowerCase();
-    const matchesSearch =
-      v.make.toLowerCase().includes(q) ||
-      v.model.toLowerCase().includes(q) ||
-      v.year.toString().includes(q) ||
-      v.vin.toLowerCase().includes(q) ||
-      v.section.toLowerCase().includes(q);
+  const filteredVehicles = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const normalizedPartFilter = partFilter.toLowerCase();
 
-    const matchesSection = selectedSection === "ALL" ? true : v.section === selectedSection;
+    return vehicles.filter((v) => {
+      const matchesSearch =
+        v.make.toLowerCase().includes(q) ||
+        v.model.toLowerCase().includes(q) ||
+        v.year.toString().includes(q) ||
+        v.vin.toLowerCase().includes(q) ||
+        v.section.toLowerCase().includes(q);
 
-    const matchesPart =
-      partFilter === "ALL"
-        ? true
-        : v.partsRemaining.some((p) => p.toLowerCase().includes(partFilter.toLowerCase()));
+      const matchesSection = selectedSection === "ALL" || v.section === selectedSection;
+      const matchesPart =
+        partFilter === "ALL" ||
+        v.partsRemaining.some((p) => p.toLowerCase().includes(normalizedPartFilter));
 
-    return matchesSearch && matchesSection && matchesPart;
-  });
+      return matchesSearch && matchesSection && matchesPart;
+    });
+  }, [partFilter, search, selectedSection, vehicles]);
 
   const handleSendNotifyRequest = () => {
     if (!reqPhone.trim()) {
@@ -126,7 +119,10 @@ export default function PublicInventoryPage() {
     setReqPhone("");
   };
 
-  const availableCount = vehicles.filter((v) => v.status === "AVAILABLE").length;
+  const availableCount = useMemo(
+    () => vehicles.reduce((count, vehicle) => count + (vehicle.status === "AVAILABLE" ? 1 : 0), 0),
+    [vehicles],
+  );
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
@@ -275,22 +271,24 @@ export default function PublicInventoryPage() {
                 const daysAgo = Math.floor(
                   (Date.now() - new Date(veh.dateSetInYard).getTime()) / (1000 * 60 * 60 * 24)
                 );
-                const displayPhoto = veh.photoUrl || generateSamplePhoto("vehicle");
+                const displayPhoto = veh.photoUrl || FALLBACK_VEHICLE_PHOTO;
 
                 return (
                   <Card
                     key={veh.id}
                     onClick={() => setSelectedVehicle(veh)}
-                    className="group bg-slate-900 border-2 border-slate-800 hover:border-amber-500/70 transition-all duration-300 cursor-pointer shadow-xl overflow-hidden flex flex-col justify-between"
+                    className="group bg-slate-900 border-2 border-slate-800 hover:border-amber-500/70 transition-all duration-300 cursor-pointer shadow-xl overflow-hidden flex flex-col justify-between [content-visibility:auto] [contain-intrinsic-size:420px]"
                   >
                     {/* Vehicle Photo Banner */}
                     <div className="relative aspect-video bg-slate-950 overflow-hidden border-b border-slate-800">
                       <img
                         src={displayPhoto}
                         alt={`${veh.year} ${veh.make} ${veh.model}`}
+                        loading="lazy"
+                        decoding="async"
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                         onError={(e) => {
-                          (e.target as HTMLImageElement).src = generateSamplePhoto("vehicle");
+                          (e.target as HTMLImageElement).src = FALLBACK_VEHICLE_PHOTO;
                         }}
                       />
                       
@@ -390,11 +388,12 @@ export default function PublicInventoryPage() {
               {/* Full Photo Display */}
               <div className="aspect-video bg-slate-950 rounded-xl overflow-hidden border border-slate-800">
                 <img
-                  src={selectedVehicle.photoUrl || generateSamplePhoto("vehicle")}
+                  src={selectedVehicle.photoUrl || FALLBACK_VEHICLE_PHOTO}
                   alt="Vehicle Full Photo"
+                  decoding="async"
                   className="w-full h-full object-cover"
                   onError={(e) => {
-                    (e.target as HTMLImageElement).src = generateSamplePhoto("vehicle");
+                    (e.target as HTMLImageElement).src = FALLBACK_VEHICLE_PHOTO;
                   }}
                 />
               </div>
@@ -511,10 +510,12 @@ export default function PublicInventoryPage() {
       </Dialog>
 
       {/* Parts Interchange Search Modal */}
-      <PartsInterchangeModal
-        isOpen={interchangeOpen}
-        onClose={() => setInterchangeOpen(false)}
-      />
+      {interchangeOpen && (
+        <PartsInterchangeModal
+          isOpen
+          onClose={() => setInterchangeOpen(false)}
+        />
+      )}
     </div>
   );
 }

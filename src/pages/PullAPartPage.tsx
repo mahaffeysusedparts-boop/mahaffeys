@@ -1,15 +1,15 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { storageService } from "@/services/storageService";
 import {
-  PullYardVehicle,
   PullPartItem,
-  CoreReturnLog,
-  AdmissionPass,
+  PullYardVehicle,
+  VehicleDismantlingLog,
   PullYardVehicleStatus,
 } from "@/types/scrap";
-import { generateSamplePhoto } from "@/utils/complianceUtils";
-import { analyzeVinImage } from "@/services/aiVisionService";
-import { PartsInterchangeModal } from "@/components/inventory/PartsInterchangeModal";
+import { v4 as uuidv4 } from "uuid";
+import { toast } from "sonner";
+import { format } from "date-fns";
+import { VehicleWindowTag } from '@/components/inventory/VehicleWindowTag';
 import { Navbar } from "@/components/layout/Navbar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -24,6 +24,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogFooter,
+  DialogDescription,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -52,9 +53,21 @@ import {
   Ban,
   Layers3,
   Sparkles,
+  Pencil,
+  QrCode,
 } from "lucide-react";
 import { BulkVehicleUploadModal } from "@/components/inventory/BulkVehicleUploadModal";
-import { toast } from "sonner";
+import { useSettings } from "@/hooks/useSettings";
+import { PageLayout } from "@/components/layout/PageLayout";
+
+const PULL_A_PART_SECTIONS: PullYardVehicle["section"][] = [
+  "Domestic Trucks & SUVs",
+  "Ford & Lincoln",
+  "GM & Chevrolet",
+  "Chrysler & Dodge",
+  "Asian Imports",
+  "European",
+];
 
 export default function PullAPartPage() {
   const [vehicles, setVehicles] = useState<PullYardVehicle[]>([]);
@@ -72,91 +85,71 @@ export default function PullAPartPage() {
   const [editingVeh, setEditingVeh] = useState<PullYardVehicle | null>(null);
   const [bulkUploadOpen, setBulkUploadOpen] = useState(false);
   const [interchangeModalOpen, setInterchangeModalOpen] = useState(false);
+  const [isBulkUploadOpen, setIsBulkUploadOpen] = useState(false);
 
   const [vehSection, setVehSection] = useState<PullYardVehicle["section"]>("Domestic Trucks & SUVs");
-  const [vehYear, setVehYear] = useState(2010);
-  const [vehMake, setVehMake] = useState("Ford");
-  const [vehModel, setVehModel] = useState("F-150");
+  const [vehYear, setVehYear] = useState(new Date().getFullYear());
+  const [vehMake, setVehMake] = useState("");
+  const [vehModel, setVehModel] = useState("");
   const [vehColor, setVehColor] = useState("");
   const [vehVin, setVehVin] = useState("");
+  const [vehRow, setVehRow] = useState<number | undefined>(undefined);
+  const [vehDateSet, setVehDateSet] = useState(format(new Date(), "yyyy-MM-dd"));
   const [vehStatus, setVehStatus] = useState<PullYardVehicleStatus>("PENDING");
-  const [vehParts, setVehParts] = useState("Engine, Transmission, Wheels");
-  const [vehPurchasePrice, setVehPurchasePrice] = useState(450);
-  const [vehOriginSource, setVehOriginSource] = useState("Tow Origin / Address");
-  const [vehNotes, setVehNotes] = useState("");
-  const [vehPhotoUrl, setVehPhotoUrl] = useState(generateSamplePhoto("vehicle"));
+  const [vehPhoto, setVehPhoto] = useState("");
 
-  const vinCameraRef = useRef<HTMLInputElement>(null);
-
-  // Dismantling Log Modal
   const [logVehicle, setLogVehicle] = useState<PullYardVehicle | null>(null);
   const [catsRemoved, setCatsRemoved] = useState(0);
   const [wheelsRemoved, setWheelsRemoved] = useState(0);
   const [gasDrained, setGasDrained] = useState(false);
   const [oilDrained, setOilDrained] = useState(false);
   const [processorNotes, setProcessorNotes] = useState("");
+  const [logNotes, setLogNotes] = useState("");
 
-  // Delete Confirmation Modal
   const [deletingVehicle, setDeletingVehicle] = useState<PullYardVehicle | null>(null);
-
-  // Print Pass Modal
   const [selectedVehForTicket, setSelectedVehForTicket] = useState<PullYardVehicle | null>(null);
+  const [printingTagFor, setPrintingTagFor] = useState<PullYardVehicle | null>(null);
 
-  // Core Refund Modal
-  const [coreModalOpen, setCoreModalOpen] = useState(false);
-  const [coreCustName, setCoreCustName] = useState("");
-  const [coreCustId, setCoreCustId] = useState("");
-  const [corePartName, setCorePartName] = useState("Alternator / Generator Core");
-  const [coreDeposit, setCoreDeposit] = useState(10.00);
+  const { settings } = useSettings();
 
-  // Gate Pass Modal
-  const [passModalOpen, setPassModalOpen] = useState(false);
-  const [passCustName, setPassCustName] = useState("");
-  const [passCustId, setPassCustId] = useState("");
-  const [waiverSigned, setWaiverSigned] = useState(true);
-
-  const loadData = () => {
+  const loadVehicles = useCallback(() => {
     setVehicles(storageService.getPullYardVehicles());
     setParts(storageService.getPullParts());
     setCores(storageService.getCoreReturns());
     setPasses(storageService.getAdmissionPasses());
-  };
+  }, []);
 
   useEffect(() => {
-    loadData();
+    loadVehicles();
   }, []);
 
   const handleOpenAddVeh = () => {
     setEditingVeh(null);
-    setVehYear(new Date().getFullYear() - 10);
+    setVehYear(new Date().getFullYear());
     setVehMake("");
     setVehModel("");
     setVehColor("");
     setVehVin("");
     setVehSection("Domestic Trucks & SUVs");
+    setVehRow(undefined);
+    setVehDateSet(format(new Date(), "yyyy-MM-dd"));
     setVehStatus("PENDING");
-    setVehParts("Engine, Transmission, Wheels");
-    setVehPurchasePrice(450);
-    setVehOriginSource("");
-    setVehNotes("");
-    setVehPhotoUrl(generateSamplePhoto("vehicle"));
+    setVehPhoto("");
     setVehModalOpen(true);
   };
 
   const handleOpenEditVeh = (v: PullYardVehicle) => {
     setEditingVeh(v);
-    setVehSection(v.section);
     setVehYear(v.year);
     setVehMake(v.make);
     setVehModel(v.model);
     setVehColor(v.color);
     setVehVin(v.vin);
+    setVehSection(v.section);
+    setVehRow(v.rowNumber);
+    setVehDateSet(format(new Date(v.dateSetInYard), "yyyy-MM-dd"));
     setVehStatus(v.status);
-    setVehParts(v.partsRemaining.join(", "));
-    setVehPurchasePrice(v.purchasePrice || 0);
-    setVehOriginSource(v.originSource || "");
-    setVehNotes(v.notes || "");
-    setVehPhotoUrl(v.photoUrl || generateSamplePhoto("vehicle"));
+    setVehPhoto(v.photoUrl || "");
     setVehModalOpen(true);
   };
 
@@ -189,29 +182,25 @@ export default function PullAPartPage() {
     toast.info(`Bypassed VIN. Assigned: ${noVinCode}`);
   };
 
-  const handleSaveVeh = () => {
-    if (!vehMake.trim() || !vehModel.trim()) {
-      toast.error("Make and Model are required");
+  const handleSaveVehicle = () => {
+    if (!vehYear || !vehMake || !vehModel || !vehVin) {
+      toast.error("Please fill in all required vehicle fields.");
       return;
     }
 
-    const partsList = vehParts.split(",").map((s) => s.trim()).filter(Boolean);
-
     const vehObj: PullYardVehicle = {
-      id: editingVeh ? editingVeh.id : `veh-${Date.now()}`,
-      section: vehSection,
+      id: editingVeh?.id || uuidv4(),
       year: vehYear,
       make: vehMake,
       model: vehModel,
       color: vehColor,
-      vin: vehVin.toUpperCase().trim() || `NO-VIN-${Math.floor(1000 + Math.random() * 9000)}`,
-      dateSetInYard: editingVeh ? editingVeh.dateSetInYard : new Date().toISOString(),
+      vin: vehVin.toUpperCase(),
+      section: vehSection,
+      rowNumber: vehRow,
+      dateSetInYard: new Date(vehDateSet).toISOString(),
       status: vehStatus,
-      partsRemaining: partsList.length > 0 ? partsList : ["Body Shell"],
-      purchasePrice: vehPurchasePrice,
-      originSource: vehOriginSource.trim() || undefined,
-      notes: vehNotes.trim() || undefined,
-      photoUrl: vehPhotoUrl,
+      photoUrl: vehPhoto,
+      partsRemaining: editingVeh?.partsRemaining || [],
       dismantlingLog: editingVeh?.dismantlingLog || {
         catalyticConvertersRemoved: 0,
         wheelsRemoved: 0,
@@ -221,9 +210,8 @@ export default function PullAPartPage() {
     };
 
     storageService.savePullYardVehicle(vehObj);
-    loadData();
-    setVehModalOpen(false);
-    toast.success(`${editingVeh ? "Updated" : "Added"} ${vehYear} ${vehMake} ${vehModel}`);
+    toast.success(`Vehicle ${editingVeh ? "updated" : "added"} successfully.`);
+    loadVehicles();
   };
 
   const handleStatusChange = (vehicle: PullYardVehicle, status: PullYardVehicleStatus) => {
@@ -357,7 +345,7 @@ export default function PullAPartPage() {
   const crushedCount = vehicles.filter((v) => v.status === "CRUSHED").length;
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
+    <PageLayout>
       <Navbar />
 
       <input
@@ -1048,6 +1036,23 @@ export default function PullAPartPage() {
               </div>
             </div>
 
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="vehRow">Row Number</Label>
+                <Input id="vehRow" type="number" placeholder="e.g., 14" value={vehRow || ''} onChange={e => setVehRow(e.target.value ? parseInt(e.target.value) : undefined)} />
+              </div>
+              <div>
+                <Label htmlFor="vehDateSet">Date Set In Yard</Label>
+                <Input
+                  id="vehDateSet"
+                  type="date"
+                  value={vehDateSet}
+                  onChange={(e) => setVehDateSet(e.target.value)}
+                  className="w-full h-9 bg-slate-900 border border-slate-800 rounded-md text-xs text-white px-2 mt-1"
+                />
+              </div>
+            </div>
+
             <div>
               <Label className="text-slate-300">Status</Label>
               <select
@@ -1063,7 +1068,7 @@ export default function PullAPartPage() {
 
             <div>
               <Label className="text-slate-300">Tow Driver Notes</Label>
-              <Input
+              <Textarea
                 value={vehNotes}
                 onChange={(e) => setVehNotes(e.target.value)}
                 placeholder="Condition notes..."
@@ -1086,7 +1091,7 @@ export default function PullAPartPage() {
             <Button variant="ghost" onClick={() => setVehModalOpen(false)} className="text-slate-400">
               Cancel
             </Button>
-            <Button onClick={handleSaveVeh} className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold">
+            <Button onClick={handleSaveVehicle} className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold">
               {editingVeh ? "Update Vehicle" : "Add Vehicle"}
             </Button>
           </DialogFooter>
@@ -1101,10 +1106,28 @@ export default function PullAPartPage() {
 
       {/* Bulk Spreadsheet Upload Modal */}
       <BulkVehicleUploadModal
-        isOpen={bulkUploadOpen}
-        onClose={() => setBulkUploadOpen(false)}
-        onUploadSuccess={loadData}
+        open={isBulkUploadOpen}
+        onClose={() => setIsBulkUploadOpen(false)}
+        onComplete={loadVehicles}
       />
-    </div>
+
+      {printingTagFor && settings && (
+        <Dialog open={!!printingTagFor} onOpenChange={(open) => !open && setPrintingTagFor(null)}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Print Vehicle Tag</DialogTitle>
+              <DialogDescription>
+                Print this tag and place it on the vehicle window in the yard.
+              </DialogDescription>
+            </DialogHeader>
+            <VehicleWindowTag 
+              vehicle={printingTagFor}
+              yardName={settings.yardName}
+              publicUrl={window.location.origin}
+            />
+          </DialogContent>
+        </Dialog>
+      )}
+    </PageLayout>
   );
 }
