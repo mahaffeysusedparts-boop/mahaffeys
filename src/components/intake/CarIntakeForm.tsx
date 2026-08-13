@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import { CarIntakeRecord, Ticket } from '@/types/scrap';
 import { storageService } from '@/services/storageService';
 import { analyzeDriverLicenseImage, analyzeLicensePlateImage, analyzeVinImage } from '@/services/aiVisionService';
+import { decodeVin, VinDecodeResult } from '@/services/vinService';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -91,8 +92,15 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
   const [year, setYear] = useState<number>(new Date().getFullYear() - 12);
   const [make, setMake] = useState<string>('Ford');
   const [model, setModel] = useState<string>('F-150');
+  const [trim, setTrim] = useState<string>('');
   const [color, setColor] = useState<string>('White');
   const [mileage, setMileage] = useState<number>(150000);
+  const [engineSizeLiters, setEngineSizeLiters] = useState<string>('');
+  const [engineCylinders, setEngineCylinders] = useState<string>('');
+  const [engineModel, setEngineModel] = useState<string>('');
+  const [fuelType, setFuelType] = useState<string>('');
+  const [decodedVehicle, setDecodedVehicle] = useState<VinDecodeResult | null>(null);
+  const [isDecodingVin, setIsDecodingVin] = useState(false);
   
   const [titleStatus, setTitleStatus] = useState<CarIntakeRecord['titleStatus']>('Salvage Title');
   const [titleNumber, setTitleNumber] = useState<string>('');
@@ -158,8 +166,7 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
           if (result.vin) {
             setVin(result.vin);
             toast.success(`AI Vision Extracted VIN: ${result.vin}`);
-            // Automatically decode extracted VIN
-            handleDecodeVinWithVin(result.vin);
+            await handleDecodeVinWithVin(result.vin);
           } else {
             toast.error("Could not find clear 17-character VIN. Please verify photo quality.");
           }
@@ -200,39 +207,50 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
   const handleSkipVin = () => {
     const noVinTag = `NO-VIN-${Math.floor(1000 + Math.random() * 9000)}`;
     setVin(noVinTag);
+    setDecodedVehicle(null);
     toast.info(`Skipped VIN. Assigned: ${noVinTag}`);
   };
 
-  const handleDecodeVinWithVin = (vinString: string) => {
-    if (!vinString || vinString.length < 5) return;
-    const clean = vinString.toUpperCase().trim();
+  const handleDecodeVinWithVin = async (vinString: string) => {
+    const clean = vinString.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (!/^[A-HJ-NPR-Z0-9]{17}$/.test(clean)) {
+      toast.error('Enter a complete 17-character VIN without I, O, or Q');
+      return;
+    }
+
     setVin(clean);
-    
-    if (clean.startsWith('1G')) {
-      setMake('Chevrolet');
-      setModel('Impala');
-    } else if (clean.startsWith('1F')) {
-      setMake('Ford');
-      setModel('F-150');
-    } else if (clean.startsWith('4S')) {
-      setMake('Subaru');
-      setModel('Outback');
-    } else if (clean.startsWith('J')) {
-      setMake('Toyota');
-      setModel('Camry');
-    } else {
-      setMake('Dodge');
-      setModel('Ram 1500');
+    setIsDecodingVin(true);
+    try {
+      const result = await decodeVin(clean);
+      setDecodedVehicle(result);
+      if (result.year) setYear(result.year);
+      if (result.make) setMake(result.make);
+      if (result.model) setModel(result.model);
+      setTrim(result.trim || result.series || '');
+      setEngineSizeLiters(result.engineSizeLiters?.toString() || '');
+      setEngineCylinders(result.engineCylinders?.toString() || '');
+      setEngineModel(result.engineModel || '');
+      setFuelType(result.fuelType || result.electrificationLevel || '');
+
+      const engine = [
+        result.engineSizeLiters ? `${result.engineSizeLiters}L` : null,
+        result.engineCylinders ? `${result.engineCylinders}-cylinder` : null,
+      ].filter(Boolean).join(' ');
+      toast.success(`${result.year || ''} ${result.make} ${result.model}`.trim(), {
+        description: [result.trim || result.series, engine].filter(Boolean).join(' · ') || 'Vehicle specifications loaded from NHTSA.',
+      });
+    } catch (error) {
+      setDecodedVehicle(null);
+      toast.error('VIN could not be decoded', {
+        description: error instanceof Error ? error.message : 'Check the VIN and try again.',
+      });
+    } finally {
+      setIsDecodingVin(false);
     }
   };
 
   const handleDecodeVin = () => {
-    if (!vin || vin.length < 5) {
-      toast.error('Enter a valid VIN string or tap "Scan VIN Photo"');
-      return;
-    }
-    handleDecodeVinWithVin(vin);
-    toast.success('VIN decoded successfully');
+    void handleDecodeVinWithVin(vin);
   };
 
   const handleSubmitTicket = () => {
@@ -255,8 +273,29 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
       year,
       make,
       model,
+      trim: trim.trim() || undefined,
+      series: decodedVehicle?.series || undefined,
       color,
       mileage,
+      bodyClass: decodedVehicle?.bodyClass || undefined,
+      vehicleType: decodedVehicle?.vehicleType || undefined,
+      driveType: decodedVehicle?.driveType || undefined,
+      doors: decodedVehicle?.doors || undefined,
+      engineCylinders: Number.parseInt(engineCylinders, 10) || undefined,
+      engineSizeLiters: Number.parseFloat(engineSizeLiters) || undefined,
+      engineModel: engineModel.trim() || undefined,
+      engineHorsepower: decodedVehicle?.engineHorsepower || undefined,
+      fuelType: fuelType.trim() || undefined,
+      secondaryFuelType: decodedVehicle?.secondaryFuelType || undefined,
+      electrificationLevel: decodedVehicle?.electrificationLevel || undefined,
+      transmissionStyle: decodedVehicle?.transmissionStyle || undefined,
+      transmissionSpeeds: decodedVehicle?.transmissionSpeeds || undefined,
+      manufacturer: decodedVehicle?.manufacturer || undefined,
+      plantCountry: decodedVehicle?.plantCountry || undefined,
+      plantCity: decodedVehicle?.plantCity || undefined,
+      plantState: decodedVehicle?.plantState || undefined,
+      vinDecodedAt: decodedVehicle ? new Date().toISOString() : undefined,
+      vinDecoderSource: decodedVehicle?.source,
       titleStatus,
       titleNumber,
       yardStatus: 'PENDING',
@@ -318,6 +357,18 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
       setIsSaving(false);
     }
   };
+
+  const decodedDetails = decodedVehicle ? [
+    { label: 'Body', value: decodedVehicle.bodyClass },
+    { label: 'Vehicle type', value: decodedVehicle.vehicleType },
+    { label: 'Drive type', value: decodedVehicle.driveType },
+    { label: 'Transmission', value: [decodedVehicle.transmissionStyle, decodedVehicle.transmissionSpeeds ? `${decodedVehicle.transmissionSpeeds}-speed` : null].filter(Boolean).join(' ') || null },
+    { label: 'Horsepower', value: decodedVehicle.engineHorsepower ? `${decodedVehicle.engineHorsepower} hp` : null },
+    { label: 'Doors', value: decodedVehicle.doors?.toString() || null },
+    { label: 'Electrification', value: decodedVehicle.electrificationLevel },
+    { label: 'Manufacturer', value: decodedVehicle.manufacturer },
+    { label: 'Built in', value: [decodedVehicle.plantCity, decodedVehicle.plantState, decodedVehicle.plantCountry].filter(Boolean).join(', ') || null },
+  ].filter((detail): detail is { label: string; value: string } => Boolean(detail.value)) : [];
 
   return (
     <div className="max-w-5xl mx-auto space-y-6 pb-12 font-sans">
@@ -584,8 +635,12 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
                 <div className="flex flex-wrap sm:flex-nowrap gap-2">
                   <Input
                     value={vin}
-                    onChange={(e) => setVin(e.target.value.toUpperCase())}
-                    placeholder="e.g. 1FTRF12W88KA10291 or NO-VIN"
+                    maxLength={17}
+                    onChange={(e) => {
+                      setVin(e.target.value.toUpperCase());
+                      setDecodedVehicle(null);
+                    }}
+                    placeholder="e.g. 1FTRF12W88KA10291"
                     className="bg-slate-950 border-slate-800 text-amber-300 font-mono tracking-wider font-bold text-sm uppercase flex-1"
                   />
 
@@ -593,6 +648,7 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
                     type="button"
                     size="sm"
                     onClick={() => vinCameraInputRef.current?.click()}
+                    disabled={isDecodingVin}
                     className="bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold gap-1.5 shrink-0"
                     title="Snap photo of dash plate or door jamb sticker"
                   >
@@ -603,9 +659,11 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
                     type="button"
                     variant="outline"
                     onClick={handleDecodeVin}
+                    disabled={isDecodingVin}
                     className="bg-slate-800 border-slate-700 hover:bg-slate-700 text-slate-200 text-xs shrink-0 gap-1"
                   >
-                    <Search className="w-3.5 h-3.5 text-amber-400" /> Decode
+                    {isDecodingVin ? <RefreshCw className="w-3.5 h-3.5 animate-spin text-amber-400" /> : <Search className="w-3.5 h-3.5 text-amber-400" />}
+                    {isDecodingVin ? 'Looking up…' : 'Decode'}
                   </Button>
                 </div>
                 <p className="text-[10px] text-slate-400">
@@ -613,7 +671,7 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
                 </p>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
                 <div>
                   <Label className="text-[11px] text-slate-400">Year</Label>
                   <Input
@@ -645,6 +703,16 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
                 </div>
 
                 <div>
+                  <Label className="text-[11px] text-slate-400">Trim / Series</Label>
+                  <Input
+                    value={trim}
+                    onChange={(e) => setTrim(e.target.value)}
+                    placeholder="XLT"
+                    className="bg-slate-950 border-slate-800 text-white text-xs mt-1"
+                  />
+                </div>
+
+                <div>
                   <Label className="text-[11px] text-slate-400">Color</Label>
                   <Input
                     value={color}
@@ -654,6 +722,45 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
                   />
                 </div>
               </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 rounded-2xl border border-amber-500/20 bg-amber-500/5 p-3">
+                <div>
+                  <Label className="text-[11px] text-amber-300">Engine size (L)</Label>
+                  <Input value={engineSizeLiters} onChange={(e) => setEngineSizeLiters(e.target.value)} placeholder="5.0" className="bg-slate-950 border-slate-800 text-white text-xs mt-1" />
+                </div>
+                <div>
+                  <Label className="text-[11px] text-amber-300">Cylinders</Label>
+                  <Input value={engineCylinders} onChange={(e) => setEngineCylinders(e.target.value)} placeholder="8" className="bg-slate-950 border-slate-800 text-white text-xs mt-1" />
+                </div>
+                <div>
+                  <Label className="text-[11px] text-amber-300">Engine model</Label>
+                  <Input value={engineModel} onChange={(e) => setEngineModel(e.target.value)} placeholder="Coyote" className="bg-slate-950 border-slate-800 text-white text-xs mt-1" />
+                </div>
+                <div>
+                  <Label className="text-[11px] text-amber-300">Fuel type</Label>
+                  <Input value={fuelType} onChange={(e) => setFuelType(e.target.value)} placeholder="Gasoline" className="bg-slate-950 border-slate-800 text-white text-xs mt-1" />
+                </div>
+              </div>
+
+              {decodedVehicle ? (
+                <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4">
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <p className="text-sm font-black text-emerald-200">NHTSA vehicle specifications</p>
+                      <p className="text-[10px] text-emerald-300/70">Official vPIC result for {decodedVehicle.vin}</p>
+                    </div>
+                    <Badge className="rounded-full bg-emerald-500 text-slate-950 hover:bg-emerald-500">VIN decoded</Badge>
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                    {decodedDetails.map((detail) => (
+                      <div key={detail.label} className="rounded-xl bg-slate-950/60 px-3 py-2">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{detail.label}</p>
+                        <p className="mt-0.5 text-xs font-semibold text-slate-200">{detail.value}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-800">
                 <div>

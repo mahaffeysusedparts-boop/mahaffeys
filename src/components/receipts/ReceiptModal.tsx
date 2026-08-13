@@ -96,11 +96,13 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ ticket, open, onOpen
           <div className="space-y-2">
             <div className="bg-slate-100 p-2.5 rounded border border-slate-300">
               <p className="font-bold text-xs uppercase mb-1">
-                VEHICLE SPECIFICATIONS: {ticket.carRecord.year} {ticket.carRecord.make} {ticket.carRecord.model}
+                VEHICLE SPECIFICATIONS: {ticket.carRecord.year} {ticket.carRecord.make} {ticket.carRecord.model} {ticket.carRecord.trim || ''}
               </p>
               <div className="grid grid-cols-2 gap-2 text-[10px]">
                 <p><span className="font-bold">VIN:</span> {ticket.carRecord.vin}</p>
                 <p><span className="font-bold">TITLE STATUS:</span> {ticket.carRecord.titleStatus}</p>
+                <p><span className="font-bold">ENGINE:</span> {[ticket.carRecord.engineSizeLiters ? `${ticket.carRecord.engineSizeLiters}L` : null, ticket.carRecord.engineCylinders ? `${ticket.carRecord.engineCylinders} CYL` : null, ticket.carRecord.engineModel].filter(Boolean).join(' ') || 'N/A'}</p>
+                <p><span className="font-bold">FUEL:</span> {ticket.carRecord.fuelType || 'N/A'}</p>
                 <p><span className="font-bold">SCALE WEIGHT:</span> {ticket.carRecord.vehicleWeightLbs.toLocaleString()} LBS</p>
                 <p><span className="font-bold">TITLE #:</span> {ticket.carRecord.titleNumber || 'N/A'}</p>
               </div>
