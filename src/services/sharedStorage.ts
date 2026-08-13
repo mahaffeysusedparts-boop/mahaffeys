@@ -26,6 +26,7 @@ let connectionStatus: ConnectionStatus = "local";
 let remoteEnabled = false;
 const listeners = new Set<StatusListener>();
 const pendingWrites = new Map<string, string>();
+const memoryValues = new Map<string, string>();
 let flushPromise: Promise<void> | null = null;
 let retryCount = 0;
 let retryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -34,6 +35,51 @@ let lastErrorToast = 0;
 function setStatus(status: ConnectionStatus) {
   connectionStatus = status;
   listeners.forEach((listener) => listener(status));
+}
+
+function stripEmbeddedMedia(value: unknown): unknown {
+  if (typeof value === "string" && /^data:(image|video|audio)\//i.test(value)) return undefined;
+  if (Array.isArray(value)) return value.map((item) => stripEmbeddedMedia(item) ?? null);
+  if (!value || typeof value !== "object") return value;
+
+  return Object.fromEntries(
+    Object.entries(value).flatMap(([key, item]) => {
+      const compacted = stripEmbeddedMedia(item);
+      return compacted === undefined ? [] : [[key, compacted]];
+    }),
+  );
+}
+
+function compactSerializedValue(serialized: string) {
+  try {
+    return JSON.stringify(stripEmbeddedMedia(JSON.parse(serialized))) ?? serialized;
+  } catch {
+    return serialized;
+  }
+}
+
+function isQuotaError(error: unknown) {
+  return error instanceof DOMException && (error.name === "QuotaExceededError" || error.name === "NS_ERROR_DOM_QUOTA_REACHED");
+}
+
+function compactExistingSnapshots() {
+  for (const key of SHARED_KEYS) {
+    const stored = localStorage.getItem(key);
+    if (!stored) continue;
+    const compacted = compactSerializedValue(stored);
+    if (compacted.length < stored.length) localStorage.setItem(key, compacted);
+  }
+}
+
+function persistLocalSnapshot(key: string, serialized: string) {
+  const compacted = compactSerializedValue(serialized);
+  try {
+    localStorage.setItem(key, compacted);
+  } catch (error) {
+    if (!isQuotaError(error)) throw error;
+    compactExistingSnapshots();
+    localStorage.setItem(key, compacted);
+  }
 }
 
 const STATE_CHUNK_SIZE = 500 * 1024;
@@ -51,13 +97,31 @@ async function uploadSerializedState(key: string, serialized: string) {
   }
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function mergeRecord(localRecord: Record<string, unknown>, serverRecord: Record<string, unknown>) {
+  const merged = { ...serverRecord, ...localRecord };
+  for (const field of ["carRecord", "complianceCaptures"]) {
+    if (isRecord(serverRecord[field]) && isRecord(localRecord[field])) {
+      merged[field] = { ...serverRecord[field], ...localRecord[field] };
+    }
+  }
+  return merged;
+}
+
 function mergeRecords(localValue: unknown, serverValue: unknown) {
   if (!Array.isArray(localValue) || !Array.isArray(serverValue)) return serverValue;
-  const localRecords = localValue.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object" && "id" in item);
+  const serverRecords = serverValue.filter((item): item is Record<string, unknown> => isRecord(item) && "id" in item);
+  const serverById = new Map(serverRecords.map((item) => [String(item.id), item]));
+  const localRecords = localValue.filter((item): item is Record<string, unknown> => isRecord(item) && "id" in item);
   const localIds = new Set(localRecords.map((item) => String(item.id)));
-  return [...localRecords, ...serverValue.filter((item) => {
-    return Boolean(item) && typeof item === "object" && "id" in item && !localIds.has(String((item as Record<string, unknown>).id));
-  })];
+  const mergedLocalRecords = localRecords.map((item) => {
+    const serverRecord = serverById.get(String(item.id));
+    return serverRecord ? mergeRecord(item, serverRecord) : item;
+  });
+  return [...mergedLocalRecords, ...serverRecords.filter((item) => !localIds.has(String(item.id)))];
 }
 
 function notifySyncError(message: string) {
@@ -129,11 +193,12 @@ function collectLocalState() {
 
 export const sharedStorage = {
   getItem(key: string) {
-    return localStorage.getItem(key);
+    return memoryValues.get(key) ?? localStorage.getItem(key);
   },
 
   setItem(key: string, value: string) {
-    localStorage.setItem(key, value);
+    persistLocalSnapshot(key, value);
+    memoryValues.set(key, value);
     if (remoteEnabled && (SHARED_KEYS as readonly string[]).includes(key)) {
       pendingWrites.set(key, value);
       void flushWrites();
@@ -141,11 +206,13 @@ export const sharedStorage = {
   },
 
   removeItem(key: string) {
+    memoryValues.delete(key);
     localStorage.removeItem(key);
   },
 
   clear() {
     for (const key of SHARED_KEYS) {
+      memoryValues.delete(key);
       localStorage.removeItem(key);
     }
   },
@@ -165,7 +232,8 @@ export const sharedStorage = {
         ? mergeRecords(localValue, serverValue)
         : serverValue;
       const serialized = JSON.stringify(value);
-      localStorage.setItem(key, serialized);
+      persistLocalSnapshot(key, serialized);
+      memoryValues.set(key, serialized);
       if (serialized !== JSON.stringify(serverValue)) pendingWrites.set(key, serialized);
     }
 
@@ -188,7 +256,8 @@ export const sharedStorage = {
       if (!(SHARED_KEYS as readonly string[]).includes(key)) continue;
       const serialized = JSON.stringify(value);
       await uploadSerializedState(key, serialized);
-      localStorage.setItem(key, serialized);
+      persistLocalSnapshot(key, serialized);
+      memoryValues.set(key, serialized);
     }
     remoteEnabled = true;
     setStatus("connected");

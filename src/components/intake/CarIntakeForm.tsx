@@ -316,7 +316,6 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
       purchasePrice: Math.round(purchasePrice * 100) / 100,
       originSource: originSource.trim() || 'Tow Origin',
       notes: notes.trim() || undefined,
-      photoUrl,
     };
 
     const newTicket: Ticket = {
