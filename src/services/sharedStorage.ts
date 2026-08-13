@@ -36,13 +36,22 @@ function setStatus(status: ConnectionStatus) {
   listeners.forEach((listener) => listener(status));
 }
 
-function notifySyncError() {
+function mergeRecords(localValue: unknown, serverValue: unknown) {
+  if (!Array.isArray(localValue) || !Array.isArray(serverValue)) return serverValue;
+  const localRecords = localValue.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object" && "id" in item);
+  const localIds = new Set(localRecords.map((item) => String(item.id)));
+  return [...localRecords, ...serverValue.filter((item) => {
+    return Boolean(item) && typeof item === "object" && "id" in item && !localIds.has(String((item as Record<string, unknown>).id));
+  })];
+}
+
+function notifySyncError(message: string) {
   const now = Date.now();
   if (now - lastErrorToast > 15_000) {
     lastErrorToast = now;
     toast.error("Server sync failed — changes saved locally", {
-      description: "Will retry automatically. Check your network connection.",
-      duration: 8000,
+      description: `${message} Retrying automatically.`,
+      duration: 10_000,
     });
   }
 }
@@ -61,10 +70,12 @@ async function flushWrites(): Promise<void> {
         });
         setStatus("connected");
         retryCount = 0;
-      } catch {
-        pendingWrites.set(key, serialized);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "The server rejected the update.";
+        console.error(`Server sync failed for ${key}:`, error);
+        if (!pendingWrites.has(key)) pendingWrites.set(key, serialized);
         setStatus("error");
-        notifySyncError();
+        notifySyncError(message);
         retryCount += 1;
         scheduleRetry();
         return;
@@ -84,6 +95,15 @@ function scheduleRetry() {
     retryTimer = null;
     void flushWrites();
   }, delay);
+}
+
+if (typeof window !== "undefined") {
+  window.addEventListener("online", () => {
+    retryCount = 0;
+    if (retryTimer) clearTimeout(retryTimer);
+    retryTimer = null;
+    void flushWrites();
+  });
 }
 
 function collectLocalState() {
@@ -122,23 +142,28 @@ export const sharedStorage = {
     setStatus("connecting");
     const response = await apiRequest<{ state: Record<string, unknown> }>("/api/state");
     const entries = Object.entries(response.state);
-    if (entries.length > 0) {
-      for (const [key, value] of entries) {
-        if ((SHARED_KEYS as readonly string[]).includes(key)) {
-          localStorage.setItem(key, JSON.stringify(value));
-        }
-      }
-    } else {
-      const localState = collectLocalState();
-      await Promise.all(Object.entries(localState).map(([key, value]) =>
-        apiRequest(`/api/state/${encodeURIComponent(key)}`, {
-          method: "PUT",
-          body: JSON.stringify({ value }),
-        }),
-      ));
+    const serverKeys = new Set(entries.map(([key]) => key));
+    const mergeKeys = new Set(["mahaffeys_tickets", "mahaffeys_pull_yard_vehicles"]);
+
+    for (const [key, serverValue] of entries) {
+      if (!(SHARED_KEYS as readonly string[]).includes(key)) continue;
+      const localSerialized = localStorage.getItem(key);
+      const localValue = localSerialized ? JSON.parse(localSerialized) as unknown : null;
+      const value = mergeKeys.has(key) && localValue
+        ? mergeRecords(localValue, serverValue)
+        : serverValue;
+      const serialized = JSON.stringify(value);
+      localStorage.setItem(key, serialized);
+      if (serialized !== JSON.stringify(serverValue)) pendingWrites.set(key, serialized);
     }
+
+    for (const [key, value] of Object.entries(collectLocalState())) {
+      if (!serverKeys.has(key)) pendingWrites.set(key, JSON.stringify(value));
+    }
+
     remoteEnabled = true;
     setStatus("connected");
+    if (pendingWrites.size > 0) void flushWrites();
   },
 
   disconnect() {
