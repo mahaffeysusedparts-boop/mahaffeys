@@ -1,4 +1,5 @@
 import { apiRequest } from "./apiClient";
+import { toast } from "sonner";
 
 const SHARED_KEYS = [
   "mahaffeys_metals",
@@ -26,14 +27,29 @@ let remoteEnabled = false;
 const listeners = new Set<StatusListener>();
 const pendingWrites = new Map<string, string>();
 let flushPromise: Promise<void> | null = null;
+let retryCount = 0;
+let retryTimer: ReturnType<typeof setTimeout> | null = null;
+let lastErrorToast = 0;
 
 function setStatus(status: ConnectionStatus) {
   connectionStatus = status;
   listeners.forEach((listener) => listener(status));
 }
 
-async function flushWrites() {
+function notifySyncError() {
+  const now = Date.now();
+  if (now - lastErrorToast > 15_000) {
+    lastErrorToast = now;
+    toast.error("Server sync failed — changes saved locally", {
+      description: "Will retry automatically. Check your network connection.",
+      duration: 8000,
+    });
+  }
+}
+
+async function flushWrites(): Promise<void> {
   if (flushPromise) return flushPromise;
+
   flushPromise = (async () => {
     while (pendingWrites.size > 0) {
       const [key, serialized] = pendingWrites.entries().next().value as [string, string];
@@ -44,16 +60,30 @@ async function flushWrites() {
           body: JSON.stringify({ value: JSON.parse(serialized) }),
         });
         setStatus("connected");
+        retryCount = 0;
       } catch {
         pendingWrites.set(key, serialized);
         setStatus("error");
-        break;
+        notifySyncError();
+        retryCount += 1;
+        scheduleRetry();
+        return;
       }
     }
   })().finally(() => {
     flushPromise = null;
   });
+
   return flushPromise;
+}
+
+function scheduleRetry() {
+  if (retryTimer) return;
+  const delay = Math.min(2_000 * 2 ** retryCount, 30_000);
+  retryTimer = setTimeout(() => {
+    retryTimer = null;
+    void flushWrites();
+  }, delay);
 }
 
 function collectLocalState() {
