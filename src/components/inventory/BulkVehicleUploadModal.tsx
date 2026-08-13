@@ -1,7 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { PullYardVehicle, PullYardVehicleStatus } from '@/types/scrap';
 import { storageService } from '@/services/storageService';
-import { generateSamplePhoto } from '@/utils/complianceUtils';
 import {
   Dialog,
   DialogContent,
@@ -276,7 +275,7 @@ export const BulkVehicleUploadModal: React.FC<BulkVehicleUploadModalProps> = ({
         purchasePrice: r.purchasePrice,
         originSource: r.originSource,
         notes: r.notes || 'Bulk Spreadsheet Import',
-        photoUrl: r.photoUrl.trim() || generateSamplePhoto('vehicle'),
+        photoUrl: r.photoUrl.trim() || undefined,
         dismantlingLog: {
           catalyticConvertersRemoved: 0,
           wheelsRemoved: 0,

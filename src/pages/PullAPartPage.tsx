@@ -7,7 +7,6 @@ import {
   AdmissionPass,
   PullYardVehicleStatus,
 } from "@/types/scrap";
-import { generateSamplePhoto } from "@/utils/complianceUtils";
 import { analyzeVinImage } from "@/services/aiVisionService";
 import { PartsInterchangeModal } from "@/components/inventory/PartsInterchangeModal";
 import { Navbar } from "@/components/layout/Navbar";
@@ -82,10 +81,10 @@ export default function PullAPartPage() {
   const [vehVin, setVehVin] = useState("");
   const [vehStatus, setVehStatus] = useState<PullYardVehicleStatus>("PENDING");
   const [vehParts, setVehParts] = useState("Engine, Transmission, Wheels");
-  const [vehPurchasePrice, setVehPurchasePrice] = useState(450);
-  const [vehOriginSource, setVehOriginSource] = useState("Tow Origin / Address");
+  const [vehPurchasePrice, setVehPurchasePrice] = useState(0);
+  const [vehOriginSource, setVehOriginSource] = useState("");
   const [vehNotes, setVehNotes] = useState("");
-  const [vehPhotoUrl, setVehPhotoUrl] = useState(generateSamplePhoto("vehicle"));
+  const [vehPhotoUrl, setVehPhotoUrl] = useState("");
 
   const vinCameraRef = useRef<HTMLInputElement>(null);
 
@@ -136,11 +135,11 @@ export default function PullAPartPage() {
     setVehVin("");
     setVehSection("Domestic Trucks & SUVs");
     setVehStatus("PENDING");
-    setVehParts("Engine, Transmission, Wheels");
-    setVehPurchasePrice(450);
+    setVehParts("");
+    setVehPurchasePrice(0);
     setVehOriginSource("");
     setVehNotes("");
-    setVehPhotoUrl(generateSamplePhoto("vehicle"));
+    setVehPhotoUrl("");
     setVehModalOpen(true);
   };
 
@@ -157,7 +156,7 @@ export default function PullAPartPage() {
     setVehPurchasePrice(v.purchasePrice || 0);
     setVehOriginSource(v.originSource || "");
     setVehNotes(v.notes || "");
-    setVehPhotoUrl(v.photoUrl || generateSamplePhoto("vehicle"));
+    setVehPhotoUrl(v.photoUrl || "");
     setVehModalOpen(true);
   };
 

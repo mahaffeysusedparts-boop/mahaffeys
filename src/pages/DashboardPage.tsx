@@ -76,18 +76,29 @@ export default function DashboardPage() {
   const carsStagedToday = todayTickets.filter((t) => t.ticketType === "CAR_SALVAGE").length;
   const vehiclesCount = storageService.getInventoryVehicles().length;
   const cashLogs = storageService.getCashDrawerLogs();
-  const currentCashBalance = cashLogs.length > 0 ? cashLogs[0].balanceAfter : 5000;
+  const currentCashBalance = cashLogs.length > 0 ? cashLogs[0].balanceAfter : 0;
 
-  // Chart 1: 7-Day Trend
-  const weeklyData = [
-    { day: "Mon", scrapLbs: 18400, payout: 2450 },
-    { day: "Tue", scrapLbs: 22100, payout: 3100 },
-    { day: "Wed", scrapLbs: 19800, payout: 2890 },
-    { day: "Thu", scrapLbs: 26400, payout: 3820 },
-    { day: "Fri", scrapLbs: 31200, payout: 4600 },
-    { day: "Sat", scrapLbs: 38900, payout: 5900 },
-    { day: "Today", scrapLbs: totalScrapLbsToday, payout: totalTodayPayout },
-  ];
+  const weeklyData = Array.from({ length: 7 }, (_, index) => {
+    const date = new Date();
+    date.setHours(0, 0, 0, 0);
+    date.setDate(date.getDate() - (6 - index));
+    const dayTickets = completedTickets.filter((ticket) => {
+      const ticketDate = new Date(ticket.createdAt);
+      ticketDate.setHours(0, 0, 0, 0);
+      return ticketDate.getTime() === date.getTime();
+    });
+    const scrapLbs = dayTickets.reduce((total, ticket) => {
+      if (ticket.ticketType === "CAR_SALVAGE" && ticket.carRecord) {
+        return total + ticket.carRecord.vehicleWeightLbs;
+      }
+      return total + (ticket.scrapLines?.reduce((lineTotal, line) => lineTotal + line.billableWeight, 0) || 0);
+    }, 0);
+    return {
+      day: index === 6 ? "Today" : date.toLocaleDateString(undefined, { weekday: "short" }),
+      scrapLbs,
+      payout: dayTickets.reduce((total, ticket) => total + ticket.finalPayout, 0),
+    };
+  });
 
   const handleZeroScale = () => {
     scaleService.setZero();

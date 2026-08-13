@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { Customer } from '@/types/scrap';
 import { storageService } from '@/services/storageService';
 import { Navbar } from '@/components/layout/Navbar';
-import { generateSamplePhoto } from '@/utils/complianceUtils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -76,7 +75,6 @@ export default function CustomersPage() {
       createdAt: new Date().toISOString(),
       totalPayouts: 0,
       totalWeightLbs: 0,
-      idPhotoUrl: generateSamplePhoto('id'),
       capturedPlates: vehicleLicensePlate ? [vehicleLicensePlate] : [],
     };
 

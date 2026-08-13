@@ -20,6 +20,49 @@ const SHARED_KEYS = [
   "mahaffeys_ip_cameras",
 ] as const;
 
+const LEGACY_DEMO_IDS: Record<string, Set<string>> = {
+  mahaffeys_ip_cameras: new Set(["cam-101", "cam-102", "cam-103"]),
+  mahaffeys_pull_parts: new Set(Array.from({ length: 10 }, (_, index) => `part-${index + 1}`)),
+  mahaffeys_pull_yard_vehicles: new Set(["veh-101", "veh-102", "veh-103", "veh-104"]),
+  mahaffeys_core_returns: new Set(["core-1", "core-2"]),
+  mahaffeys_admission_passes: new Set(["pass-1001", "pass-1002"]),
+  mahaffeys_cat_codes: new Set(Array.from({ length: 6 }, (_, index) => `cat-${index + 101}`)),
+  mahaffeys_container_drops: new Set(["drop-1001", "drop-1002", "drop-1003"]),
+  mahaffeys_cash_drawer: new Set(["cd-101", "cd-102", "cd-103", "cd-104"]),
+  mahaffeys_yard_bays: new Set(Array.from({ length: 5 }, (_, index) => `bay-${index + 1}`)),
+  mahaffeys_metals: new Set(Array.from({ length: 12 }, (_, index) => `m${index + 1}`)),
+  mahaffeys_car_rates: new Set(Array.from({ length: 4 }, (_, index) => `car${index + 1}`)),
+  mahaffeys_customers: new Set(["cust-101", "cust-102", "cust-103"]),
+  mahaffeys_tickets: new Set(["T-2025-1001", "T-2025-1002", "T-2025-1003", "T-2025-1004"]),
+  mahaffeys_nmvtis_logs: new Set(["log-101"]),
+};
+
+function removeLegacyDemoData(key: string, value: unknown): unknown {
+  const ids = LEGACY_DEMO_IDS[key];
+  if (ids && Array.isArray(value)) {
+    return value.filter((item) => !isRecord(item) || !ids.has(String(item.id)));
+  }
+  if (key === "mahaffeys_settings" && isRecord(value) && value.yardName === "Apex Metal & Auto Recyclers") {
+    return {
+      ...value,
+      yardName: "My Recycling Yard",
+      address: "",
+      cityStateZip: "",
+      phone: "",
+      email: "",
+      licenseNumber: "",
+      nmvtisReportingId: "",
+      receiptHeader: "Thank you for recycling with us.",
+      receiptFooter: "All transactions are final.",
+      operatorName: "Operator",
+      cashDrawerFloatLimit: 0,
+      admissionFeeUsd: 0,
+      customDomain: "",
+    };
+  }
+  return value;
+}
+
 type ConnectionStatus = "local" | "connecting" | "connected" | "error";
 type StatusListener = (status: ConnectionStatus) => void;
 
@@ -229,17 +272,23 @@ export const sharedStorage = {
       if (!(SHARED_KEYS as readonly string[]).includes(key)) continue;
       const localSerialized = localStorage.getItem(key);
       const localValue = localSerialized ? JSON.parse(localSerialized) as unknown : null;
-      const value = mergeKeys.has(key) && localValue
+      const mergedValue = mergeKeys.has(key) && localValue
         ? mergeRecords(localValue, serverValue)
         : serverValue;
+      const value = removeLegacyDemoData(key, mergedValue);
       const serialized = JSON.stringify(value);
       persistLocalSnapshot(key, serialized);
       memoryValues.set(key, serialized);
       if (serialized !== JSON.stringify(serverValue)) pendingWrites.set(key, serialized);
     }
 
-    for (const [key, value] of Object.entries(collectLocalState())) {
-      if (!serverKeys.has(key)) pendingWrites.set(key, JSON.stringify(value));
+    for (const [key, localValue] of Object.entries(collectLocalState())) {
+      if (serverKeys.has(key)) continue;
+      const value = removeLegacyDemoData(key, localValue);
+      const serialized = JSON.stringify(value);
+      persistLocalSnapshot(key, serialized);
+      memoryValues.set(key, serialized);
+      pendingWrites.set(key, serialized);
     }
 
     remoteEnabled = true;

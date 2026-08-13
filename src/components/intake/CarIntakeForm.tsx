@@ -89,12 +89,12 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
 
   // Vehicle Details
   const [vin, setVin] = useState<string>('');
-  const [year, setYear] = useState<number>(new Date().getFullYear() - 12);
-  const [make, setMake] = useState<string>('Ford');
-  const [model, setModel] = useState<string>('F-150');
+  const [year, setYear] = useState<number>(new Date().getFullYear());
+  const [make, setMake] = useState<string>('');
+  const [model, setModel] = useState<string>('');
   const [trim, setTrim] = useState<string>('');
-  const [color, setColor] = useState<string>('White');
-  const [mileage, setMileage] = useState<number>(150000);
+  const [color, setColor] = useState<string>('');
+  const [mileage, setMileage] = useState<number>(0);
   const [engineSizeLiters, setEngineSizeLiters] = useState<string>('');
   const [engineCylinders, setEngineCylinders] = useState<string>('');
   const [engineModel, setEngineModel] = useState<string>('');
@@ -106,8 +106,8 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
   const [titleNumber, setTitleNumber] = useState<string>('');
 
   // Financial & Origin Logging
-  const [purchasePrice, setPurchasePrice] = useState<number>(450);
-  const [originSource, setOriginSource] = useState<string>('Tow Origin / Address / Shop Name');
+  const [purchasePrice, setPurchasePrice] = useState<number>(0);
+  const [originSource, setOriginSource] = useState<string>('');
 
   // Tow Driver Notes Section
   const [notes, setNotes] = useState<string>('');
