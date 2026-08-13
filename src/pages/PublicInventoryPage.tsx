@@ -67,7 +67,7 @@ export default function PublicInventoryPage() {
   const [reqPhone, setReqPhone] = useState("");
 
   const loadData = useCallback(() => {
-    const list = storageService.getPullYardVehicles();
+    const list = storageService.getInventoryVehicles();
     setVehicles(list);
     setLastUpdatedTime(new Date().toLocaleTimeString());
   }, []);
@@ -77,7 +77,7 @@ export default function PublicInventoryPage() {
     loadData();
 
     const handleStorageChange = (e: StorageEvent) => {
-      if (!e.key || e.key === "mahaffeys_pull_yard_vehicles") {
+      if (!e.key || e.key === "mahaffeys_pull_yard_vehicles" || e.key === "mahaffeys_tickets") {
         loadData();
       }
     };

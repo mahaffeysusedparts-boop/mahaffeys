@@ -116,7 +116,7 @@ export default function PullAPartPage() {
   const [waiverSigned, setWaiverSigned] = useState(true);
 
   const loadData = () => {
-    setVehicles(storageService.getPullYardVehicles());
+    setVehicles(storageService.getInventoryVehicles());
     setParts(storageService.getPullParts());
     setCores(storageService.getCoreReturns());
     setPasses(storageService.getAdmissionPasses());

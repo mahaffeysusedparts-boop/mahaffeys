@@ -118,6 +118,7 @@ export interface VehicleDismantlingLog {
 
 export interface PullYardVehicle {
   id: string;
+  sourceTicketId?: string;
   section: 'Domestic Trucks & SUVs' | 'Ford & Lincoln' | 'GM & Chevrolet' | 'Chrysler & Dodge' | 'Asian Imports' | 'European';
   rowNumber?: number;
   year: number;

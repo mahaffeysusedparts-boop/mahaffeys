@@ -40,6 +40,49 @@ const STORAGE_KEYS = {
 let pullVehicleCacheSource: string | null = null;
 let pullVehicleCache: PullYardVehicle[] | null = null;
 
+const sectionForMake = (make: string): PullYardVehicle['section'] => {
+  const normalized = make.toLowerCase();
+  if (normalized.includes('ford') || normalized.includes('lincoln') || normalized.includes('mercury')) return 'Ford & Lincoln';
+  if (normalized.includes('chevrolet') || normalized.includes('chevy') || normalized.includes('gmc') || normalized.includes('buick') || normalized.includes('cadillac')) return 'GM & Chevrolet';
+  if (normalized.includes('chrysler') || normalized.includes('dodge') || normalized.includes('jeep') || normalized.includes('ram')) return 'Chrysler & Dodge';
+  if (['toyota', 'nissan', 'honda', 'subaru', 'mazda', 'mitsubishi', 'hyundai', 'kia', 'lexus', 'acura', 'infiniti'].some((brand) => normalized.includes(brand))) return 'Asian Imports';
+  if (['bmw', 'mercedes', 'audi', 'volkswagen', 'volvo', 'porsche', 'mini', 'jaguar', 'land rover'].some((brand) => normalized.includes(brand))) return 'European';
+  return 'Domestic Trucks & SUVs';
+};
+
+const vehicleFromTicket = (ticket: Ticket): PullYardVehicle | null => {
+  const car = ticket.carRecord;
+  if (ticket.ticketType !== 'CAR_SALVAGE' || ticket.status === 'VOIDED' || !car) return null;
+  return {
+    id: `veh-ticket-${ticket.id}`,
+    sourceTicketId: ticket.id,
+    section: sectionForMake(car.make),
+    year: car.year,
+    make: car.make,
+    model: car.model,
+    trim: car.trim,
+    color: car.color,
+    vin: car.vin,
+    engineSizeLiters: car.engineSizeLiters,
+    engineCylinders: car.engineCylinders,
+    engineModel: car.engineModel,
+    fuelType: car.fuelType,
+    dateSetInYard: ticket.createdAt,
+    status: car.yardStatus || 'PENDING',
+    partsRemaining: ['Engine Assembly', 'Transmission', 'Doors', 'Wheels', 'Headlights', 'Fenders'],
+    photoUrl: car.photoUrl || ticket.complianceCaptures?.vehiclePhotoUrl,
+    purchasePrice: car.purchasePrice ?? ticket.finalPayout,
+    originSource: car.originSource || 'Tow Intake',
+    notes: car.notes || ticket.notes,
+    dismantlingLog: {
+      catalyticConvertersRemoved: 0,
+      wheelsRemoved: 0,
+      gasDrained: car.fluidsDrained,
+      oilDrained: car.fluidsDrained,
+    },
+  };
+};
+
 export const INITIAL_IP_CAMERAS: IpCamera[] = [
   {
     id: 'cam-101',
@@ -1013,6 +1056,20 @@ export const storageService = {
     return pullVehicleCache;
   },
 
+  getInventoryVehicles(): PullYardVehicle[] {
+    const vehicles = this.getPullYardVehicles();
+    const linkedTicketIds = new Set(vehicles.map((vehicle) => vehicle.sourceTicketId).filter(Boolean));
+    const knownVins = new Set(vehicles.map((vehicle) => vehicle.vin.toUpperCase()));
+    const recovered = this.getTickets()
+      .map(vehicleFromTicket)
+      .filter((vehicle): vehicle is PullYardVehicle => Boolean(
+        vehicle && !linkedTicketIds.has(vehicle.sourceTicketId) && !knownVins.has(vehicle.vin.toUpperCase()),
+      ));
+    return [...recovered, ...vehicles].sort(
+      (a, b) => new Date(b.dateSetInYard).getTime() - new Date(a.dateSetInYard).getTime(),
+    );
+  },
+
   savePullYardVehicle(veh: PullYardVehicle): PullYardVehicle {
     const vehicles = this.getPullYardVehicles();
     const idx = vehicles.findIndex((v) => v.id === veh.id);
@@ -1205,41 +1262,13 @@ export const storageService = {
     }
     sharedStorage.setItem(STORAGE_KEYS.TICKETS, JSON.stringify(tickets));
 
-    if (ticket.ticketType === 'CAR_SALVAGE' && ticket.carRecord) {
-      const c = ticket.carRecord;
-      this.savePullYardVehicle({
-        id: `veh-${Date.now()}`,
-        section: c.make.includes('Ford')
-          ? 'Ford & Lincoln'
-          : c.make.includes('Chevy') || c.make.includes('Chevrolet') || c.make.includes('GMC')
-          ? 'GM & Chevrolet'
-          : c.make.includes('Toyota') || c.make.includes('Nissan') || c.make.includes('Honda')
-          ? 'Asian Imports'
-          : 'Domestic Trucks & SUVs',
-        year: c.year,
-        make: c.make,
-        model: c.model,
-        trim: c.trim,
-        color: c.color,
-        vin: c.vin,
-        engineSizeLiters: c.engineSizeLiters,
-        engineCylinders: c.engineCylinders,
-        engineModel: c.engineModel,
-        fuelType: c.fuelType,
-        dateSetInYard: new Date().toISOString(),
-        status: c.yardStatus || 'PENDING',
-        partsRemaining: ['Engine Assembly', 'Transmission', 'Doors', 'Wheels', 'Headlights', 'Fenders'],
-        photoUrl: c.photoUrl || ticket.complianceCaptures?.vehiclePhotoUrl,
-        purchasePrice: c.purchasePrice ?? ticket.finalPayout,
-        originSource: c.originSource || 'Tow Intake',
-        notes: c.notes || ticket.notes,
-        dismantlingLog: {
-          catalyticConvertersRemoved: 0,
-          wheelsRemoved: 0,
-          gasDrained: c.fluidsDrained,
-          oilDrained: c.fluidsDrained,
-        },
-      });
+    const inventoryVehicle = vehicleFromTicket(ticket);
+    if (inventoryVehicle) {
+      try {
+        this.savePullYardVehicle(inventoryVehicle);
+      } catch {
+        // Vehicle recovery will still happen via getInventoryVehicles() which reads tickets
+      }
     }
 
     if (ticket.payoutMethod === 'Cash') {

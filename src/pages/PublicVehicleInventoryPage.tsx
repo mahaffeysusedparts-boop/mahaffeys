@@ -85,13 +85,13 @@ export default function PublicVehicleInventoryPage() {
   const deferredSearchTerm = useDeferredValue(searchTerm);
 
   const loadVehicles = useCallback(() => {
-    setVehicles(storageService.getPullYardVehicles().filter((vehicle) => vehicle.status !== "CRUSHED"));
+    setVehicles(storageService.getInventoryVehicles().filter((vehicle) => vehicle.status !== "CRUSHED"));
   }, []);
 
   useEffect(() => {
     loadVehicles();
     const handleStorageChange = (event: StorageEvent) => {
-      if (!event.key || event.key === "mahaffeys_pull_yard_vehicles") loadVehicles();
+      if (!event.key || event.key === "mahaffeys_pull_yard_vehicles" || event.key === "mahaffeys_tickets") loadVehicles();
     };
     window.addEventListener("storage", handleStorageChange);
     const unsubscribe = sharedStorage.subscribe((status) => {

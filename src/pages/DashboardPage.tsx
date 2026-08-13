@@ -74,7 +74,7 @@ export default function DashboardPage() {
   }, 0);
 
   const carsStagedToday = todayTickets.filter((t) => t.ticketType === "CAR_SALVAGE").length;
-  const vehiclesCount = storageService.getPullYardVehicles().length;
+  const vehiclesCount = storageService.getInventoryVehicles().length;
   const cashLogs = storageService.getCashDrawerLogs();
   const currentCashBalance = cashLogs.length > 0 ? cashLogs[0].balanceAfter : 5000;
 
