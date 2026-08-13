@@ -81,7 +81,6 @@ export default function IntakePage() {
         {activeMode === 'CAR_SALVAGE' && (
           <CarIntakeForm
             onBack={handleResetIntake}
-            onTicketCreated={handleTicketCreated}
           />
         )}
 

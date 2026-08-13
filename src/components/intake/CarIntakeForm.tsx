@@ -38,7 +38,6 @@ import { toast } from 'sonner';
 
 interface CarIntakeFormProps {
   onBack: () => void;
-  onTicketCreated: (ticket: Ticket) => void;
 }
 
 const compressVehiclePhoto = (file: File): Promise<string> => new Promise((resolve, reject) => {
@@ -66,7 +65,7 @@ const compressVehiclePhoto = (file: File): Promise<string> => new Promise((resol
   reader.readAsDataURL(file);
 });
 
-export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCreated }) => {
+export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
   // Vehicle Picture Capture State
   const [photoUrl, setPhotoUrl] = useState<string>('');
   const [isSaving, setIsSaving] = useState(false);
@@ -344,8 +343,25 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, onTicketCr
     setIsSaving(true);
     try {
       storageService.saveTicket(newTicket);
-      toast.success(`Ticket #${newTicket.id} saved to the Pending Group.`);
-      onTicketCreated(newTicket);
+      toast.success(`Vehicle saved to inventory`, {
+        description: `${year} ${make} ${model} added as pending intake.`,
+      });
+
+      setVin('');
+      setTrim('');
+      setSellerName('');
+      setSellerIdNumber('');
+      setIsDlScanned(false);
+      setPhotoUrl('');
+      setNotes('');
+      setTitleNumber('');
+      setDecodedVehicle(null);
+      setEngineSizeLiters('');
+      setEngineCylinders('');
+      setEngineModel('');
+      setFuelType('');
+      setOriginSource('');
+      handleAutoGenerateReceiptNumber();
     } catch (error) {
       const storageFull = error instanceof DOMException && error.name === 'QuotaExceededError';
       toast.error('Car intake could not be saved', {
