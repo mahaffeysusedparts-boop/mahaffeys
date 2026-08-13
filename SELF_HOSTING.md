@@ -96,7 +96,7 @@ sudo ufw status
 
 Do not expose SSH, PostgreSQL port `5432`, or Nitro port `3000` to the internet. The `jhilliard` password is not accepted by SSH after this key-only setup.
 
-Approved application administrators can use **Server Admin** in the Mahaffeys navigation to view service health, disk and memory usage, recent PM2 logs, and request a guarded production restart.
+Approved application administrators can use **Server Admin** in the Mahaffeys navigation to view service health, disk and memory usage, recent PM2 logs, and request a guarded production restart. The Linux installation and recovery scripts also install `mdadm` and configure the root-owned `mahaffeys-mdadm` validation wrapper automatically, enabling the guarded RAID and hot-swap controls without granting the web service unrestricted root access.
 
 ### 7. Make the app available from anywhere
 

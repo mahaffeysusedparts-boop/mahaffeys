@@ -31,6 +31,12 @@ if ! id "${APP_USER}" >/dev/null 2>&1; then
   exit 1
 fi
 
+STORAGE_SETUP="/usr/local/sbin/mahaffeys-storage-setup"
+if [[ ! -x "${STORAGE_SETUP}" ]]; then
+  STORAGE_SETUP="${INSTALL_DIR}/scripts/configure-storage-management.sh"
+fi
+MAHAFFEYS_APP_USER="${APP_USER}" bash "${STORAGE_SETUP}"
+
 systemctl enable postgresql nginx >/dev/null
 systemctl start postgresql
 

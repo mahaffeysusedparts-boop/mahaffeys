@@ -4,6 +4,7 @@ import { promisify } from "node:util";
 import { createError } from "nitro/h3";
 
 const execFileAsync = promisify(execFile);
+const MDADM_WRAPPER = "/usr/local/sbin/mahaffeys-mdadm";
 const DEVICE_PATTERN = /^\/dev\/[a-zA-Z0-9][a-zA-Z0-9._-]*$/;
 const ARRAY_PATTERN = /^\/dev\/md[0-9]+$/;
 
@@ -207,7 +208,7 @@ async function readMdadmCapabilities() {
   }
 
   try {
-    await execFileAsync("sudo", ["-n", "mdadm", "--version"], { timeout: 5_000 });
+    await execFileAsync("sudo", ["-n", MDADM_WRAPPER, "--version"], { timeout: 5_000 });
     return { installed: true, canManage: true, accessMode: "sudo" };
   } catch {
     return { installed: true, canManage: false, accessMode: "none" };
@@ -281,5 +282,5 @@ export async function runMdadm(args: string[]) {
   if (typeof process.getuid === "function" && process.getuid() === 0) {
     return command("mdadm", args);
   }
-  return command("sudo", ["-n", "mdadm", ...args]);
+  return command("sudo", ["-n", MDADM_WRAPPER, ...args]);
 }

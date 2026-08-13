@@ -9,6 +9,7 @@ User=jhilliard
 WorkingDirectory=/var/www/mahaffeys
 Environment=NODE_ENV=production
 EnvironmentFile=/etc/mahaffeys/mahaffeys.env
+ExecStartPre=+/usr/bin/env MAHAFFEYS_APP_USER=jhilliard /usr/local/sbin/mahaffeys-storage-setup
 ExecStart=/usr/bin/npm run start
 Restart=on-failure
 RestartSec=5

@@ -7,6 +7,7 @@ rsync -a \
 chown -R "${APP_USER}:${APP_USER}" "${INSTALL_DIR}"
 
 runuser -u "${APP_USER}" -- bash -lc "cd '${INSTALL_DIR}' && npm install && npm run build"
+MAHAFFEYS_APP_USER="${APP_USER}" bash "${INSTALL_DIR}/scripts/configure-storage-management.sh"
 
 cat > "${INSTALL_DIR}/ecosystem.config.cjs" <<EOF
 module.exports = {
