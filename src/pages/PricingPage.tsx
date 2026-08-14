@@ -8,6 +8,18 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import {
   Dialog,
   DialogContent,
@@ -30,8 +42,19 @@ import {
   ShieldAlert,
   Flame,
   Award,
+  Pencil,
+  Trash2,
+  Star,
 } from 'lucide-react';
 import { toast } from 'sonner';
+
+const METAL_CATEGORIES: MetalGrade['category'][] = [
+  'Non-Ferrous',
+  'Ferrous',
+  'Precious',
+  'E-Waste',
+  'Batteries & Auto',
+];
 
 export default function PricingPage() {
   const [metals, setMetals] = useState<MetalGrade[]>(storageService.getMetals());
@@ -41,6 +64,19 @@ export default function PricingPage() {
   // Search & Filters for Cat Codes
   const [catSearch, setCatSearch] = useState('');
   const [addCatModalOpen, setAddCatModalOpen] = useState(false);
+
+  // Metal grade add/edit management
+  const [metalModalOpen, setMetalModalOpen] = useState(false);
+  const [editingMetalId, setEditingMetalId] = useState<string | null>(null);
+  const [metalDeleteTarget, setMetalDeleteTarget] = useState<MetalGrade | null>(null);
+  const [metalForm, setMetalForm] = useState({
+    name: '',
+    code: '',
+    category: 'Non-Ferrous' as MetalGrade['category'],
+    ratePerLb: 0.5,
+    description: '',
+    isPopular: false,
+  });
 
   // New Cat Code Form
   const [newCode, setNewCode] = useState('');
@@ -60,6 +96,114 @@ export default function PricingPage() {
   const handleSaveMetals = () => {
     storageService.saveMetals(metals);
     toast.success('Scrap metal prices updated & saved');
+  };
+
+  // --- Metal grade CRUD ---
+  const openAddMetalModal = () => {
+    setEditingMetalId(null);
+    setMetalForm({
+      name: '',
+      code: '',
+      category: 'Non-Ferrous',
+      ratePerLb: 0.5,
+      description: '',
+      isPopular: false,
+    });
+    setMetalModalOpen(true);
+  };
+
+  const openEditMetalModal = (metal: MetalGrade) => {
+    setEditingMetalId(metal.id);
+    setMetalForm({
+      name: metal.name,
+      code: metal.code,
+      category: metal.category,
+      ratePerLb: metal.ratePerLb,
+      description: metal.description,
+      isPopular: Boolean(metal.isPopular),
+    });
+    setMetalModalOpen(true);
+  };
+
+  const handleSaveMetalGrade = () => {
+    const name = metalForm.name.trim();
+    const code = metalForm.code.trim().toUpperCase();
+    if (!name) {
+      toast.error('Grade name is required');
+      return;
+    }
+    if (!code) {
+      toast.error('Yard code is required');
+      return;
+    }
+    if (metalForm.ratePerLb < 0 || !Number.isFinite(metalForm.ratePerLb)) {
+      toast.error('Rate per pound must be zero or greater');
+      return;
+    }
+    const nameClash = metals.some(
+      (m) => m.id !== editingMetalId && m.name.toLowerCase() === name.toLowerCase()
+    );
+    if (nameClash) {
+      toast.error(`A grade named "${name}" already exists`);
+      return;
+    }
+    const codeClash = metals.some(
+      (m) => m.id !== editingMetalId && m.code.toUpperCase() === code
+    );
+    if (codeClash) {
+      toast.error(`Yard code "${code}" is already used by another grade`);
+      return;
+    }
+
+    if (editingMetalId) {
+      const updated = metals.map((m) =>
+        m.id === editingMetalId
+          ? { ...m, ...metalForm, name, code, ratePerLb: Math.round(metalForm.ratePerLb * 100) / 100 }
+          : m
+      );
+      setMetals(updated);
+      storageService.saveMetals(updated);
+      toast.success(`Updated metal grade: ${name}`);
+    } else {
+      const newMetal: MetalGrade = {
+        id: `m-${Date.now()}`,
+        name,
+        code,
+        category: metalForm.category,
+        ratePerLb: Math.round(metalForm.ratePerLb * 100) / 100,
+        description: metalForm.description.trim() || `${name} purchased by the pound`,
+        isPopular: metalForm.isPopular,
+      };
+      const updated = [...metals, newMetal];
+      setMetals(updated);
+      storageService.saveMetals(updated);
+      toast.success(`Added ${name} to the metals you buy`);
+    }
+    setMetalModalOpen(false);
+  };
+
+  const handleTogglePopular = (metal: MetalGrade) => {
+    const updated = metals.map((m) =>
+      m.id === metal.id ? { ...m, isPopular: !m.isPopular } : m
+    );
+    setMetals(updated);
+    storageService.saveMetals(updated);
+    toast.success(
+      metal.isPopular
+        ? `Removed ${metal.name} from popular quick-pick buttons`
+        : `Pinned ${metal.name} to popular quick-pick buttons`
+    );
+  };
+
+  const handleDeleteMetalGrade = () => {
+    if (!metalDeleteTarget) return;
+    const updated = metals.filter((m) => m.id !== metalDeleteTarget.id);
+    setMetals(updated);
+    storageService.saveMetals(updated);
+    toast.success(`Removed ${metalDeleteTarget.name} from the pricing catalog`, {
+      description: 'Existing tickets keep their recorded grade and rate.',
+    });
+    setMetalDeleteTarget(null);
   };
 
   const handleCarRateChange = (id: string, field: keyof AutoSalvageCategoryRate, value: number) => {
@@ -215,6 +359,24 @@ export default function PricingPage() {
 
             {/* Metal Rates Table */}
             <Card className="bg-slate-900 border-slate-800 text-white shadow-xl overflow-hidden">
+              <CardHeader className="py-4 px-6 bg-slate-950/60 border-b border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <CardTitle className="text-base font-bold text-white flex items-center gap-2">
+                    <Scale className="w-5 h-5 text-emerald-400" /> Metal Grades You Buy ({metals.length})
+                  </CardTitle>
+                  <p className="text-xs text-slate-400">
+                    Add, edit, pin, or remove metal grades — changes appear instantly on all intake stations
+                  </p>
+                </div>
+                <Button
+                  onClick={openAddMetalModal}
+                  size="sm"
+                  className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shrink-0"
+                >
+                  <Plus className="w-4 h-4 mr-1" /> Add Metal Grade
+                </Button>
+              </CardHeader>
+
               <CardContent className="p-0">
                 <Table>
                   <TableHeader className="bg-slate-950">
@@ -224,6 +386,8 @@ export default function PricingPage() {
                       <TableHead className="text-slate-400">Yard Code</TableHead>
                       <TableHead className="text-slate-400">Description</TableHead>
                       <TableHead className="text-slate-400 text-right w-40">Live Rate ($ / LB)</TableHead>
+                      <TableHead className="text-slate-400 text-center w-28">Popular</TableHead>
+                      <TableHead className="text-slate-400 text-right w-24">Manage</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -258,8 +422,52 @@ export default function PricingPage() {
                             />
                           </div>
                         </TableCell>
+                        <TableCell className="text-center">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleTogglePopular(m)}
+                            title={m.isPopular ? 'Remove from popular quick picks' : 'Pin to popular quick picks'}
+                            className={`h-8 w-8 ${
+                              m.isPopular
+                                ? 'text-amber-400 hover:bg-amber-950'
+                                : 'text-slate-600 hover:text-amber-400 hover:bg-slate-800'
+                            }`}
+                          >
+                            <Star className={`w-4 h-4 ${m.isPopular ? 'fill-amber-400' : ''}`} />
+                          </Button>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => openEditMetalModal(m)}
+                              title={`Edit ${m.name}`}
+                              className="h-8 w-8 text-slate-400 hover:text-white hover:bg-slate-800"
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => setMetalDeleteTarget(m)}
+                              title={`Remove ${m.name}`}
+                              className="h-8 w-8 text-slate-500 hover:text-red-400 hover:bg-red-950"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
                       </TableRow>
                     ))}
+                    {metals.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={7} className="text-center text-slate-500 text-xs py-10">
+                          No metal grades configured. Tap "Add Metal Grade" to start building your buy list.
+                        </TableCell>
+                      </TableRow>
+                    )}
                   </TableBody>
                 </Table>
               </CardContent>
@@ -559,6 +767,132 @@ export default function PricingPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Add / Edit Metal Grade Modal */}
+      <Dialog open={metalModalOpen} onOpenChange={setMetalModalOpen}>
+        <DialogContent className="bg-slate-950 text-slate-100 border-slate-800 sm:max-w-[480px]">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold text-white flex items-center gap-2">
+              <Scale className="w-5 h-5 text-emerald-400" />
+              {editingMetalId ? `Edit Metal Grade` : 'Add Metal Grade You Buy'}
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2 text-xs">
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <Label className="text-slate-300">Grade Name *</Label>
+                <Input
+                  value={metalForm.name}
+                  onChange={(e) => setMetalForm({ ...metalForm, name: e.target.value })}
+                  placeholder="e.g. Bare Bright Copper"
+                  className="bg-slate-900 border-slate-800 text-white font-bold text-xs mt-1"
+                />
+              </div>
+
+              <div>
+                <Label className="text-slate-300">Yard Code *</Label>
+                <Input
+                  value={metalForm.code}
+                  onChange={(e) => setMetalForm({ ...metalForm, code: e.target.value.toUpperCase() })}
+                  placeholder="e.g. CU-BRIGHT"
+                  className="bg-slate-900 border-slate-800 text-emerald-400 font-mono text-xs mt-1"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <Label className="text-slate-300">Category</Label>
+                <Select
+                  value={metalForm.category}
+                  onValueChange={(value) => setMetalForm({ ...metalForm, category: value as MetalGrade['category'] })}
+                >
+                  <SelectTrigger className="bg-slate-900 border-slate-800 text-white text-xs mt-1 h-9">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-slate-900 border-slate-800 text-white">
+                    {METAL_CATEGORIES.map((category) => (
+                      <SelectItem key={category} value={category}>{category}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label className="text-slate-300">Rate ($ / LB) *</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={metalForm.ratePerLb}
+                  onChange={(e) => setMetalForm({ ...metalForm, ratePerLb: parseFloat(e.target.value) || 0 })}
+                  className="bg-slate-900 border-slate-800 text-emerald-400 font-mono font-bold text-xs mt-1"
+                />
+              </div>
+            </div>
+
+            <div>
+              <Label className="text-slate-300">Description</Label>
+              <Input
+                value={metalForm.description}
+                onChange={(e) => setMetalForm({ ...metalForm, description: e.target.value })}
+                placeholder="What you accept for this grade (shown on intake)"
+                className="bg-slate-900 border-slate-800 text-white text-xs mt-1"
+              />
+            </div>
+
+            <div className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-900 px-3 py-2.5">
+              <div className="flex items-center gap-2">
+                <Star className={`w-4 h-4 ${metalForm.isPopular ? 'text-amber-400 fill-amber-400' : 'text-slate-500'}`} />
+                <div>
+                  <p className="text-white font-bold">Popular quick-pick grade</p>
+                  <p className="text-[10px] text-slate-400">Pins this grade to the large buttons on intake stations</p>
+                </div>
+              </div>
+              <Switch
+                checked={metalForm.isPopular}
+                onCheckedChange={(checked) => setMetalForm({ ...metalForm, isPopular: checked })}
+              />
+            </div>
+          </div>
+
+          <DialogFooter className="pt-2 border-t border-slate-800">
+            <Button variant="ghost" onClick={() => setMetalModalOpen(false)} className="text-slate-400">
+              Cancel
+            </Button>
+            <Button onClick={handleSaveMetalGrade} className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold">
+              {editingMetalId ? 'Save Changes' : 'Add Metal Grade'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Metal Grade Confirmation */}
+      <AlertDialog open={metalDeleteTarget !== null} onOpenChange={(open) => !open && setMetalDeleteTarget(null)}>
+        <AlertDialogContent className="bg-slate-950 text-slate-100 border-slate-800">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-white">
+              <Trash2 className="w-5 h-5 text-red-400" /> Remove {metalDeleteTarget?.name}?
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-slate-400">
+              This grade will no longer be offered on intake stations or the pricing sheet. Existing tickets keep
+              their recorded grade and rate, so past payouts are unaffected.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700">
+              Keep Grade
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteMetalGrade}
+              className="bg-red-600 hover:bg-red-500 text-white font-bold"
+            >
+              Remove Grade
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
