@@ -5,6 +5,7 @@ import { scaleService } from '@/services/scaleService';
 import { storageService } from '@/services/storageService';
 import { useAuth } from '@/context/AuthContext';
 import { ScaleConfigModal } from '../scale/ScaleConfigModal';
+import { QuickSearchButton } from './QuickSearch';
 import {
   Sheet,
   SheetContent,
@@ -45,6 +46,8 @@ import {
   Lock,
   Shield,
   Camera,
+  BarChart3,
+  ClipboardList,
 } from 'lucide-react';
 
 export const Navbar: React.FC = () => {
@@ -80,6 +83,9 @@ export const Navbar: React.FC = () => {
     { label: 'Containers', path: '/containers', icon: Truck },
     { label: 'Cash Drawer', path: '/cash-drawer', icon: Banknote },
     { label: 'Yard Map', path: '/yard-map', icon: Map },
+    { label: 'Mill Shipments', path: '/shipments', icon: Truck },
+    { label: 'Reports', path: '/reports', icon: BarChart3 },
+    { label: 'Team Ops', path: '/team', icon: ClipboardList },
     { label: 'Customers', path: '/customers', icon: Users },
     ...(isAdmin ? [
       { label: 'User Access', path: '/users', icon: Shield, badge: pendingUsersCount },
@@ -231,6 +237,7 @@ export const Navbar: React.FC = () => {
 
             {/* Right: Scale Live Status & User Profile Dropdown */}
             <div className="flex items-center space-x-2">
+              <QuickSearchButton />
               
               {/* Scale Indicator */}
               <button

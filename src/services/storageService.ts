@@ -14,6 +14,14 @@ import {
   CoreReturnLog,
   AdmissionPass,
   IpCamera,
+  OutboundShipment,
+  MillShipper,
+  TimeClockEntry,
+  ChecklistRun,
+  YardTask,
+  EquipmentItem,
+  MaintenanceLogEntry,
+  MetalRateChangeLog,
 } from "@/types/scrap";
 import { sharedStorage } from "@/services/sharedStorage";
 
@@ -34,6 +42,14 @@ const STORAGE_KEYS = {
   CORE_RETURNS: 'mahaffeys_core_returns',
   ADMISSION_PASSES: 'mahaffeys_admission_passes',
   IP_CAMERAS: 'mahaffeys_ip_cameras',
+  SHIPMENTS: 'mahaffeys_shipments',
+  MILLS: 'mahaffeys_mills',
+  TIMECLOCK: 'mahaffeys_timeclock',
+  CHECKLISTS: 'mahaffeys_checklists',
+  TASKS: 'mahaffeys_tasks',
+  EQUIPMENT: 'mahaffeys_equipment',
+  MAINTENANCE: 'mahaffeys_maintenance_logs',
+  RATE_HISTORY: 'mahaffeys_rate_history',
 };
 
 let pullVehicleCacheSource: string | null = null;
@@ -635,6 +651,37 @@ export const storageService = {
     });
     sharedStorage.setItem(STORAGE_KEYS.TICKETS, JSON.stringify(tickets));
   },
+
+  getCollection<T>(key: string): T[] {
+    const data = sharedStorage.getItem(key);
+    if (!data) { sharedStorage.setItem(key, '[]'); return []; }
+    return JSON.parse(data) as T[];
+  },
+
+  saveCollection<T extends { id: string }>(key: string, item: T): T {
+    const items = this.getCollection(key) as T[];
+    const index = items.findIndex((candidate) => candidate.id === item.id);
+    if (index >= 0) items[index] = item; else items.unshift(item);
+    sharedStorage.setItem(key, JSON.stringify(items));
+    return item;
+  },
+
+  getShipments(): OutboundShipment[] { return this.getCollection(STORAGE_KEYS.SHIPMENTS) as OutboundShipment[]; },
+  saveShipment(shipment: OutboundShipment): OutboundShipment { return this.saveCollection(STORAGE_KEYS.SHIPMENTS, shipment) as OutboundShipment; },
+  getMills(): MillShipper[] { return this.getCollection(STORAGE_KEYS.MILLS) as MillShipper[]; },
+  saveMill(mill: MillShipper): MillShipper { return this.saveCollection(STORAGE_KEYS.MILLS, mill) as MillShipper; },
+  getTimeClockEntries(): TimeClockEntry[] { return this.getCollection(STORAGE_KEYS.TIMECLOCK) as TimeClockEntry[]; },
+  saveTimeClockEntry(entry: TimeClockEntry): TimeClockEntry { return this.saveCollection(STORAGE_KEYS.TIMECLOCK, entry) as TimeClockEntry; },
+  getChecklistRuns(): ChecklistRun[] { return this.getCollection(STORAGE_KEYS.CHECKLISTS) as ChecklistRun[]; },
+  saveChecklistRun(run: ChecklistRun): ChecklistRun { return this.saveCollection(STORAGE_KEYS.CHECKLISTS, run) as ChecklistRun; },
+  getYardTasks(): YardTask[] { return this.getCollection(STORAGE_KEYS.TASKS) as YardTask[]; },
+  saveYardTask(task: YardTask): YardTask { return this.saveCollection(STORAGE_KEYS.TASKS, task) as YardTask; },
+  getEquipment(): EquipmentItem[] { return this.getCollection(STORAGE_KEYS.EQUIPMENT) as EquipmentItem[]; },
+  saveEquipment(item: EquipmentItem): EquipmentItem { return this.saveCollection(STORAGE_KEYS.EQUIPMENT, item) as EquipmentItem; },
+  getMaintenanceLogs(): MaintenanceLogEntry[] { return this.getCollection(STORAGE_KEYS.MAINTENANCE) as MaintenanceLogEntry[]; },
+  saveMaintenanceLog(log: MaintenanceLogEntry): MaintenanceLogEntry { return this.saveCollection(STORAGE_KEYS.MAINTENANCE, log) as MaintenanceLogEntry; },
+  getRateHistory(): MetalRateChangeLog[] { return this.getCollection(STORAGE_KEYS.RATE_HISTORY) as MetalRateChangeLog[]; },
+  addRateHistory(entry: MetalRateChangeLog): MetalRateChangeLog { return this.saveCollection(STORAGE_KEYS.RATE_HISTORY, entry) as MetalRateChangeLog; },
 
   getSettings(): YardSettings {
     const data = sharedStorage.getItem(STORAGE_KEYS.SETTINGS);

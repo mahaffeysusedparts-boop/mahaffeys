@@ -36,6 +36,9 @@ import {
   Shield,
   ChevronRight,
   Camera,
+  Truck,
+  BarChart3,
+  ClipboardList,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -352,6 +355,9 @@ export default function DashboardPage() {
                 { title: "IP Camera Feeds", path: "/cameras", icon: Camera, color: "text-sky-400" },
                 { title: "Cash Drawer Station", path: "/cash-drawer", icon: Banknote, color: "text-emerald-400" },
                 { title: "Yard Storage Grid Map", path: "/yard-map", icon: Map, color: "text-blue-400" },
+                { title: "Mill Shipment Ledger", path: "/shipments", icon: Truck, color: "text-emerald-400" },
+                { title: "Reports & Analytics", path: "/reports", icon: BarChart3, color: "text-amber-400" },
+                { title: "Team Operations", path: "/team", icon: ClipboardList, color: "text-sky-400" },
                 ...(isAdmin
                   ? [{ title: `User Access (${pendingUsersCount} pending)`, path: "/users", icon: Shield, color: "text-amber-400" }]
                   : []),

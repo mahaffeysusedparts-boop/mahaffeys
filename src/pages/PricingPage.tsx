@@ -94,6 +94,19 @@ export default function PricingPage() {
   };
 
   const handleSaveMetals = () => {
+    const previous = storageService.getMetals();
+    metals.forEach((metal) => {
+      const oldRate = previous.find((item) => item.id === metal.id)?.ratePerLb;
+      if (oldRate !== metal.ratePerLb) {
+        storageService.addRateHistory({
+          id: `rate-${Date.now()}-${metal.id}`,
+          metalGradeId: metal.id,
+          metalName: metal.name,
+          ratePerLb: metal.ratePerLb,
+          changedAt: new Date().toISOString(),
+        });
+      }
+    });
     storageService.saveMetals(metals);
     toast.success('Scrap metal prices updated & saved');
   };

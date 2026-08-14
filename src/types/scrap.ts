@@ -359,4 +359,74 @@ export interface YardSettings {
   cashDrawerFloatLimit?: number;
   admissionFeeUsd?: number;
   customDomain?: string;
+  shipmentVarianceTolerancePct?: number;
 }
+
+export type ShipmentStatus = 'STAGED' | 'IN_TRANSIT' | 'DELIVERED' | 'SETTLED' | 'DISCREPANCY';
+
+export interface MillShipper {
+  id: string;
+  name: string;
+  contactName?: string;
+  phone?: string;
+  notes?: string;
+  createdAt: string;
+}
+
+export interface ShipmentSettlement {
+  scaleTicketNumber: string;
+  actualNetWeightLbs: number;
+  actualRatePerLb: number;
+  deductions: number;
+  amountPaid: number;
+  settledAt: string;
+}
+
+export interface OutboundShipment {
+  id: string;
+  loadNumber: string;
+  millId?: string;
+  millName: string;
+  materialCategory: string;
+  trailerNumber?: string;
+  driverName?: string;
+  grossWeightLbs: number;
+  tareWeightLbs: number;
+  netWeightLbs: number;
+  expectedRatePerLb: number;
+  expectedRevenue: number;
+  status: ShipmentStatus;
+  createdAt: string;
+  departedAt?: string;
+  deliveredAt?: string;
+  settlement?: ShipmentSettlement;
+}
+
+export interface MetalRateChangeLog {
+  id: string;
+  metalGradeId: string;
+  metalName: string;
+  ratePerLb: number;
+  changedAt: string;
+}
+
+export interface TimeClockEntry {
+  id: string;
+  userId: string;
+  userName: string;
+  clockInAt: string;
+  clockOutAt?: string;
+  breakStartedAt?: string;
+  breakMinutes: number;
+}
+
+export type ChecklistShift = 'OPENING' | 'CLOSING';
+export interface ChecklistItem { id: string; label: string; completed: boolean; completedAt?: string; completedBy?: string; }
+export interface ChecklistRun { id: string; shift: ChecklistShift; date: string; items: ChecklistItem[]; }
+
+export type TaskStatus = 'TODO' | 'IN_PROGRESS' | 'DONE';
+export type TaskPriority = 'LOW' | 'NORMAL' | 'HIGH';
+export interface YardTask { id: string; title: string; assigneeName?: string; priority: TaskPriority; status: TaskStatus; dueDate?: string; createdAt: string; }
+
+export interface EquipmentItem { id: string; name: string; assetType: string; meterLabel: string; meterReading: number; lastServiceDate?: string; nextServiceDue: string; }
+export interface MaintenanceLogEntry { id: string; equipmentId: string; completedAt: string; notes: string; meterReading?: number; }

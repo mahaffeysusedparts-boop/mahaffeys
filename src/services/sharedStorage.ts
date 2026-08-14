@@ -18,6 +18,14 @@ const SHARED_KEYS = [
   "mahaffeys_core_returns",
   "mahaffeys_admission_passes",
   "mahaffeys_ip_cameras",
+  "mahaffeys_shipments",
+  "mahaffeys_mills",
+  "mahaffeys_timeclock",
+  "mahaffeys_checklists",
+  "mahaffeys_tasks",
+  "mahaffeys_equipment",
+  "mahaffeys_maintenance_logs",
+  "mahaffeys_rate_history",
 ] as const;
 
 const LEGACY_DEMO_IDS: Record<string, Set<string>> = {

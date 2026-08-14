@@ -25,6 +25,9 @@ import ServerAdminPage from "./pages/ServerAdminPage";
 import UserManagementPage from "./pages/UserManagementPage";
 import LoginPage from "./pages/LoginPage";
 import PendingApprovalPage from "./pages/PendingApprovalPage";
+import ReportsPage from "./pages/ReportsPage";
+import ShipmentsPage from "./pages/ShipmentsPage";
+import TeamOpsPage from "./pages/TeamOpsPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -167,6 +170,9 @@ const App = () => (
                 </ProtectedRoute>
               }
             />
+            <Route path="/reports" element={<ProtectedRoute><ReportsPage /></ProtectedRoute>} />
+            <Route path="/shipments" element={<ProtectedRoute><ShipmentsPage /></ProtectedRoute>} />
+            <Route path="/team" element={<ProtectedRoute><TeamOpsPage /></ProtectedRoute>} />
             <Route
               path="/settings"
               element={
