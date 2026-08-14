@@ -4,10 +4,10 @@ import { Navbar } from '@/components/layout/Navbar';
 import { IntakeModeSelector } from '@/components/intake/IntakeModeSelector';
 import { CarIntakeForm } from '@/components/intake/CarIntakeForm';
 import { ScrapYardIntakeForm } from '@/components/intake/ScrapYardIntakeForm';
+import { MobileScrapTicket } from '@/components/intake/MobileScrapTicket';
 import { ReceiptModal } from '@/components/receipts/ReceiptModal';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Car, Scale, ArrowLeft } from 'lucide-react';
+import { Car, Scale, ArrowLeft, Smartphone } from 'lucide-react';
 
 export default function IntakePage() {
   const [activeMode, setActiveMode] = useState<IntakeType | null>(null);
@@ -31,18 +31,18 @@ export default function IntakePage() {
         
         {/* If an intake mode is active, show quick switcher bar */}
         {activeMode !== null && (
-          <div className="mb-6 flex items-center justify-between bg-slate-900 border border-slate-800 p-2.5 rounded-xl">
+          <div className="mb-6 flex items-center gap-2 overflow-x-auto rounded-xl border border-slate-800 bg-slate-900 p-2.5 sm:justify-between">
             <Button
               variant="ghost"
               size="sm"
               onClick={handleResetIntake}
-              className="text-slate-400 hover:text-white text-xs"
+              className="shrink-0 text-xs text-slate-400 hover:text-white"
             >
-              <ArrowLeft className="w-4 h-4 mr-1.5" /> Change Intake Station
+              <ArrowLeft className="h-4 w-4 sm:mr-1.5" /> <span className="hidden sm:inline">Change Intake Station</span>
             </Button>
 
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-slate-400 hidden sm:inline">Active Workspace:</span>
+            <div className="flex shrink-0 items-center gap-2">
+              <span className="text-xs text-slate-400 hidden lg:inline">Active Workspace:</span>
               <Button
                 variant={activeMode === 'CAR_SALVAGE' ? 'default' : 'outline'}
                 size="sm"
@@ -68,6 +68,19 @@ export default function IntakePage() {
               >
                 <Scale className="w-3.5 h-3.5 mr-1.5" /> Scrap Yard Intake
               </Button>
+
+              <Button
+                variant={activeMode === 'MOBILE_SCRAP' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setActiveMode('MOBILE_SCRAP')}
+                className={`shrink-0 text-xs font-semibold ${
+                  activeMode === 'MOBILE_SCRAP'
+                    ? 'bg-blue-600 text-white hover:bg-blue-500'
+                    : 'border-slate-700 bg-slate-800 text-slate-300'
+                }`}
+              >
+                <Smartphone className="mr-1.5 h-3.5 w-3.5" /> Mobile Fast Intake
+              </Button>
             </div>
           </div>
         )}
@@ -87,6 +100,14 @@ export default function IntakePage() {
         {/* View 3: Standard Scrap Yard Metal Intake Form */}
         {activeMode === 'SCRAP_METAL' && (
           <ScrapYardIntakeForm
+            onBack={handleResetIntake}
+            onTicketCreated={handleTicketCreated}
+          />
+        )}
+
+        {/* View 4: Mobile-first single-page scrap intake */}
+        {activeMode === 'MOBILE_SCRAP' && (
+          <MobileScrapTicket
             onBack={handleResetIntake}
             onTicketCreated={handleTicketCreated}
           />

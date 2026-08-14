@@ -9,6 +9,8 @@ import {
   CheckCircle2,
   Sparkles,
   Ban,
+  Smartphone,
+  Camera,
 } from 'lucide-react';
 
 interface IntakeModeSelectorProps {
@@ -34,8 +36,8 @@ export const IntakeModeSelector: React.FC<IntakeModeSelectorProps> = ({ onSelect
         </p>
       </div>
 
-      {/* Two Main Intake Choice Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      {/* Main Intake Choice Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
         
         {/* Option 1: Junk Yard Car Station (Auto Salvage / Pull-A-Part) */}
         <Card
@@ -155,6 +157,47 @@ export const IntakeModeSelector: React.FC<IntakeModeSelectorProps> = ({ onSelect
               <div className="w-8 h-8 rounded-full bg-emerald-500/10 flex items-center justify-center group-hover:bg-emerald-500 group-hover:text-slate-950 transition-colors">
                 <ArrowRight className="w-4 h-4" />
               </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Option 3: Mobile-first single page scrap intake */}
+        <Card
+          onClick={() => onSelectMode('MOBILE_SCRAP')}
+          className="group relative cursor-pointer overflow-hidden border-2 border-blue-500/30 bg-slate-900 shadow-2xl transition-all duration-300 hover:border-blue-400 hover:shadow-blue-950/40 md:col-span-2 xl:col-span-1"
+        >
+          <div className="absolute inset-x-0 top-0 h-1.5 bg-blue-500" />
+          <CardContent className="space-y-6 p-6 sm:p-8">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-blue-400/30 bg-blue-950 text-blue-300 transition-transform group-hover:scale-105">
+                <Smartphone className="h-8 w-8" />
+              </div>
+              <div className="flex flex-col items-end gap-1">
+                <Badge className="border-blue-400/40 bg-blue-500/15 font-mono text-xs text-blue-200">MOBILE SCRAP</Badge>
+                <Badge variant="outline" className="border-emerald-500/40 text-[10px] text-emerald-400">SINGLE PAGE</Badge>
+              </div>
+            </div>
+
+            <div>
+              <h2 className="flex items-center gap-2 text-2xl font-bold text-white transition-colors group-hover:text-blue-300">
+                Mobile Fast Intake
+                <Sparkles className="h-4 w-4 text-blue-300" />
+              </h2>
+              <p className="mt-2 text-sm leading-relaxed text-slate-400">
+                Complete customer compliance, material weights, and payout from one touch-friendly scrolling screen.
+              </p>
+            </div>
+
+            <ul className="space-y-2.5 border-t border-slate-800/80 pt-2 text-xs text-slate-300">
+              <li className="flex items-center gap-2"><Camera className="h-4 w-4 shrink-0 text-blue-300" /><span>Driver license scan and complete photo capture suite</span></li>
+              <li className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 shrink-0 text-blue-300" /><span>Large popular-grade buttons and streamlined weights</span></li>
+              <li className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 shrink-0 text-blue-300" /><span>Automatic cash-limit enforcement and check payout</span></li>
+              <li className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 shrink-0 text-blue-300" /><span>Instant completed ticket and printable voucher</span></li>
+            </ul>
+
+            <div className="flex items-center justify-between pt-4 text-sm font-semibold text-blue-300 transition-transform group-hover:translate-x-1">
+              <span>Launch Mobile Fast Intake</span>
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-500/15 transition-colors group-hover:bg-blue-500 group-hover:text-white"><ArrowRight className="h-4 w-4" /></div>
             </div>
           </CardContent>
         </Card>

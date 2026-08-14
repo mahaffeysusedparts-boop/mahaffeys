@@ -1,4 +1,4 @@
-export type IntakeType = 'CAR_SALVAGE' | 'SCRAP_METAL';
+export type IntakeType = 'CAR_SALVAGE' | 'SCRAP_METAL' | 'MOBILE_SCRAP';
 
 export type ScaleConnectionMode = 'WEB_SERIAL' | 'WEBSOCKET';
 
