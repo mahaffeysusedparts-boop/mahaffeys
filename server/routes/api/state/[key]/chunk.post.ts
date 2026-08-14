@@ -8,6 +8,8 @@ const ALLOWED_KEYS = new Set([
   "mahaffeys_settings", "mahaffeys_nmvtis_logs", "mahaffeys_cat_codes", "mahaffeys_container_drops",
   "mahaffeys_cash_drawer", "mahaffeys_yard_bays", "mahaffeys_pull_parts", "mahaffeys_pull_yard_vehicles",
   "mahaffeys_removed_inventory_vehicles", "mahaffeys_core_returns", "mahaffeys_admission_passes", "mahaffeys_ip_cameras",
+  "mahaffeys_shipments", "mahaffeys_mills", "mahaffeys_timeclock", "mahaffeys_checklists", "mahaffeys_tasks", "mahaffeys_equipment", "mahaffeys_maintenance_logs", "mahaffeys_rate_history",
+  "mahaffeys_operations_goals", "mahaffeys_operations_alert_rules", "mahaffeys_operations_alerts", "mahaffeys_operations_summaries",
 ]);
 
 const MAX_CHUNK_LENGTH = 600 * 1024;
