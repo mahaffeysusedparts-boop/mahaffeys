@@ -23,6 +23,7 @@ import {
   MaintenanceLogEntry,
   MetalRateChangeLog,
 } from "@/types/scrap";
+import { AlertRule, DailyManagerSummary, OperationsAlert, ShiftGoals } from "@/types/operations";
 import { sharedStorage } from "@/services/sharedStorage";
 
 const STORAGE_KEYS = {
@@ -50,6 +51,10 @@ const STORAGE_KEYS = {
   EQUIPMENT: 'mahaffeys_equipment',
   MAINTENANCE: 'mahaffeys_maintenance_logs',
   RATE_HISTORY: 'mahaffeys_rate_history',
+  OPERATIONS_GOALS: 'mahaffeys_operations_goals',
+  OPERATIONS_ALERT_RULES: 'mahaffeys_operations_alert_rules',
+  OPERATIONS_ALERTS: 'mahaffeys_operations_alerts',
+  OPERATIONS_SUMMARIES: 'mahaffeys_operations_summaries',
 };
 
 let pullVehicleCacheSource: string | null = null;
@@ -682,6 +687,35 @@ export const storageService = {
   saveMaintenanceLog(log: MaintenanceLogEntry): MaintenanceLogEntry { return this.saveCollection(STORAGE_KEYS.MAINTENANCE, log) as MaintenanceLogEntry; },
   getRateHistory(): MetalRateChangeLog[] { return this.getCollection(STORAGE_KEYS.RATE_HISTORY) as MetalRateChangeLog[]; },
   addRateHistory(entry: MetalRateChangeLog): MetalRateChangeLog { return this.saveCollection(STORAGE_KEYS.RATE_HISTORY, entry) as MetalRateChangeLog; },
+
+  getOperationsGoals(): ShiftGoals {
+    const data = sharedStorage.getItem(STORAGE_KEYS.OPERATIONS_GOALS);
+    if (data) return JSON.parse(data) as ShiftGoals;
+    const goals: ShiftGoals = { id: 'default', name: 'Current shift', ticketTarget: 25, inboundLbsTarget: 20000, vehicleTarget: 8, averageTurnaroundMinutesTarget: 45, grossMarginTarget: 2500, updatedAt: new Date().toISOString() };
+    sharedStorage.setItem(STORAGE_KEYS.OPERATIONS_GOALS, JSON.stringify(goals));
+    return goals;
+  },
+  saveOperationsGoals(goals: ShiftGoals): ShiftGoals { sharedStorage.setItem(STORAGE_KEYS.OPERATIONS_GOALS, JSON.stringify(goals)); return goals; },
+  getOperationsAlertRules(): AlertRule[] {
+    const data = sharedStorage.getItem(STORAGE_KEYS.OPERATIONS_ALERT_RULES);
+    if (data) return JSON.parse(data) as AlertRule[];
+    const rules: AlertRule[] = [
+      { id: 'queue', key: 'QUEUE_BACKLOG', enabled: true, threshold: 8, escalationMinutes: 30 },
+      { id: 'ticket-age', key: 'TICKET_AGE', enabled: true, threshold: 45, escalationMinutes: 30 },
+      { id: 'vehicle-age', key: 'VEHICLE_AGE', enabled: true, threshold: 4320, escalationMinutes: 1440 },
+      { id: 'bay-capacity', key: 'BAY_CAPACITY', enabled: true, threshold: 85, escalationMinutes: 60 },
+      { id: 'compliance', key: 'COMPLIANCE_GAP', enabled: true, threshold: 1, escalationMinutes: 30 },
+      { id: 'shipment', key: 'SHIPMENT_EXCEPTION', enabled: true, threshold: 1, escalationMinutes: 30 },
+      { id: 'margin', key: 'MARGIN_LOW', enabled: true, threshold: 0, escalationMinutes: 120 },
+    ];
+    sharedStorage.setItem(STORAGE_KEYS.OPERATIONS_ALERT_RULES, JSON.stringify(rules));
+    return rules;
+  },
+  saveOperationsAlertRules(rules: AlertRule[]): AlertRule[] { sharedStorage.setItem(STORAGE_KEYS.OPERATIONS_ALERT_RULES, JSON.stringify(rules)); return rules; },
+  getOperationsAlerts(): OperationsAlert[] { return this.getCollection(STORAGE_KEYS.OPERATIONS_ALERTS) as OperationsAlert[]; },
+  saveOperationsAlert(alert: OperationsAlert): OperationsAlert { return this.saveCollection(STORAGE_KEYS.OPERATIONS_ALERTS, alert) as OperationsAlert; },
+  getDailyManagerSummaries(): DailyManagerSummary[] { return this.getCollection(STORAGE_KEYS.OPERATIONS_SUMMARIES) as DailyManagerSummary[]; },
+  saveDailyManagerSummary(summary: DailyManagerSummary): DailyManagerSummary { return this.saveCollection(STORAGE_KEYS.OPERATIONS_SUMMARIES, summary) as DailyManagerSummary; },
 
   getSettings(): YardSettings {
     const data = sharedStorage.getItem(STORAGE_KEYS.SETTINGS);

@@ -142,9 +142,9 @@ export default function DashboardPage() {
                 </Button>
               </Link>
 
-              <Link to="/pull-a-part" className="w-full sm:w-auto">
+              <Link to="/operations" className="w-full sm:w-auto">
                 <Button variant="outline" className="w-full sm:w-auto border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs h-11 gap-2">
-                  <Wrench className="w-4 h-4 text-amber-400" /> Pull-A-Part Suite
+                  <Activity className="w-4 h-4 text-amber-400" /> Open Operations
                 </Button>
               </Link>
             </div>
@@ -348,6 +348,7 @@ export default function DashboardPage() {
 
             <CardContent className="p-4 space-y-2">
               {[
+                { title: "Operations Command Center", path: "/operations", icon: Activity, color: "text-emerald-400" },
                 { title: "Car Salvage & Scrap Intake", path: "/intake", icon: Scale, color: "text-emerald-400" },
                 { title: "Public Vehicle Inventory", path: "/inventory", icon: Car, color: "text-amber-400" },
                 { title: "Pull-A-Part Row Operations", path: "/pull-a-part", icon: Wrench, color: "text-sky-400" },

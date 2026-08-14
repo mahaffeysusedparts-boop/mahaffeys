@@ -48,6 +48,7 @@ import {
   Camera,
   BarChart3,
   ClipboardList,
+  RadioTower,
 } from 'lucide-react';
 
 export const Navbar: React.FC = () => {
@@ -73,6 +74,7 @@ export const Navbar: React.FC = () => {
 
   const navItems = [
     { label: 'Dashboard', path: '/', icon: LayoutDashboard },
+    { label: 'Operations', path: '/operations', icon: RadioTower },
     { label: 'Scrap Metal Scale', path: '/intake', icon: Scale },
     { label: 'Junk Yard Cars', path: '/pull-a-part', icon: Car },
     { label: 'Public Inventory', path: '/inventory', icon: Wrench },
