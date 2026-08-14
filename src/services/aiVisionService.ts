@@ -108,27 +108,43 @@ export async function analyzeDriverLicenseImage(imageDataUrl: string): Promise<A
       fieldsExtractedCount++;
     }
 
-    // 5. Extract Full Name
-    const nameLineMatch = rawText.match(/(?:FN|LN|NAME|3|1|2)\s*[:#\.\-]?\s*([A-[A-Z\s,]{3,30})/i);
-    if (nameLineMatch && nameLineMatch[1]) {
-      const candidate = nameLineMatch[1].replace(/[^A-Za-z\s,]/g, "").trim();
-      if (candidate.length > 3 && !candidate.toUpperCase().includes("DRIVER") && !candidate.toUpperCase().includes("LICENSE")) {
-        fullName = candidate.replace(/,/g, " ").replace(/\s+/g, " ");
-        fieldsExtractedCount++;
-      }
+    // 5. Extract Full Name (AAMVA DL/ID labels first, then printed-name heuristics)
+    const cleanName = (value: string) =>
+      value
+        .replace(/[^A-Za-z'\-\s,]/g, " ")
+        .replace(/,/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+
+    const lastNameMatch = rawText.match(/(?:^|\n)\s*(?:LN|FAMILY\s+NAME|1)\s*[:#.\-]?\s*([A-Z][A-Z'\-\s]{1,30})\s*(?:$|\n)/im);
+    const firstNameMatch = rawText.match(/(?:^|\n)\s*(?:FN|GIVEN\s+NAME|2)\s*[:#.\-]?\s*([A-Z][A-Z'\-\s]{1,30})\s*(?:$|\n)/im);
+    const labeledNameMatch = rawText.match(/(?:^|\n)\s*(?:NAME|NAM)\s*[:#.\-]?\s*([A-Z][A-Z'\-\s,]{3,50})\s*(?:$|\n)/im);
+
+    if (firstNameMatch?.[1] && lastNameMatch?.[1]) {
+      fullName = cleanName(`${firstNameMatch[1]} ${lastNameMatch[1]}`);
+    } else if (labeledNameMatch?.[1]) {
+      fullName = cleanName(labeledNameMatch[1]);
     }
 
     if (!fullName) {
+      const blockedWords =
+        /DRIVER|LICENSE|LICENCE|IDENTIFICATION|DEPARTMENT|EXPIRES|EXPIRATION|ADDRESS|CLASS|RESTRICTIONS|ENDORSEMENTS|DONOR|VETERAN|ISSUE|DOB|BIRTH/i;
       for (const line of lines) {
-        if (/^[A-Z][a-z]+\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?$/.test(line)) {
-          if (!line.includes("Driver") && !line.includes("License") && !line.includes("State") && !line.includes("Department")) {
-            fullName = line;
-            fieldsExtractedCount++;
-            break;
-          }
+        const candidate = cleanName(line);
+        const words = candidate.split(" ").filter(Boolean);
+        if (
+          words.length >= 2 &&
+          words.length <= 4 &&
+          candidate.length <= 45 &&
+          !blockedWords.test(candidate) &&
+          !/\d/.test(line)
+        ) {
+          fullName = candidate;
+          break;
         }
       }
     }
+    if (fullName) fieldsExtractedCount++;
 
     // 6. Extract Address
     const streetMatch = rawText.match(/\b\d{1,5}\s+[A-Za-z0-9\s\.,]{4,30}(?:ST|STREET|AVE|AVENUE|RD|ROAD|BLVD|DR|DRIVE|LN|WAY|CT|HWY|PKWY)\b/i);
@@ -142,12 +158,15 @@ export async function analyzeDriverLicenseImage(imageDataUrl: string): Promise<A
       fieldsExtractedCount++;
     }
 
+    // Return only fields that were actually read. Fabricating placeholder
+    // names/ID numbers here previously caused intake forms to autofill with
+    // fake data whenever OCR failed to read the card.
     return {
-      fullName: fullName || "Scanned DL Holder",
-      idNumber: idNumber || "DL-" + Math.floor(1000000 + Math.random() * 9000000),
+      fullName,
+      idNumber,
       idState,
       idType: "Driver License",
-      address: address || `${idState} Resident Address`,
+      address,
       dob,
       expDate,
       confidence,
@@ -155,7 +174,7 @@ export async function analyzeDriverLicenseImage(imageDataUrl: string): Promise<A
       fieldsExtractedCount,
     };
   } catch (error) {
-    console.warn("AI Driver's License OCR error, returning fallback:", error);
+    console.warn("AI Driver's License OCR error:", error);
     return {
       fullName: "",
       idNumber: "",

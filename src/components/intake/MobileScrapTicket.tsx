@@ -24,10 +24,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { uploadDataUrl } from '@/services/mediaService';
+import { analyzeDriverLicenseImage } from '@/services/aiVisionService';
+import { optimizeImageDataUrl, uploadDataUrl } from '@/services/mediaService';
 import { storageService } from '@/services/storageService';
 import { ComplianceCaptures, Customer, MetalGrade, ScrapTicketLine, Ticket, WeightUnit } from '@/types/scrap';
-import { calculateComplianceScore, DLScanResult, extractDataFromDLPhoto } from '@/utils/complianceUtils';
+import { calculateComplianceScore, DLScanResult } from '@/utils/complianceUtils';
 
 interface MobileScrapTicketProps {
   onBack: () => void;
@@ -108,7 +109,7 @@ export const MobileScrapTicket: React.FC<MobileScrapTicketProps> = ({ onBack, on
     if (profile.idNumber) setCustomerIdNumber(profile.idNumber);
     if (profile.vehicleLicensePlate) setVehicleLicensePlate(profile.vehicleLicensePlate);
     if (idPhotoUrl) setCaptures((current) => ({ ...current, idPhotoUrl }));
-    setIsDlScanned(true);
+    setIsDlScanned(Boolean(profile.fullName || profile.idNumber));
 
     const existing = customers.find(
       (customer) =>
@@ -121,24 +122,33 @@ export const MobileScrapTicket: React.FC<MobileScrapTicketProps> = ({ onBack, on
     }
   };
 
-  const handleDlUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleDlUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
+    event.target.value = '';
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async (loadEvent) => {
-      const dataUrl = loadEvent.target?.result as string;
-      try {
-        const savedUrl = await uploadDataUrl(dataUrl, file.name);
-        applyScan(extractDataFromDLPhoto(dataUrl), savedUrl);
-        toast.success('Driver license captured and customer fields filled');
-      } catch (error) {
-        toast.error('Could not save the driver license image', {
-          description: error instanceof Error ? error.message : 'Please try again.',
+
+    try {
+      toast.info('Reading driver license…');
+      const optimizedImage = await optimizeImageDataUrl(file);
+      const [profile, savedUrl] = await Promise.all([
+        analyzeDriverLicenseImage(optimizedImage),
+        uploadDataUrl(optimizedImage, file.name),
+      ]);
+      applyScan(profile, savedUrl);
+      if (profile.fullName || profile.idNumber) {
+        toast.success('Driver license read and customer fields filled', {
+          description: `${profile.fullName || 'Name needs review'} · ${profile.idNumber || 'ID number needs review'}`,
+        });
+      } else {
+        toast.warning('ID photo saved, but the text could not be read', {
+          description: 'Retake in bright, even light with all four corners visible, or enter the fields manually.',
         });
       }
-    };
-    reader.readAsDataURL(file);
-    event.target.value = '';
+    } catch (error) {
+      toast.error('Could not process the driver license image', {
+        description: error instanceof Error ? error.message : 'Please try again.',
+      });
+    }
   };
 
   const handleComplianceSave = (nextCaptures: ComplianceCaptures, profile?: DLScanResult) => {

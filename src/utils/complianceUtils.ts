@@ -1,5 +1,4 @@
 import { Ticket, ComplianceCaptures } from "@/types/scrap";
-import { analyzeDriverLicenseImage, analyzeLicensePlateImage } from "@/services/aiVisionService";
 
 export interface DLScanResult {
   fullName: string;
@@ -64,55 +63,6 @@ export function generateSamplePhoto(type: 'person' | 'id' | 'vehicle' | 'plate' 
   </svg>`;
 
   return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
-}
-
-/**
- * Async AI OCR analysis of Driver License photo
- */
-export async function extractDataFromDLPhotoAsync(photoDataUrl: string): Promise<DLScanResult> {
-  if (!photoDataUrl) {
-    return {
-      fullName: "",
-      idNumber: "",
-      idState: "GA",
-      idType: "Driver License",
-      address: "",
-    };
-  }
-
-  const aiResult = await analyzeDriverLicenseImage(photoDataUrl);
-  return {
-    fullName: aiResult.fullName,
-    idNumber: aiResult.idNumber,
-    idState: aiResult.idState,
-    idType: aiResult.idType,
-    address: aiResult.address,
-    dob: aiResult.dob,
-    expDate: aiResult.expDate,
-  };
-}
-
-/**
- * Synchronous fallback extractor for instant UI updates.
- */
-export function extractDataFromDLPhoto(photoDataUrl?: string): DLScanResult {
-  if (!photoDataUrl) {
-    return {
-      fullName: "",
-      idNumber: "",
-      idState: "GA",
-      idType: "Driver License",
-      address: "",
-    };
-  }
-
-  return {
-    fullName: "Extracted DL Holder",
-    idNumber: "DL-" + Math.floor(1000000 + Math.random() * 9000000),
-    idState: "GA",
-    idType: "Driver License",
-    address: "Address extracted from DL photo",
-  };
 }
 
 // Check compliance level for a ticket or intake (5 Photo Audit Suite)

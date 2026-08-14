@@ -43,7 +43,7 @@ import {
   AILicenseAnalysisResult,
   AILicensePlateResult,
 } from "@/services/aiVisionService";
-import { uploadDataUrl } from "@/services/mediaService";
+import { optimizeImageDataUrl, uploadDataUrl } from "@/services/mediaService";
 import { toast } from "sonner";
 
 interface ComplianceCaptureModalProps {
@@ -275,17 +275,23 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file && currentUploadTarget) {
-      const reader = new FileReader();
-      reader.onload = async (event) => {
-        const result = event.target?.result as string;
-        setCaptures((prev) => ({
-          ...prev,
-          [currentUploadTarget]: result,
-        }));
-        await runAiAnalysis(currentUploadTarget, result);
-      };
-      reader.readAsDataURL(file);
+    const target = currentUploadTarget;
+    e.target.value = "";
+    if (!file || !target) return;
+
+    try {
+      // Device camera files are routinely 8-30 MB; compress before storing in
+      // state so OCR runs faster and the bulk save upload cannot hit HTTP 413.
+      const optimizedImage = await optimizeImageDataUrl(file);
+      setCaptures((prev) => ({
+        ...prev,
+        [target]: optimizedImage,
+      }));
+      await runAiAnalysis(target, optimizedImage);
+    } catch (error) {
+      toast.error("Could not process this image", {
+        description: error instanceof Error ? error.message : "Choose a different image and try again.",
+      });
     }
   };
 

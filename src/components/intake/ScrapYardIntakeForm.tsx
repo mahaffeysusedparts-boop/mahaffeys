@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { Customer, MetalGrade, ScrapTicketLine, Ticket, WeightUnit, ComplianceCaptures } from '@/types/scrap';
 import { storageService } from '@/services/storageService';
-import { uploadDataUrl } from '@/services/mediaService';
+import { analyzeDriverLicenseImage } from '@/services/aiVisionService';
+import { optimizeImageDataUrl, uploadDataUrl } from '@/services/mediaService';
 import { LiveScaleGauge } from '../scale/LiveScaleGauge';
 import { ComplianceCaptureModal } from '../compliance/ComplianceCaptureModal';
 import {
   calculateComplianceScore,
   DLScanResult,
-  extractDataFromDLPhoto,
 } from '@/utils/complianceUtils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -190,23 +190,32 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
     }
   };
 
-  const handleDlPictureUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleDlPictureUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = async (event) => {
-        const dataUrl = event.target?.result as string;
-        const profile = extractDataFromDLPhoto(dataUrl);
-        try {
-          const url = await uploadDataUrl(dataUrl, file.name);
-          applyDlScanResult(profile, url);
-        } catch (error) {
-          toast.error("Could not save the ID image", {
-            description: error instanceof Error ? error.message : "Try the upload again.",
-          });
-        }
-      };
-      reader.readAsDataURL(file);
+    e.target.value = '';
+    if (!file) return;
+
+    try {
+      toast.info('Reading driver license…');
+      const optimizedImage = await optimizeImageDataUrl(file);
+      const [profile, url] = await Promise.all([
+        analyzeDriverLicenseImage(optimizedImage),
+        uploadDataUrl(optimizedImage, file.name),
+      ]);
+      applyDlScanResult(profile, url);
+      if (profile.fullName || profile.idNumber) {
+        toast.success(`Driver License processed!`, {
+          description: `Name: ${profile.fullName || 'needs review'} | ID: ${profile.idNumber || 'needs review'}`,
+        });
+      } else {
+        toast.warning('ID photo saved, but the text could not be read', {
+          description: 'Retake in bright, even light with all four card corners visible, or type the details manually.',
+        });
+      }
+    } catch (error) {
+      toast.error('Could not process the ID image', {
+        description: error instanceof Error ? error.message : 'Try the upload again.',
+      });
     }
   };
 
