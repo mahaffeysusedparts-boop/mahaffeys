@@ -452,6 +452,7 @@ export const storageService = {
   saveTicket(ticket: Ticket): Ticket {
     const tickets = this.getTickets();
     const existingIndex = tickets.findIndex((t) => t.id === ticket.id);
+    const previousTicket = existingIndex >= 0 ? tickets[existingIndex] : undefined;
     if (existingIndex >= 0) {
       tickets[existingIndex] = ticket;
     } else {
@@ -468,45 +469,55 @@ export const storageService = {
       }
     }
 
-    if (ticket.payoutMethod === 'Cash') {
+    const previousCashPayout = previousTicket?.status === 'COMPLETED' && previousTicket.payoutMethod === 'Cash'
+      ? previousTicket.finalPayout
+      : 0;
+    const currentCashPayout = ticket.status === 'COMPLETED' && ticket.payoutMethod === 'Cash'
+      ? ticket.finalPayout
+      : 0;
+    const cashPayoutChange = Math.round((currentCashPayout - previousCashPayout) * 100) / 100;
+    if (cashPayoutChange !== 0) {
       this.addCashDrawerEntry({
         type: 'PAYOUT_DISBURSEMENT',
-        amount: -Math.abs(ticket.finalPayout),
+        amount: -cashPayoutChange,
         ticketId: ticket.id,
         operatorName: ticket.operatorName,
-        notes: `Cash voucher payout for ticket #${ticket.id}`,
+        notes: previousCashPayout === 0
+          ? `Cash voucher payout for ticket #${ticket.id}`
+          : `Cash voucher adjustment for ticket #${ticket.id}`,
       });
     }
 
-    // Save/update associated customer record with phone & total payouts
-    if (ticket.customerId) {
+    const ticketWeight = (value?: Ticket) => {
+      if (!value || value.status !== 'COMPLETED') return 0;
+      if (value.ticketType === 'CAR_SALVAGE' && value.carRecord) return value.carRecord.vehicleWeightLbs;
+      return value.scrapLines?.reduce((sum, line) => sum + line.billableWeight, 0) ?? 0;
+    };
+    const previousPayout = previousTicket?.status === 'COMPLETED' ? previousTicket.finalPayout : 0;
+    const currentPayout = ticket.status === 'COMPLETED' ? ticket.finalPayout : 0;
+    const payoutChange = Math.round((currentPayout - previousPayout) * 100) / 100;
+    const weightChange = Math.round((ticketWeight(ticket) - ticketWeight(previousTicket)) * 10) / 10;
+
+    if (ticket.customerName && (ticket.customerId || ticket.customerPhone)) {
       const customers = this.getCustomers();
-      const cust = customers.find((c) => c.id === ticket.customerId);
-      if (cust) {
-        cust.totalPayouts += ticket.finalPayout;
-        if (ticket.customerPhone) {
-          cust.phone = ticket.customerPhone;
+      const customer = customers.find((candidate) =>
+        candidate.id === ticket.customerId ||
+        candidate.fullName.toLowerCase() === ticket.customerName.toLowerCase() ||
+        Boolean(ticket.customerPhone && candidate.phone === ticket.customerPhone)
+      );
+
+      if (customer) {
+        customer.totalPayouts = Math.max(0, Math.round((customer.totalPayouts + payoutChange) * 100) / 100);
+        customer.totalWeightLbs = Math.max(0, Math.round((customer.totalWeightLbs + weightChange) * 10) / 10);
+        if (ticket.customerPhone) customer.phone = ticket.customerPhone;
+        if (ticket.customerIdNumber) customer.idNumber = ticket.customerIdNumber;
+        if (ticket.vehicleLicensePlate) customer.vehicleLicensePlate = ticket.vehicleLicensePlate;
+        if (ticket.complianceCaptures?.idPhotoUrl) customer.idPhotoUrl = ticket.complianceCaptures.idPhotoUrl;
+        if (ticket.vehicleLicensePlate && !customer.capturedPlates?.includes(ticket.vehicleLicensePlate)) {
+          customer.capturedPlates = [...(customer.capturedPlates || []), ticket.vehicleLicensePlate];
         }
-        let totalLbs = 0;
-        if (ticket.ticketType === 'CAR_SALVAGE' && ticket.carRecord) {
-          totalLbs = ticket.carRecord.vehicleWeightLbs;
-        } else if (ticket.scrapLines) {
-          totalLbs = ticket.scrapLines.reduce((acc, l) => acc + l.billableWeight, 0);
-        }
-        cust.totalWeightLbs += totalLbs;
-        if (ticket.complianceCaptures?.idPhotoUrl) {
-          cust.idPhotoUrl = ticket.complianceCaptures.idPhotoUrl;
-        }
-        if (ticket.vehicleLicensePlate && (!cust.capturedPlates || !cust.capturedPlates.includes(ticket.vehicleLicensePlate))) {
-          cust.capturedPlates = [...(cust.capturedPlates || []), ticket.vehicleLicensePlate];
-        }
-        this.saveCustomer(cust);
-      }
-    } else if (ticket.customerName && ticket.customerPhone) {
-      // Create new customer record if phone is provided but customer hasn't been saved yet
-      const customers = this.getCustomers();
-      const existing = customers.find(c => c.fullName.toLowerCase() === ticket.customerName.toLowerCase() || (c.phone && c.phone === ticket.customerPhone));
-      if (!existing) {
+        this.saveCustomer(customer);
+      } else if (ticket.customerPhone) {
         this.saveCustomer({
           id: `cust-${Date.now()}`,
           fullName: ticket.customerName,
@@ -517,8 +528,8 @@ export const storageService = {
           address: 'Address On File',
           vehicleLicensePlate: ticket.vehicleLicensePlate,
           createdAt: new Date().toISOString(),
-          totalPayouts: ticket.finalPayout,
-          totalWeightLbs: ticket.scrapLines ? ticket.scrapLines.reduce((acc, l) => acc + l.billableWeight, 0) : 0,
+          totalPayouts: currentPayout,
+          totalWeightLbs: ticketWeight(ticket),
           idPhotoUrl: ticket.complianceCaptures?.idPhotoUrl,
           capturedPlates: ticket.vehicleLicensePlate ? [ticket.vehicleLicensePlate] : [],
         });
@@ -614,6 +625,12 @@ export const storageService = {
 
   saveSettings(settings: YardSettings): void {
     sharedStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settings));
+  },
+
+  resetPricingToDefaults(): void {
+    sharedStorage.setItem(STORAGE_KEYS.METALS, JSON.stringify(INITIAL_METALS));
+    sharedStorage.setItem(STORAGE_KEYS.CAR_RATES, JSON.stringify(INITIAL_CAR_RATES));
+    sharedStorage.setItem(STORAGE_KEYS.CATALYTIC_CODES, JSON.stringify(INITIAL_CAT_CODES));
   },
 
   resetToDefaults(): void {

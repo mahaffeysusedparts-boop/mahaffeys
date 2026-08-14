@@ -139,7 +139,7 @@ export default function PricingPage() {
           <div className="flex items-center gap-2">
             <Button
               onClick={() => {
-                storageService.resetToDefaults();
+                storageService.resetPricingToDefaults();
                 setMetals(storageService.getMetals());
                 setCarRates(storageService.getCarRates());
                 setCatCodes(storageService.getCatCodes());

@@ -60,10 +60,15 @@ export default function ContainersPage() {
       toast.error("Client Name and Container Number are required");
       return;
     }
+    const normalizedContainerNumber = containerNumber.toUpperCase().trim();
+    if (drops.some((drop) => drop.containerNumber.toUpperCase() === normalizedContainerNumber)) {
+      toast.error(`Container ${normalizedContainerNumber} is already in the dispatch ledger`);
+      return;
+    }
 
     const newDrop: ContainerDrop = {
       id: `drop-${Date.now()}`,
-      containerNumber: containerNumber.toUpperCase().trim(),
+      containerNumber: normalizedContainerNumber,
       clientName,
       clientAddress: clientAddress || "On File",
       clientPhone: clientPhone || "(555) 000-0000",
@@ -292,6 +297,15 @@ export default function ContainersPage() {
                             className="h-7 text-[10px] bg-emerald-600 hover:bg-emerald-500 text-white font-bold"
                           >
                             <Scale className="w-3 h-3 mr-1" /> Return & Weigh
+                          </Button>
+                        )}
+                        {drop.status === "RETURNED_TO_YARD" && (
+                          <Button
+                            size="sm"
+                            onClick={() => handleUpdateStatus(drop.id, "PROCESSED")}
+                            className="h-7 bg-indigo-600 text-[10px] font-bold text-white hover:bg-indigo-500"
+                          >
+                            <CheckCircle2 className="mr-1 h-3 w-3" /> Mark Processed
                           </Button>
                         )}
                       </TableCell>

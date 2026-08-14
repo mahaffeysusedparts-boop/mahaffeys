@@ -57,6 +57,8 @@ export default function CashDrawerPage() {
   }, []);
 
   const currentBalance = logs[0] ? logs[0].balanceAfter : 0;
+  const today = new Date().toDateString();
+  const todaysLogs = logs.filter((log) => new Date(log.timestamp).toDateString() === today);
 
   // Add Cash Replenishment
   const handleAddCash = () => {
@@ -171,13 +173,13 @@ export default function CashDrawerPage() {
                 <p className="text-2xl font-black text-amber-400 font-mono mt-1">
                   $
                   {Math.abs(
-                    logs
+                    todaysLogs
                       .filter((l) => l.type === "PAYOUT_DISBURSEMENT")
                       .reduce((acc, l) => acc + l.amount, 0)
                   ).toFixed(2)}
                 </p>
                 <p className="text-[11px] text-slate-500 mt-1">
-                  {logs.filter((l) => l.type === "PAYOUT_DISBURSEMENT").length} Cash Ticket Disbursements
+                  {todaysLogs.filter((l) => l.type === "PAYOUT_DISBURSEMENT").length} Cash Ticket Disbursements
                 </p>
               </div>
               <div className="p-3.5 rounded-2xl bg-amber-500/10 text-amber-400 border border-amber-500/20">
@@ -192,7 +194,7 @@ export default function CashDrawerPage() {
                 <p className="text-xs text-slate-400 font-medium">Vault Additions Today</p>
                 <p className="text-2xl font-black text-sky-400 font-mono mt-1">
                   $
-                  {logs
+                  {todaysLogs
                     .filter((l) => l.type === "VAULT_REPLENISHMENT" || l.type === "OPENING_FLOAT")
                     .reduce((acc, l) => acc + l.amount, 0)
                     .toFixed(2)}
