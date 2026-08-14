@@ -24,7 +24,7 @@ const vehicleQueue = (vehicle: PullYardVehicle) => queueEntry({
 
 export const operationsService = {
   getSnapshot(): OperationsSnapshot {
-    const tickets = storageService.getTickets(); const vehicles = storageService.getInventoryVehicles(); const shipments = storageService.getShipments(); const containers = storageService.getContainerDrops(); const bays = storageService.getYardBays();
+    const tickets = storageService.getTickets(); const vehicles = storageService.getPullYardVehicles(); const shipments = storageService.getShipments(); const containers = storageService.getContainerDrops(); const bays = storageService.getYardBays();
     const rules = storageService.getOperationsAlertRules(); const goals = storageService.getOperationsGoals();
     const intake = tickets.filter((ticket) => ['PENDING', 'DRAFT'].includes(ticket.status)).map((ticket) => queueEntry({ id: ticket.id, type: 'INTAKE', title: `Ticket #${ticket.id}`, detail: `${ticket.customerName} · ${ticket.ticketType.replace('_', ' ')}`, status: ticket.status, priority: minutesSince(ticket.createdAt) >= (ruleFor(rules, 'TICKET_AGE')?.threshold ?? 45) ? 'URGENT' : 'ATTENTION', owner: ticket.operatorName, createdAt: ticket.createdAt, link: '/tickets' }));
     const shipmentEntries = shipments.filter((shipment) => shipment.status !== 'SETTLED').map((shipment) => queueEntry({ id: shipment.id, type: 'SHIPMENT', title: `Load ${shipment.loadNumber}`, detail: `${shipment.millName} · ${shipment.materialCategory}`, status: shipment.status, priority: shipment.status === 'DISCREPANCY' ? 'URGENT' : shipment.status === 'DELIVERED' ? 'ATTENTION' : 'NORMAL', owner: shipment.driverName, createdAt: shipment.createdAt, link: '/shipments' }));

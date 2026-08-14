@@ -1,6 +1,6 @@
-import React, { lazy, Suspense, useCallback, useDeferredValue, useEffect, useMemo, useState } from "react";
-import { storageService } from "@/services/storageService";
-import { sharedStorage } from "@/services/sharedStorage";
+import React, { lazy, Suspense, useCallback, useDeferredValue, useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
+import { fetchInventory, type InventoryResponse } from "@/services/inventoryService";
 import { PullYardVehicle } from "@/types/scrap";
 import { Navbar } from "@/components/layout/Navbar";
 import { generateSamplePhoto } from "@/utils/complianceUtils";
@@ -27,6 +27,7 @@ import {
   Filter,
   CheckCircle2,
   Clock,
+  ChevronLeft,
   ChevronRight,
   ShieldCheck,
   Bell,
@@ -38,6 +39,7 @@ import {
   RefreshCw,
   Eye,
   Radio,
+  Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -48,16 +50,23 @@ const PartsInterchangeModal = lazy(() =>
 );
 const FALLBACK_VEHICLE_PHOTO = generateSamplePhoto("vehicle");
 const INVENTORY_PAGE_SIZE = 24;
+const EMPTY_INVENTORY: InventoryResponse = {
+  items: [], total: 0, page: 1, limit: INVENTORY_PAGE_SIZE, totalPages: 1,
+  counts: { available: 0, pending: 0, crushed: 0 }, updatedAt: null,
+};
 
 export default function PublicInventoryPage() {
-  const [vehicles, setVehicles] = useState<PullYardVehicle[]>([]);
-  const [search, setSearch] = useState("");
-  const [selectedSection, setSelectedSection] = useState<string>("ALL");
-  const [partFilter, setPartFilter] = useState<string>("ALL");
-  const [visibleCount, setVisibleCount] = useState(INVENTORY_PAGE_SIZE);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [inventory, setInventory] = useState<InventoryResponse>(EMPTY_INVENTORY);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [refreshToken, setRefreshToken] = useState(0);
   const [selectedVehicle, setSelectedVehicle] = useState<PullYardVehicle | null>(null);
   const [interchangeOpen, setInterchangeOpen] = useState(false);
-  const [lastUpdatedTime, setLastUpdatedTime] = useState<string>(new Date().toLocaleTimeString());
+  const search = searchParams.get("search") || "";
+  const selectedSection = searchParams.get("section") || "ALL";
+  const partFilter = searchParams.get("part") || "ALL";
+  const page = Math.max(1, Number(searchParams.get("page")) || 1);
   const deferredSearch = useDeferredValue(search);
 
   // Notify Me Request State
@@ -66,62 +75,44 @@ export default function PublicInventoryPage() {
   const [reqModel, setReqModel] = useState("Civic");
   const [reqPhone, setReqPhone] = useState("");
 
-  const loadData = useCallback(() => {
-    const list = storageService.getInventoryVehicles();
-    setVehicles(list);
-    setLastUpdatedTime(new Date().toLocaleTimeString());
-  }, []);
-
-  // Reload only when inventory can actually change instead of reparsing it every two seconds.
-  useEffect(() => {
-    loadData();
-
-    const handleStorageChange = (e: StorageEvent) => {
-      if (!e.key || e.key === "mahaffeys_pull_yard_vehicles" || e.key === "mahaffeys_tickets") {
-        loadData();
-      }
-    };
-    window.addEventListener("storage", handleStorageChange);
-
-    const unsubscribeShared = sharedStorage.subscribe((status) => {
-      if (status === "connected") loadData();
+  const updateQuery = useCallback((updates: Record<string, string | null>) => {
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      Object.entries(updates).forEach(([key, value]) => {
+        if (!value || value === "ALL" || (key === "page" && value === "1")) next.delete(key);
+        else next.set(key, value);
+      });
+      return next;
     });
+  }, [setSearchParams]);
 
-    return () => {
-      window.removeEventListener("storage", handleStorageChange);
-      unsubscribeShared();
-    };
-  }, [loadData]);
-
-  const filteredVehicles = useMemo(() => {
-    const q = deferredSearch.trim().toLowerCase();
-    const normalizedPartFilter = partFilter.toLowerCase();
-
-    return vehicles.filter((v) => {
-      const matchesSearch =
-        v.make.toLowerCase().includes(q) ||
-        v.model.toLowerCase().includes(q) ||
-        v.year.toString().includes(q) ||
-        v.vin.toLowerCase().includes(q) ||
-        v.section.toLowerCase().includes(q);
-
-      const matchesSection = selectedSection === "ALL" || v.section === selectedSection;
-      const matchesPart =
-        partFilter === "ALL" ||
-        v.partsRemaining.some((p) => p.toLowerCase().includes(normalizedPartFilter));
-
-      return matchesSearch && matchesSection && matchesPart;
-    });
-  }, [deferredSearch, partFilter, selectedSection, vehicles]);
-
-  const visibleVehicles = useMemo(
-    () => filteredVehicles.slice(0, visibleCount),
-    [filteredVehicles, visibleCount],
-  );
+  const loadData = useCallback(() => setRefreshToken((token) => token + 1), []);
 
   useEffect(() => {
-    setVisibleCount(INVENTORY_PAGE_SIZE);
-  }, [deferredSearch, partFilter, selectedSection]);
+    const controller = new AbortController();
+    const params = new URLSearchParams({ page: String(page), limit: String(INVENTORY_PAGE_SIZE), sort: "dateSetInYard_desc" });
+    if (deferredSearch.trim()) params.set("search", deferredSearch.trim());
+    if (selectedSection !== "ALL") params.set("section", selectedSection);
+    if (partFilter !== "ALL") params.set("part", partFilter);
+    setIsLoading(true);
+    setLoadError("");
+    fetchInventory(params, controller.signal)
+      .then((response) => {
+        setInventory(response);
+        if (response.page !== page) updateQuery({ page: String(response.page) });
+      })
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setLoadError(error instanceof Error ? error.message : "Unable to load inventory");
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setIsLoading(false);
+      });
+    return () => controller.abort();
+  }, [deferredSearch, page, partFilter, refreshToken, selectedSection, updateQuery]);
+
+  const vehicles = inventory.items;
+  const lastUpdatedTime = inventory.updatedAt ? new Date(inventory.updatedAt).toLocaleTimeString() : "waiting for sync";
 
   const handleSendNotifyRequest = () => {
     if (!reqPhone.trim()) {
@@ -135,10 +126,7 @@ export default function PublicInventoryPage() {
     setReqPhone("");
   };
 
-  const availableCount = useMemo(
-    () => vehicles.reduce((count, vehicle) => count + (vehicle.status === "AVAILABLE" ? 1 : 0), 0),
-    [vehicles],
-  );
+  const availableCount = inventory.counts.available;
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
@@ -195,19 +183,19 @@ export default function PublicInventoryPage() {
                 <Input
                   placeholder="Search Year, Make, Model, or VIN..."
                   value={search}
-                  onChange={(e) => setSearch(e.target.value)}
+                  onChange={(e) => updateQuery({ search: e.target.value, page: null })}
                   className="bg-slate-950 border-slate-800 text-white text-xs pl-9 h-10"
                 />
               </div>
 
               {/* Yard Section Filter */}
               <div>
-                <Select value={selectedSection} onValueChange={setSelectedSection}>
+                <Select value={selectedSection} onValueChange={(value) => updateQuery({ section: value, page: null })}>
                   <SelectTrigger className="bg-slate-950 border-slate-800 text-white text-xs h-10">
                     <SelectValue placeholder="All Yard Sections" />
                   </SelectTrigger>
                   <SelectContent className="bg-slate-900 border-slate-800 text-white text-xs">
-                    <SelectItem value="ALL">All Yard Sections ({vehicles.length} Vehicles)</SelectItem>
+                    <SelectItem value="ALL">All Yard Sections ({inventory.total} Matches)</SelectItem>
                     <SelectItem value="Domestic Trucks & SUVs">Domestic Trucks & SUVs</SelectItem>
                     <SelectItem value="Ford & Lincoln">Ford & Lincoln</SelectItem>
                     <SelectItem value="GM & Chevrolet">GM & Chevrolet</SelectItem>
@@ -220,7 +208,7 @@ export default function PublicInventoryPage() {
 
               {/* Specific Part Component Filter */}
               <div>
-                <Select value={partFilter} onValueChange={setPartFilter}>
+                <Select value={partFilter} onValueChange={(value) => updateQuery({ part: value, page: null })}>
                   <SelectTrigger className="bg-slate-950 border-slate-800 text-white text-xs h-10">
                     <SelectValue placeholder="Filter by Needed Component" />
                   </SelectTrigger>
@@ -244,7 +232,7 @@ export default function PublicInventoryPage() {
         <div>
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-bold text-white flex items-center gap-2">
-              <Car className="w-5 h-5 text-amber-400" /> Currently Staged Vehicles ({filteredVehicles.length})
+              <Car className="w-5 h-5 text-amber-400" /> Currently Staged Vehicles ({inventory.total})
             </h2>
             <div className="flex items-center gap-2">
               <Badge variant="outline" className="border-emerald-500/40 text-emerald-400 text-xs font-mono">
@@ -254,15 +242,23 @@ export default function PublicInventoryPage() {
                 size="sm"
                 variant="ghost"
                 onClick={loadData}
+                disabled={isLoading}
                 className="h-7 text-xs text-slate-400 hover:text-white"
                 title="Refresh Inventory"
               >
-                <RefreshCw className="w-3.5 h-3.5" />
+                <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? "animate-spin" : ""}`} />
               </Button>
             </div>
           </div>
 
-          {filteredVehicles.length === 0 ? (
+          {loadError ? (
+            <Card className="bg-slate-900 border-rose-800/70 text-slate-300 p-10 text-center space-y-3">
+              <AlertCircle className="w-10 h-10 mx-auto text-rose-400" />
+              <p className="text-sm font-semibold text-white">Inventory could not be loaded</p>
+              <p className="text-xs text-slate-400">{loadError}</p>
+              <Button size="sm" onClick={loadData} className="bg-amber-500 text-slate-950 hover:bg-amber-400">Try again</Button>
+            </Card>
+          ) : !isLoading && inventory.total === 0 ? (
             <Card className="bg-slate-900 border-slate-800 text-slate-400 p-12 text-center space-y-3">
               <AlertCircle className="w-10 h-10 mx-auto text-slate-600" />
               <p className="text-sm font-semibold text-white">No vehicles found matching your criteria</p>
@@ -271,20 +267,23 @@ export default function PublicInventoryPage() {
               </p>
               <Button
                 size="sm"
-                onClick={() => {
-                  setSearch("");
-                  setSelectedSection("ALL");
-                  setPartFilter("ALL");
-                }}
+                onClick={() => updateQuery({ search: null, section: null, part: null, page: null })}
                 className="bg-slate-800 border-slate-700 text-slate-200 text-xs"
               >
                 Clear All Filters
               </Button>
             </Card>
           ) : (
-            <>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {visibleVehicles.map((veh) => {
+            <div className="relative">
+              {isLoading && (
+                <div className="absolute inset-0 z-20 flex items-start justify-center rounded-2xl bg-slate-950/65 pt-24 backdrop-blur-sm" role="status">
+                  <div className="flex items-center gap-2 rounded-full border border-slate-700 bg-slate-900 px-4 py-2 text-sm font-semibold text-amber-300 shadow-xl">
+                    <Loader2 className="h-4 w-4 animate-spin" /> Loading inventory…
+                  </div>
+                </div>
+              )}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" aria-busy={isLoading}>
+                {vehicles.map((veh) => {
                   const daysAgo = Math.floor(
                     (Date.now() - new Date(veh.dateSetInYard).getTime()) / (1000 * 60 * 60 * 24)
                   );
@@ -376,22 +375,35 @@ export default function PublicInventoryPage() {
                 })}
               </div>
 
-              {visibleVehicles.length < filteredVehicles.length && (
-                <div className="mt-6 flex flex-col items-center gap-2">
+              <div className="mt-8 flex flex-col items-center gap-3 border-t border-slate-800 pt-6">
+                <div className="flex items-center gap-2">
                   <Button
                     type="button"
                     variant="outline"
-                    onClick={() => setVisibleCount((count) => count + INVENTORY_PAGE_SIZE)}
-                    className="border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-800"
+                    disabled={inventory.page <= 1 || isLoading}
+                    onClick={() => updateQuery({ page: String(inventory.page - 1) })}
+                    className="rounded-xl border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-800"
                   >
-                    Load {Math.min(INVENTORY_PAGE_SIZE, filteredVehicles.length - visibleVehicles.length)} more vehicles
+                    <ChevronLeft className="mr-1 h-4 w-4" /> Previous
                   </Button>
-                  <span className="text-xs text-slate-500">
-                    Showing {visibleVehicles.length} of {filteredVehicles.length} matches
+                  <span className="min-w-28 text-center text-sm font-semibold text-slate-300">
+                    Page {inventory.page} of {inventory.totalPages}
                   </span>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={inventory.page >= inventory.totalPages || isLoading}
+                    onClick={() => updateQuery({ page: String(inventory.page + 1) })}
+                    className="rounded-xl border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-800"
+                  >
+                    Next <ChevronRight className="ml-1 h-4 w-4" />
+                  </Button>
                 </div>
-              )}
-            </>
+                <span className="text-xs text-slate-500">
+                  Showing {inventory.total ? (inventory.page - 1) * inventory.limit + 1 : 0}–{Math.min(inventory.page * inventory.limit, inventory.total)} of {inventory.total} matches
+                </span>
+              </div>
+            </div>
           )}
         </div>
 

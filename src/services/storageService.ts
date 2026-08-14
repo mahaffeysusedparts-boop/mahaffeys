@@ -260,24 +260,6 @@ export const storageService = {
     return pullVehicleCache;
   },
 
-  getInventoryVehicles(): PullYardVehicle[] {
-    const vehicles = this.getPullYardVehicles();
-    const removedIds = getRemovedInventoryVehicleIds();
-    const linkedTicketIds = new Set(vehicles.map((vehicle) => vehicle.sourceTicketId).filter(Boolean));
-    const knownVins = new Set(vehicles.map((vehicle) => vehicle.vin.toUpperCase()));
-    const recovered = this.getTickets()
-      .map(vehicleFromTicket)
-      .filter((vehicle): vehicle is PullYardVehicle => Boolean(
-        vehicle
-        && !removedIds.has(vehicle.id)
-        && !linkedTicketIds.has(vehicle.sourceTicketId)
-        && !knownVins.has(vehicle.vin.toUpperCase()),
-      ));
-    return [...recovered, ...vehicles]
-      .filter((vehicle) => !removedIds.has(vehicle.id))
-      .sort((a, b) => new Date(b.dateSetInYard).getTime() - new Date(a.dateSetInYard).getTime());
-  },
-
   savePullYardVehicle(veh: PullYardVehicle): PullYardVehicle {
     const vehicles = this.getPullYardVehicles();
     const idx = vehicles.findIndex((v) => v.id === veh.id);
@@ -297,7 +279,7 @@ export const storageService = {
   },
 
   deletePullYardVehicle(vehicleId: string): void {
-    const inventoryVehicle = this.getInventoryVehicles().find((vehicle) => vehicle.id === vehicleId);
+    const inventoryVehicle = this.getPullYardVehicles().find((vehicle) => vehicle.id === vehicleId);
     if (inventoryVehicle?.sourceTicketId) {
       const removedIds = getRemovedInventoryVehicleIds();
       removedIds.add(vehicleId);
@@ -482,13 +464,7 @@ export const storageService = {
     sharedStorage.setItem(STORAGE_KEYS.TICKETS, JSON.stringify(tickets));
 
     const inventoryVehicle = vehicleFromTicket(ticket);
-    if (inventoryVehicle) {
-      try {
-        this.savePullYardVehicle(inventoryVehicle);
-      } catch {
-        // Vehicle recovery will still happen via getInventoryVehicles() which reads tickets
-      }
-    }
+    if (inventoryVehicle) this.savePullYardVehicle(inventoryVehicle);
 
     const previousCashPayout = previousTicket?.status === 'COMPLETED' && previousTicket.payoutMethod === 'Cash'
       ? previousTicket.finalPayout
