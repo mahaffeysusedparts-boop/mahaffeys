@@ -8,6 +8,7 @@ import {
   PullYardVehicleStatus,
 } from "@/types/scrap";
 import { analyzeVinImage } from "@/services/aiVisionService";
+import { decodeVin, VinDecodeResult } from "@/services/vinService";
 import { PartsInterchangeModal } from "@/components/inventory/PartsInterchangeModal";
 import { Navbar } from "@/components/layout/Navbar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -85,6 +86,8 @@ export default function PullAPartPage() {
   const [vehOriginSource, setVehOriginSource] = useState("");
   const [vehNotes, setVehNotes] = useState("");
   const [vehPhotoUrl, setVehPhotoUrl] = useState("");
+  const [decodedVin, setDecodedVin] = useState<VinDecodeResult | null>(null);
+  const [isDecodingVin, setIsDecodingVin] = useState(false);
 
   const vinCameraRef = useRef<HTMLInputElement>(null);
 
@@ -140,6 +143,7 @@ export default function PullAPartPage() {
     setVehOriginSource("");
     setVehNotes("");
     setVehPhotoUrl("");
+    setDecodedVin(null);
     setVehModalOpen(true);
   };
 
@@ -157,6 +161,7 @@ export default function PullAPartPage() {
     setVehOriginSource(v.originSource || "");
     setVehNotes(v.notes || "");
     setVehPhotoUrl(v.photoUrl || "");
+    setDecodedVin(null);
     setVehModalOpen(true);
   };
 
@@ -186,7 +191,31 @@ export default function PullAPartPage() {
   const handleSkipVin = () => {
     const noVinCode = `NO-VIN-${Math.floor(1000 + Math.random() * 9000)}`;
     setVehVin(noVinCode);
+    setDecodedVin(null);
     toast.info(`Bypassed VIN. Assigned: ${noVinCode}`);
+  };
+
+  const handleDecodeVin = async () => {
+    const cleanVin = vehVin.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (!/^[A-HJ-NPR-Z0-9]{17}$/.test(cleanVin)) {
+      toast.error('Enter a complete 17-character VIN without I, O, or Q');
+      return;
+    }
+    setVehVin(cleanVin);
+    setIsDecodingVin(true);
+    try {
+      const result = await decodeVin(cleanVin);
+      setDecodedVin(result);
+      if (result.year) setVehYear(result.year);
+      if (result.make) setVehMake(result.make);
+      if (result.model) setVehModel(result.model);
+      toast.success(`${result.year || ''} ${result.make || ''} ${result.model || ''}`.trim(), { description: 'Vehicle details loaded from NHTSA. Review them before saving.' });
+    } catch (error) {
+      setDecodedVin(null);
+      toast.error('VIN could not be decoded', { description: error instanceof Error ? error.message : 'Check the VIN and try again.' });
+    } finally {
+      setIsDecodingVin(false);
+    }
   };
 
   const handleSaveVeh = () => {
@@ -988,10 +1017,19 @@ export default function PullAPartPage() {
               <div className="flex gap-2">
                 <Input
                   value={vehVin}
-                  onChange={(e) => setVehVin(e.target.value.toUpperCase())}
+                  onChange={(e) => { setVehVin(e.target.value.toUpperCase()); setDecodedVin(null); }}
                   placeholder="1FTRF12W88KA10291 or NO-VIN"
                   className="bg-slate-900 border-slate-800 text-amber-300 font-mono font-bold text-xs flex-1"
                 />
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => void handleDecodeVin()}
+                  disabled={isDecodingVin}
+                  className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs gap-1 shrink-0"
+                >
+                  <Sparkles className={`w-3.5 h-3.5 ${isDecodingVin ? 'animate-spin' : ''}`} /> {isDecodingVin ? 'Checking' : 'Decode'}
+                </Button>
                 <Button
                   type="button"
                   size="sm"
@@ -1001,6 +1039,7 @@ export default function PullAPartPage() {
                   <Scan className="w-3.5 h-3.5" /> VIN Photo
                 </Button>
               </div>
+              {decodedVin && <div className="mt-2 rounded-xl border border-emerald-500/30 bg-emerald-950/30 p-3"><div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-emerald-300"><ShieldCheck className="w-3.5 h-3.5" /> NHTSA VIN check</div><p className="mt-1 text-sm font-bold text-white">{[decodedVin.year, decodedVin.make, decodedVin.model, decodedVin.trim || decodedVin.series].filter(Boolean).join(' ')}</p><p className="mt-1 text-[11px] text-slate-300">{[decodedVin.bodyClass, decodedVin.engineSizeLiters ? `${decodedVin.engineSizeLiters}L` : null, decodedVin.engineCylinders ? `${decodedVin.engineCylinders}-cylinder` : null, decodedVin.fuelType].filter(Boolean).join(' · ') || 'No additional specifications returned.'}</p></div>}
             </div>
 
             <div className="grid grid-cols-2 gap-2">
