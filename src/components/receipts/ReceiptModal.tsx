@@ -28,10 +28,10 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ ticket, open, onOpen
 
   const renderReceiptCard = (isYardCopy: boolean) => {
     return (
-      <div 
+      <div
         className={`printable-receipt-card bg-white text-slate-900 p-6 sm:p-7 rounded-lg shadow-inner font-mono text-xs space-y-4 border ${
           isYardCopy ? 'border-slate-900 bg-amber-50/10' : 'border-slate-300'
-        } print:p-0 print:border-slate-900 print:shadow-none print:text-black ${
+        } print:p-8 print:rounded-none print:border-slate-900 print:shadow-none print:text-black ${
           isYardCopy ? 'print:break-before-page' : ''
         }`}
       >
@@ -306,7 +306,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ ticket, open, onOpen
             <div className="flex items-center gap-2">
               <Printer className="w-5 h-5 text-emerald-400" />
               <DialogTitle className="text-lg font-bold text-white font-mono">
-                Dual Intake Ticket & Legal Payout Voucher (2 Copies)
+                Dual Intake Ticket & Legal Payout Voucher (8.5×11 Letter, 2 Pages)
               </DialogTitle>
             </div>
             <Button

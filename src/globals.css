@@ -115,6 +115,12 @@
   }
 }
 
+/* US Letter (8.5in x 11in) paper for printed vouchers */
+@page {
+  size: letter portrait;
+  margin: 0.5in;
+}
+
 /* Print Overrides: Ensures modal dialogs and signature blocks print completely */
 @media print {
   body {
@@ -150,11 +156,21 @@
     height: auto !important;
   }
 
+  /* Neutralize layout gaps so each voucher copy starts flush on its page */
+  .printable-receipt-container > div > * + * {
+    margin-top: 0 !important;
+  }
+
+  /* Each voucher copy fills one 8.5x11 letter page (7.5in x 10in live area) */
   .printable-receipt-card {
     background-color: #ffffff !important;
     color: #000000 !important;
     border: 1px solid #000000 !important;
     page-break-inside: avoid;
     break-inside: avoid;
+    width: 7.5in !important;
+    min-height: 10in;
+    margin-left: auto !important;
+    margin-right: auto !important;
   }
 }

@@ -44,8 +44,7 @@ const emptyCaptures: ComplianceCaptures = {
   signatureUrl: undefined,
 };
 
-const makeTicketNumber = () =>
-  `M-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
+const makeTicketNumber = () => storageService.generateScrapReceiptNumber();
 
 export const MobileScrapTicket: React.FC<MobileScrapTicketProps> = ({ onBack, onTicketCreated }) => {
   const [metals] = useState<MetalGrade[]>(() => storageService.getMetals());
@@ -227,8 +226,12 @@ export const MobileScrapTicket: React.FC<MobileScrapTicketProps> = ({ onBack, on
     }
 
     setIsSubmitting(true);
+    // If another device took this sequential number while the form was open, grab the next one
+    const finalTicketNumber = storageService.getTickets().some((existing) => existing.id === ticketNumber)
+      ? storageService.generateScrapReceiptNumber()
+      : ticketNumber;
     const ticket: Ticket = {
-      id: ticketNumber,
+      id: finalTicketNumber,
       ticketType: 'SCRAP_METAL',
       createdAt: new Date().toISOString(),
       status: 'COMPLETED',

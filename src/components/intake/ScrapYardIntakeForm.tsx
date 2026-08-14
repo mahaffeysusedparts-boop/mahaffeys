@@ -69,7 +69,7 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
 
   // Editable Receipt / Ticket Number
   const [customReceiptNumber, setCustomReceiptNumber] = useState<string>(
-    `T-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`
+    storageService.generateScrapReceiptNumber()
   );
 
   const [metals] = useState<MetalGrade[]>(storageService.getMetals());
@@ -120,7 +120,7 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
   const complianceStats = calculateComplianceScore(complianceCaptures);
 
   const handleAutoGenerateReceiptNumber = () => {
-    const newNum = `T-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
+    const newNum = storageService.generateScrapReceiptNumber();
     setCustomReceiptNumber(newNum);
     toast.info(`Generated Receipt #${newNum}`);
   };
@@ -252,7 +252,7 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
     }
 
     const currentOp = storageService.getSettings().operatorName;
-    const ticketId = customReceiptNumber.trim() || `T-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
+    const ticketId = customReceiptNumber.trim() || storageService.generateScrapReceiptNumber();
 
     const pendingTicket: Ticket = {
       id: ticketId,
@@ -286,7 +286,7 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
 
   const resetForm = () => {
     setActiveTicketId(null);
-    setCustomReceiptNumber(`T-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`);
+    setCustomReceiptNumber(storageService.generateScrapReceiptNumber());
     setSelectedCustomerId('');
     setCustomerName('');
     setCustomerPhone('');

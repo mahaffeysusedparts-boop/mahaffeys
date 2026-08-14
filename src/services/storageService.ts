@@ -539,6 +539,28 @@ export const storageService = {
     return ticket;
   },
 
+  /**
+   * Sequential scrap-only receipt numbers: 2026-30, 2026-31, 2026-32, ...
+   * Only scrap metal tickets are counted, so the numbering stays reserved
+   * for scrap receipts regardless of what other intake types create.
+   */
+  generateScrapReceiptNumber(): string {
+    const year = new Date().getFullYear();
+    const scrapTypes: Ticket['ticketType'][] = ['SCRAP_METAL', 'MOBILE_SCRAP'];
+    let maxSequence = 29; // sequence starts at 30
+    this.getTickets().forEach((ticket) => {
+      if (!scrapTypes.includes(ticket.ticketType)) return;
+      const match = ticket.id.match(/^(\d{4})-(\d+)$/);
+      if (match && match[1] === String(year)) {
+        const sequence = parseInt(match[2], 10);
+        if (Number.isFinite(sequence) && sequence > maxSequence) {
+          maxSequence = sequence;
+        }
+      }
+    });
+    return `${year}-${maxSequence + 1}`;
+  },
+
   updateTicketId(oldId: string, newId: string): { success: boolean; message?: string } {
     const cleanNewId = newId.trim();
     if (!cleanNewId) {
