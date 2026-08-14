@@ -246,6 +246,31 @@ export interface ScrapTicketLine {
   lineTotal: number;
 }
 
+export type VisionScanPurpose = 'vehicle' | 'plate' | 'scrap';
+export type VisionScanStatus = 'processing' | 'review_required' | 'confirmed' | 'failed';
+
+export interface VisionScan {
+  id: string;
+  purpose: VisionScanPurpose;
+  status: VisionScanStatus;
+  confidence: number;
+  createdAt: string;
+  processedAt?: string;
+  errorMessage?: string;
+  imageUrl: string;
+  result: {
+    rawOcrText: string;
+    normalizedVin?: string;
+    vinValid?: boolean;
+    vinWarnings: string[];
+    plateText?: string;
+    decode?: { year?: number; make?: string; model?: string; bodyClass?: string; fuelType?: string; manufacturer?: string };
+    materials: Array<{ label: string; confidence: number }>;
+    contaminationFlags: Array<{ label: string; confidence: number }>;
+    candidates: Array<{ field: string; text: string; confidence: number; source: string }>;
+  };
+}
+
 export interface CarIntakeRecord {
   vin: string;
   year: number;
@@ -304,6 +329,7 @@ export interface CarIntakeRecord {
   photoUrl?: string;
 
   complianceCaptures?: ComplianceCaptures;
+  confirmedVisionScanIds?: string[];
 }
 
 export interface Ticket {

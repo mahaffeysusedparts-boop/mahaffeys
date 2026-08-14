@@ -71,6 +71,76 @@ async function initializeSchema() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
     CREATE INDEX IF NOT EXISTS media_uploads_created_at_idx ON media_uploads(created_at);
+
+    CREATE TABLE IF NOT EXISTS vision_scans (
+      id UUID PRIMARY KEY,
+      purpose TEXT NOT NULL CHECK (purpose IN ('vehicle', 'plate', 'scrap')),
+      status TEXT NOT NULL CHECK (status IN ('processing', 'review_required', 'confirmed', 'failed')),
+      original_file_name TEXT NOT NULL,
+      storage_path TEXT NOT NULL UNIQUE,
+      content_type TEXT NOT NULL,
+      byte_size INTEGER NOT NULL,
+      checksum_sha256 TEXT NOT NULL,
+      width INTEGER NOT NULL,
+      height INTEGER NOT NULL,
+      confidence NUMERIC,
+      worker_model_version TEXT,
+      error_message TEXT,
+      linked_record_type TEXT,
+      linked_record_id TEXT,
+      uploaded_by TEXT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      processed_at TIMESTAMPTZ,
+      confirmed_at TIMESTAMPTZ,
+      retention_delete_after TIMESTAMPTZ NOT NULL,
+      deleted_at TIMESTAMPTZ
+    );
+    CREATE INDEX IF NOT EXISTS vision_scans_recent_idx ON vision_scans(created_at DESC);
+    CREATE INDEX IF NOT EXISTS vision_scans_status_idx ON vision_scans(status);
+
+    CREATE TABLE IF NOT EXISTS vision_results (
+      scan_id UUID PRIMARY KEY REFERENCES vision_scans(id) ON DELETE CASCADE,
+      raw_ocr_text TEXT,
+      normalized_vin TEXT,
+      vin_valid BOOLEAN,
+      vin_warnings JSONB NOT NULL DEFAULT '[]'::jsonb,
+      plate_text TEXT,
+      plate_state TEXT,
+      decode JSONB,
+      materials JSONB NOT NULL DEFAULT '[]'::jsonb,
+      contamination_flags JSONB NOT NULL DEFAULT '[]'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS vision_candidates (
+      id UUID PRIMARY KEY,
+      scan_id UUID NOT NULL REFERENCES vision_scans(id) ON DELETE CASCADE,
+      field_name TEXT NOT NULL,
+      candidate_text TEXT NOT NULL,
+      confidence NUMERIC NOT NULL,
+      source TEXT NOT NULL,
+      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS vision_candidates_scan_idx ON vision_candidates(scan_id);
+
+    CREATE TABLE IF NOT EXISTS vin_decode_cache (
+      vin TEXT PRIMARY KEY,
+      decode JSONB NOT NULL,
+      fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      expires_at TIMESTAMPTZ NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS vision_confirmations (
+      id UUID PRIMARY KEY,
+      scan_id UUID NOT NULL REFERENCES vision_scans(id) ON DELETE RESTRICT,
+      confirmed_by TEXT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+      selections JSONB NOT NULL,
+      linked_record_type TEXT,
+      linked_record_id TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
   `);
 }
 

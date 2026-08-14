@@ -8,6 +8,7 @@ import { MobileScrapTicket } from '@/components/intake/MobileScrapTicket';
 import { ReceiptModal } from '@/components/receipts/ReceiptModal';
 import { Button } from '@/components/ui/button';
 import { Car, Scale, ArrowLeft, Smartphone } from 'lucide-react';
+import { PhotoIntakeCard } from '@/components/photo-intake/PhotoIntakeCard';
 
 export default function IntakePage() {
   const [activeMode, setActiveMode] = useState<IntakeType | null>(null);
@@ -28,6 +29,9 @@ export default function IntakePage() {
       <Navbar />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <div className="mb-6">
+          <PhotoIntakeCard />
+        </div>
         
         {/* If an intake mode is active, show quick switcher bar */}
         {activeMode !== null && (

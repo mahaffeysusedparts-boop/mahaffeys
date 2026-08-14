@@ -41,6 +41,7 @@ import {
   ClipboardList,
 } from "lucide-react";
 import { toast } from "sonner";
+import { PhotoIntakeCard } from "@/components/photo-intake/PhotoIntakeCard";
 
 export default function DashboardPage() {
   const [tickets, setTickets] = useState<Ticket[]>([]);
@@ -205,6 +206,8 @@ export default function DashboardPage() {
             </div>
           </CardContent>
         </Card>
+
+        <PhotoIntakeCard />
 
         {/* Top KPI Cards Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
