@@ -23,6 +23,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
 import {
   Scale,
   Car,
@@ -49,6 +50,7 @@ import {
   BarChart3,
   ClipboardList,
   RadioTower,
+  Search,
 } from 'lucide-react';
 
 export const Navbar: React.FC = () => {
@@ -59,6 +61,7 @@ export const Navbar: React.FC = () => {
   const [settings] = useState<YardSettings>(storageService.getSettings());
   const [configOpen, setConfigOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [mobileNavQuery, setMobileNavQuery] = useState('');
 
   useEffect(() => {
     const unsubscribe = scaleService.subscribe((status) => {
@@ -97,6 +100,15 @@ export const Navbar: React.FC = () => {
     { label: 'System Status', path: '/system-status', icon: Server },
   ];
 
+  const mobileNavItems = navItems.filter((item) =>
+    item.label.toLowerCase().includes(mobileNavQuery.trim().toLowerCase()),
+  );
+
+  const handleMobileMenuChange = (open: boolean) => {
+    setMobileMenuOpen(open);
+    if (!open) setMobileNavQuery('');
+  };
+
   const roleBadgeLabels: Record<string, string> = {
     admin: 'Admin',
     yard_manager: 'Yard Mgr',
@@ -114,76 +126,98 @@ export const Navbar: React.FC = () => {
             <div className="flex items-center gap-2 sm:gap-3">
               
               {/* Mobile / iPad Drawer Trigger */}
-              <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
+              <Sheet open={mobileMenuOpen} onOpenChange={handleMobileMenuChange}>
                 <SheetTrigger asChild>
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="xl:hidden h-10 w-10 text-slate-300 hover:text-white hover:bg-slate-800"
-                    aria-label="Open Navigation Drawer"
+                    className="xl:hidden h-11 w-11 rounded-xl bg-emerald-600/15 border border-emerald-500/30 text-emerald-300 hover:text-white hover:bg-emerald-600/25 active:scale-95"
+                    aria-label="Open main menu"
                   >
                     <Menu className="w-6 h-6" />
                   </Button>
                 </SheetTrigger>
 
-                <SheetContent side="left" className="w-[300px] sm:w-[350px] bg-slate-950 text-slate-100 border-slate-800 p-0 flex flex-col">
-                  <SheetHeader className="p-5 border-b border-slate-800 text-left bg-slate-900">
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-700 flex items-center justify-center shadow-md">
-                        <Scale className="w-5 h-5 text-white" />
+                <SheetContent side="left" className="w-[92vw] max-w-[380px] bg-slate-950 text-slate-100 border-slate-800 p-0 flex flex-col">
+                  <SheetHeader className="px-5 pt-5 pb-4 border-b border-slate-800 text-left bg-slate-900">
+                    <div className="flex items-center gap-3 pr-10">
+                      <div className="w-11 h-11 rounded-xl bg-emerald-600 flex items-center justify-center shadow-md shadow-emerald-950/50">
+                        <Scale className="w-6 h-6 text-white" />
                       </div>
-                      <div>
-                        <SheetTitle className="text-base font-extrabold text-white font-mono">
-                          Mahaffeys Suite
+                      <div className="min-w-0">
+                        <SheetTitle className="text-lg font-extrabold text-white font-mono">
+                          Main Menu
                         </SheetTitle>
-                        <p className="text-xs text-slate-400 font-medium truncate max-w-[200px]">
+                        <p className="text-xs text-slate-400 font-medium truncate">
                           {settings.yardName}
                         </p>
                       </div>
                     </div>
                   </SheetHeader>
 
+                  <div className="p-3 border-b border-slate-800 bg-slate-900/60">
+                    <label className="relative block">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 pointer-events-none" />
+                      <Input
+                        type="search"
+                        value={mobileNavQuery}
+                        onChange={(event) => setMobileNavQuery(event.target.value)}
+                        placeholder="Find a page..."
+                        aria-label="Search menu pages"
+                        className="h-12 pl-11 rounded-xl bg-slate-950 border-slate-700 text-base text-white placeholder:text-slate-500 focus-visible:ring-emerald-500"
+                      />
+                    </label>
+                  </div>
+
                   {/* Drawer Nav Items */}
-                  <div className="flex-1 overflow-y-auto p-3 space-y-1">
-                    {navItems.map((item) => {
+                  <nav aria-label="Mobile navigation" className="flex-1 overflow-y-auto overscroll-contain p-3 space-y-1.5">
+                    {mobileNavItems.map((item) => {
                       const Icon = item.icon;
                       const isActive = location.pathname === item.path || (item.path === '/' && location.pathname === '/dashboard');
                       return (
                         <Link
                           key={item.path}
                           to={item.path}
-                          onClick={() => setMobileMenuOpen(false)}
-                          className={`flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-colors ${
+                          onClick={() => handleMobileMenuChange(false)}
+                          aria-current={isActive ? 'page' : undefined}
+                          className={`flex min-h-12 items-center justify-between px-4 py-3 rounded-xl text-sm font-semibold transition-colors active:scale-[0.99] ${
                             isActive
-                              ? 'bg-emerald-600/20 text-emerald-400 border border-emerald-500/40'
-                              : 'text-slate-300 hover:bg-slate-900 hover:text-white'
+                              ? 'bg-emerald-600 text-white shadow-md shadow-emerald-950/40'
+                              : 'text-slate-200 bg-slate-900/50 border border-slate-800 hover:bg-slate-800 hover:text-white'
                           }`}
                         >
-                          <div className="flex items-center gap-3">
-                            <Icon className={`w-4 h-4 ${isActive ? 'text-emerald-400' : 'text-slate-400'}`} />
+                          <div className="flex items-center gap-3.5">
+                            <Icon className={`w-5 h-5 shrink-0 ${isActive ? 'text-white' : 'text-emerald-400'}`} />
                             <span>{item.label}</span>
                           </div>
 
                           {item.badge && item.badge > 0 ? (
-                            <Badge className="bg-amber-500 text-slate-950 font-bold text-[10px] px-1.5 py-0">
+                            <Badge className="bg-amber-400 text-slate-950 font-bold text-xs min-w-6 h-6 justify-center px-1.5">
                               {item.badge}
                             </Badge>
                           ) : (
-                            <ChevronRight className="w-3.5 h-3.5 text-slate-600" />
+                            <ChevronRight className={`w-5 h-5 ${isActive ? 'text-emerald-100' : 'text-slate-600'}`} />
                           )}
                         </Link>
                       );
                     })}
-                  </div>
+                    {mobileNavItems.length === 0 && (
+                      <div className="px-4 py-10 text-center">
+                        <Search className="w-8 h-8 text-slate-600 mx-auto mb-3" />
+                        <p className="text-sm font-semibold text-slate-300">No menu pages found</p>
+                        <p className="text-xs text-slate-500 mt-1">Try a different search.</p>
+                      </div>
+                    )}
+                  </nav>
 
                   {/* Drawer Footer */}
-                  <div className="p-4 border-t border-slate-800 bg-slate-900 text-xs text-slate-400 space-y-2">
-                    <div className="flex justify-between items-center">
-                      <span>Logged User:</span>
-                      <span className="text-white font-bold">{user?.fullName || "Operator"}</span>
+                  <div className="p-4 pb-[max(1rem,env(safe-area-inset-bottom))] border-t border-slate-800 bg-slate-900 text-xs text-slate-400 space-y-3">
+                    <div className="flex justify-between items-center gap-3 px-1">
+                      <span>Logged in as</span>
+                      <span className="text-white font-bold truncate">{user?.fullName || "Operator"}</span>
                     </div>
-                    <Button onClick={handleSignOut} size="sm" variant="outline" className="w-full h-8 text-xs border-slate-700 text-red-400">
-                      <LogOut className="w-3.5 h-3.5 mr-1" /> Sign Out
+                    <Button onClick={handleSignOut} variant="outline" className="w-full h-11 rounded-xl text-sm border-slate-700 text-red-400 hover:bg-red-950/40 hover:text-red-300">
+                      <LogOut className="w-4 h-4 mr-2" /> Sign Out
                     </Button>
                   </div>
                 </SheetContent>
@@ -194,7 +228,7 @@ export const Navbar: React.FC = () => {
                 <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-700 flex items-center justify-center shadow-md shadow-emerald-950/50 group-hover:scale-105 transition-transform">
                   <Scale className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
                 </div>
-                <div>
+                <div className="hidden sm:block">
                   <div className="flex items-center gap-1.5">
                     <span className="font-extrabold text-base sm:text-lg tracking-tight text-white font-mono">
                       Mahaffeys
@@ -244,11 +278,12 @@ export const Navbar: React.FC = () => {
               {/* Scale Indicator */}
               <button
                 onClick={() => setConfigOpen(true)}
-                className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-slate-800/90 border border-slate-700/80 hover:border-emerald-500/50 hover:bg-slate-800 transition-all text-left active:scale-95"
+                className="flex h-11 w-11 sm:h-auto sm:w-auto items-center justify-center sm:justify-start gap-2 sm:px-2.5 sm:py-1.5 rounded-xl bg-slate-800/90 border border-slate-700/80 hover:border-emerald-500/50 hover:bg-slate-800 transition-all text-left active:scale-95"
+                aria-label="Open scale status"
               >
-                <Activity className={`w-4 h-4 ${scaleStatus.connected ? 'text-emerald-400 animate-pulse' : 'text-amber-400'}`} />
+                <Activity className={`w-5 h-5 sm:w-4 sm:h-4 ${scaleStatus.connected ? 'text-emerald-400 animate-pulse' : 'text-amber-400'}`} />
 
-                <div className="text-xs">
+                <div className="hidden sm:block text-xs">
                   <div className="flex items-center gap-1 font-semibold font-mono text-slate-100 text-[11px]">
                     <span>{scaleStatus.weight.toLocaleString()} {scaleStatus.unit}</span>
                     <span
