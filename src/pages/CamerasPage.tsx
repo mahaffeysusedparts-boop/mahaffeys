@@ -77,11 +77,12 @@ export default function CamerasPage() {
     setCamAssignment("LICENSE_PLATE");
     setCamUsername("");
     setCamPassword("");
-    setCamNotes("Positioned for scale drive-on vehicle tag capture");
+    setCamNotes("Scale entrance camera; HTTP snapshot is monitored automatically for arriving vehicles");
     setAddModalOpen(true);
   };
 
   const handleOpenEdit = (cam: IpCamera) => {
+
     setEditingVeh(cam);
     setCamName(cam.name);
     setCamIp(cam.ipAddress);
@@ -116,9 +117,14 @@ export default function CamerasPage() {
       toast.error("Camera Name and IP Address are required");
       return;
     }
+    if (camAssignment === "LICENSE_PLATE" && camType !== "SNAPSHOT" && !camSnapshotUrl.trim()) {
+      toast.error("Scale entrance LPR requires an HTTP snapshot URL");
+      return;
+    }
 
     const camObj: IpCamera = {
       id: editingCam ? editingCam.id : `cam-${Date.now()}`,
+
       name: camName.trim(),
       ipAddress: camIp.trim(),
       port: camPort,
@@ -155,7 +161,7 @@ export default function CamerasPage() {
   };
 
   const assignmentLabels: Record<IpCameraAssignment, { label: string; color: string; icon: any }> = {
-    LICENSE_PLATE: { label: "License Plate OCR", color: "text-sky-400 border-sky-500/40 bg-sky-950/60", icon: Scan },
+    LICENSE_PLATE: { label: "Scale Entrance LPR", color: "text-sky-400 border-sky-500/40 bg-sky-950/60", icon: Scan },
     SELLER_FACE: { label: "Seller Face Verification", color: "text-purple-400 border-purple-500/40 bg-purple-950/60", icon: CreditCard },
     CARGO_BAY: { label: "Overhead Scale Cargo", color: "text-amber-400 border-amber-500/40 bg-amber-950/60", icon: Package },
     SCALE_DESK: { label: "Scale Desk Overall", color: "text-emerald-400 border-emerald-500/40 bg-emerald-950/60", icon: Camera },
@@ -164,6 +170,7 @@ export default function CamerasPage() {
   };
 
   return (
+
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
       <Navbar />
 
@@ -477,7 +484,7 @@ export default function CamerasPage() {
                   onChange={(e) => setCamAssignment(e.target.value as IpCameraAssignment)}
                   className="w-full h-10 bg-slate-900 border border-slate-800 rounded-md text-xs text-white px-2 mt-1"
                 >
-                  <option value="LICENSE_PLATE">License Plate OCR Cam</option>
+                  <option value="LICENSE_PLATE">Scale Entrance Automatic LPR</option>
                   <option value="SELLER_FACE">Seller Face Verification</option>
                   <option value="CARGO_BAY">Overhead Scale Cargo Bay</option>
                   <option value="SCALE_DESK">Scale Desk Overall</option>
@@ -489,6 +496,7 @@ export default function CamerasPage() {
 
             <div>
               <Label className="text-slate-300">Full Video Stream URL (Auto-Generated or Custom)</Label>
+
               <Input
                 value={camStreamUrl}
                 onChange={(e) => setCamStreamUrl(e.target.value)}
@@ -498,7 +506,7 @@ export default function CamerasPage() {
             </div>
 
             <div>
-              <Label className="text-slate-300">Snapshot Image URL (Optional for instant photo capture)</Label>
+              <Label className="text-slate-300">Snapshot Image URL {camAssignment === "LICENSE_PLATE" ? "(Required for automatic entrance LPR)" : "(Optional)"}</Label>
               <Input
                 value={camSnapshotUrl}
                 onChange={(e) => setCamSnapshotUrl(e.target.value)}
@@ -509,6 +517,7 @@ export default function CamerasPage() {
 
             <div>
               <Label className="text-slate-300">Notes / Location Description</Label>
+
               <Input
                 value={camNotes}
                 onChange={(e) => setCamNotes(e.target.value)}

@@ -2,7 +2,6 @@ import React, { useState, useRef } from 'react';
 import { CarIntakeRecord, Ticket } from '@/types/scrap';
 import { storageService } from '@/services/storageService';
 import { analyzeDriverLicenseImage, analyzeLicensePlateImage } from '@/services/aiVisionService';
-import { LprCapture, type LprCaptureResult } from '@/components/intake/LprCapture';
 import { PhotoIntakeCard } from '@/components/photo-intake/PhotoIntakeCard';
 import { uploadDataUrl } from '@/services/mediaService';
 
@@ -28,10 +27,10 @@ import {
   Clock,
   Truck,
   FileCheck,
-  Video,
   Hash,
   RefreshCw,
   Sparkles,
+
   CreditCard,
   User,
   Wand2,
@@ -88,13 +87,11 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
   const [sellerIdNumber, setSellerIdNumber] = useState<string>('');
   const [sellerPhone, setSellerPhone] = useState<string>('');
   const [sellerAddress, setSellerAddress] = useState<string>('');
-  const [selectedCustomerId, setSelectedCustomerId] = useState<string>('');
   const [isDlScanned, setIsDlScanned] = useState<boolean>(false);
-  const [isLprOpen, setIsLprOpen] = useState(false);
   const [licensePlate, setLicensePlate] = useState('');
-  const [licensePlatePhotoUrl, setLicensePlatePhotoUrl] = useState('');
 
   // Vehicle Details
+
   const [vin, setVin] = useState<string>('');
 
   const [year, setYear] = useState<number>(new Date().getFullYear());
@@ -240,30 +237,8 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
     void handleDecodeVinWithVin(vin);
   };
 
-  const handleLprComplete = (result: LprCaptureResult) => {
-    setLicensePlate(result.plate);
-    setLicensePlatePhotoUrl(result.imageUrl);
-    setConfirmedVisionScanIds((current) => current.includes(result.scanId) ? current : [...current, result.scanId]);
-    if (result.customer) {
-      setSelectedCustomerId(result.customer.id);
-      setSellerName(result.customer.fullName);
-      setSellerIdNumber(result.customer.idNumber);
-      setSellerPhone(result.customer.phone);
-      setSellerAddress(result.customer.address);
-      setIsDlScanned(Boolean(result.customer.idPhotoUrl));
-      toast.success(`Returning customer confirmed: ${result.customer.fullName}`, {
-        description: `${result.plate} and seller details were added to this intake.`,
-      });
-    } else {
-      setSelectedCustomerId('');
-      toast.success(`New plate captured: ${result.plate}`, {
-        description: 'No matching customer was found. Complete the remaining seller details.',
-      });
-    }
-    setIsLprOpen(false);
-  };
-
   const handleSubmitTicket = () => {
+
     if (isSaving) return;
 
     if (!customReceiptNumber.trim()) {
@@ -337,7 +312,6 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
       ticketType: 'CAR_SALVAGE',
       createdAt: new Date().toISOString(),
       status: 'PENDING',
-      customerId: selectedCustomerId || undefined,
       customerName: finalCustomerName,
       customerPhone: sellerPhone.trim() || undefined,
       customerIdNumber: sellerIdNumber.trim() || undefined,
@@ -345,7 +319,6 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
       carRecord,
       complianceCaptures: {
         vehiclePhotoUrl: photoUrl,
-        licensePlatePhotoUrl: licensePlatePhotoUrl || undefined,
       },
 
       grossTotal: purchasePrice,
@@ -370,11 +343,10 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
       setSellerIdNumber('');
       setSellerPhone('');
       setSellerAddress('');
-      setSelectedCustomerId('');
       setLicensePlate('');
-      setLicensePlatePhotoUrl('');
       setIsDlScanned(false);
       setPhotoUrl('');
+
       setNotes('');
 
       setTitleNumber('');
@@ -411,9 +383,8 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
 
   return (
     <div className="max-w-5xl mx-auto space-y-6 pb-12 font-sans">
-      {isLprOpen && <LprCapture onCancel={() => setIsLprOpen(false)} onComplete={handleLprComplete} />}
-
       {/* Device Camera Native Input */}
+
       <input
 
         type="file"
@@ -479,9 +450,6 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
           <Badge variant="outline" className="border-sky-500/40 text-sky-400 text-xs font-mono gap-1">
             <Clock className="w-3.5 h-3.5" /> FAST INTAKE MODE
           </Badge>
-          <Button type="button" onClick={() => setIsLprOpen(true)} className="rounded-xl bg-sky-500 font-black text-slate-950 shadow-lg shadow-sky-500/20 hover:bg-sky-400">
-            <Video className="mr-2 h-4 w-4" /> Scan plate
-          </Button>
         </div>
       </div>
 
@@ -576,10 +544,11 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
                   <Input value={sellerPhone} onChange={(e) => setSellerPhone(e.target.value)} placeholder="(555) 555-0123" className="mt-1 h-10 bg-slate-950 border-slate-800 text-white text-xs" />
                 </div>
                 <div>
-                  <Label className="flex items-center justify-between text-xs text-slate-300"><span>License Plate</span>{licensePlate && <span className="font-mono text-[10px] text-sky-300">LPR CAPTURED</span>}</Label>
-                  <div className="mt-1 flex gap-2"><Input value={licensePlate} onChange={(e) => setLicensePlate(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))} placeholder="ABC1234" className="h-10 bg-slate-950 border-slate-800 text-amber-300 font-mono font-bold uppercase" /><Button type="button" onClick={() => setIsLprOpen(true)} className="h-10 shrink-0 rounded-xl bg-sky-500 px-3 font-bold text-slate-950 hover:bg-sky-400"><Video className="mr-1.5 h-4 w-4" /> LPR</Button></div>
+                  <Label className="flex items-center justify-between text-xs text-slate-300"><span>License Plate</span>{licensePlate && <span className="font-mono text-[10px] text-sky-300">PLATE ON FILE</span>}</Label>
+                  <Input value={licensePlate} onChange={(e) => setLicensePlate(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))} placeholder="ABC1234" className="mt-1 h-10 bg-slate-950 border-slate-800 text-amber-300 font-mono font-bold uppercase" />
                 </div>
                 <div className="sm:col-span-2">
+
                   <Label className="text-xs text-slate-300">Seller Address</Label>
                   <Input value={sellerAddress} onChange={(e) => setSellerAddress(e.target.value)} placeholder="Street, city, state, ZIP" className="mt-1 h-10 bg-slate-950 border-slate-800 text-white text-xs" />
                 </div>

@@ -3,9 +3,11 @@ import { Customer, MetalGrade, ScrapTicketLine, Ticket, WeightUnit, ComplianceCa
 import { storageService } from '@/services/storageService';
 import { analyzeDriverLicenseImage } from '@/services/aiVisionService';
 import { optimizeImageDataUrl, uploadDataUrl } from '@/services/mediaService';
+import { EntranceLprMonitor } from './EntranceLprMonitor';
 import { LiveScaleGauge } from '../scale/LiveScaleGauge';
 import { ComplianceCaptureModal } from '../compliance/ComplianceCaptureModal';
 import {
+
   calculateComplianceScore,
   DLScanResult,
 } from '@/utils/complianceUtils';
@@ -536,9 +538,12 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
         </div>
       </div>
 
+      <EntranceLprMonitor onTicketCreated={() => refreshPendingTickets()} />
+
       {/* PENDING SCRAP INTAKES GROUP */}
       {pendingTickets.length > 0 && (
         <Card className="bg-slate-900 border-2 border-amber-500/40 text-white shadow-xl overflow-hidden">
+
           <CardHeader className="py-3 px-4 bg-gradient-to-r from-amber-950/80 to-slate-950 border-b border-amber-500/30 flex flex-row items-center justify-between">
             <div className="flex items-center gap-2">
               <Clock className="w-4 h-4 text-amber-400" />
