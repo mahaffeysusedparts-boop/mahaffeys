@@ -128,7 +128,22 @@
     color: #000000 !important;
   }
 
-  header, nav, .print\:hidden {
+  /* Hide the mounted app and print only the active receipt dialog. */
+  #root {
+    display: none !important;
+  }
+
+  body > * {
+    visibility: hidden !important;
+  }
+
+  .printable-receipt-container,
+  .printable-receipt-container * {
+    visibility: visible !important;
+  }
+
+  header, nav, .print\:hidden,
+  .printable-receipt-container > button {
     display: none !important;
   }
 
