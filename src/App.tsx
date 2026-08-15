@@ -2,34 +2,38 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "./context/AuthContext";
 import { ProtectedRoute } from "./components/auth/ProtectedRoute";
+import { LoadingSpinner } from "./components/layout/LoadingSpinner";
 
-import DashboardPage from "./pages/DashboardPage";
-import IntakePage from "./pages/IntakePage";
-import PublicInventoryPage from "./pages/PublicInventoryPage";
-import PublicVehicleInventoryPage from "./pages/PublicVehicleInventoryPage";
-import TicketsPage from "./pages/TicketsPage";
-import PricingPage from "./pages/PricingPage";
-import CustomersPage from "./pages/CustomersPage";
-import SettingsPage from "./pages/SettingsPage";
-import { CompliancePage } from "./pages/CompliancePage";
-import ContainersPage from "./pages/ContainersPage";
-import CashDrawerPage from "./pages/CashDrawerPage";
-import YardMapPage from "./pages/YardMapPage";
-import PullAPartPage from "./pages/PullAPartPage";
-import CamerasPage from "./pages/CamerasPage";
-import SystemHealthPage from "./pages/SystemHealthPage";
-import ServerAdminPage from "./pages/ServerAdminPage";
-import UserManagementPage from "./pages/UserManagementPage";
-import LoginPage from "./pages/LoginPage";
-import PendingApprovalPage from "./pages/PendingApprovalPage";
-import ReportsPage from "./pages/ReportsPage";
-import ShipmentsPage from "./pages/ShipmentsPage";
-import TeamOpsPage from "./pages/TeamOpsPage";
-import OperationsPage from "./pages/OperationsPage";
-import NotFound from "./pages/NotFound";
+const DashboardPage = lazy(() => import("./pages/DashboardPage"));
+const IntakePage = lazy(() => import("./pages/IntakePage"));
+const PublicInventoryPage = lazy(() => import("./pages/PublicInventoryPage"));
+const PublicVehicleInventoryPage = lazy(() => import("./pages/PublicVehicleInventoryPage"));
+const TicketsPage = lazy(() => import("./pages/TicketsPage"));
+const PricingPage = lazy(() => import("./pages/PricingPage"));
+const CustomersPage = lazy(() => import("./pages/CustomersPage"));
+const SettingsPage = lazy(() => import("./pages/SettingsPage"));
+const CompliancePage = lazy(() =>
+  import("./pages/CompliancePage").then((module) => ({ default: module.CompliancePage })),
+);
+const ContainersPage = lazy(() => import("./pages/ContainersPage"));
+const CashDrawerPage = lazy(() => import("./pages/CashDrawerPage"));
+const YardMapPage = lazy(() => import("./pages/YardMapPage"));
+const PullAPartPage = lazy(() => import("./pages/PullAPartPage"));
+const CamerasPage = lazy(() => import("./pages/CamerasPage"));
+const SystemHealthPage = lazy(() => import("./pages/SystemHealthPage"));
+const ServerAdminPage = lazy(() => import("./pages/ServerAdminPage"));
+const UserManagementPage = lazy(() => import("./pages/UserManagementPage"));
+const LoginPage = lazy(() => import("./pages/LoginPage"));
+const PendingApprovalPage = lazy(() => import("./pages/PendingApprovalPage"));
+const ReportsPage = lazy(() => import("./pages/ReportsPage"));
+const ShipmentsPage = lazy(() => import("./pages/ShipmentsPage"));
+const TeamOpsPage = lazy(() => import("./pages/TeamOpsPage"));
+const OperationsPage = lazy(() => import("./pages/OperationsPage"));
+const NotFound = lazy(() => import("./pages/NotFound"));
 
 const queryClient = new QueryClient();
 
@@ -40,7 +44,8 @@ const App = () => (
         <Toaster />
         <Sonner position="top-right" />
         <BrowserRouter>
-          <Routes>
+          <Suspense fallback={<LoadingSpinner />}>
+            <Routes>
             {/* PUBLIC AUTH ROUTES */}
             <Route path="/setup" element={<LoginPage />} />
             <Route path="/login" element={<LoginPage />} />
@@ -186,7 +191,8 @@ const App = () => (
 
             {/* CATCH-ALL 404 */}
             <Route path="*" element={<NotFound />} />
-          </Routes>
+            </Routes>
+          </Suspense>
         </BrowserRouter>
       </TooltipProvider>
     </AuthProvider>
