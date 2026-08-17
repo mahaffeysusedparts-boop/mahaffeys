@@ -7,6 +7,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "./context/AuthContext";
 import { ProtectedRoute } from "./components/auth/ProtectedRoute";
 import { LoadingSpinner } from "./components/layout/LoadingSpinner";
+import "./print.css";
 
 const DashboardPage = lazy(() => import("./pages/DashboardPage"));
 const IntakePage = lazy(() => import("./pages/IntakePage"));

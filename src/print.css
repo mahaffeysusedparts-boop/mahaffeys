@@ -1,0 +1,53 @@
+@media print {
+  @page vehicle-sticker {
+    size: 4in 6in;
+    margin: 0;
+  }
+
+  body {
+    margin: 0 !important;
+    background: #ffffff !important;
+  }
+
+  .vehicle-sticker-dialog {
+    position: static !important;
+    display: block !important;
+    width: 4in !important;
+    height: 6in !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    border: 0 !important;
+    background: #ffffff !important;
+    box-shadow: none !important;
+    transform: none !important;
+  }
+
+  .vehicle-sticker-print-container,
+  .vehicle-sticker-print-container * {
+    visibility: visible !important;
+  }
+
+  .vehicle-sticker-print-container {
+    position: absolute !important;
+    inset: 0 !important;
+    width: 4in !important;
+    height: 6in !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+  }
+
+  .vehicle-sticker {
+    page: vehicle-sticker;
+    width: 4in !important;
+    height: 6in !important;
+    max-width: none !important;
+    margin: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    break-inside: avoid;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+}

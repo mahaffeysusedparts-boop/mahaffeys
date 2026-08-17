@@ -4,6 +4,8 @@ import { storageService } from '@/services/storageService';
 import { analyzeDriverLicenseImage, analyzeLicensePlateImage } from '@/services/aiVisionService';
 import { PhotoIntakeCard } from '@/components/photo-intake/PhotoIntakeCard';
 import { uploadDataUrl } from '@/services/mediaService';
+import { PrintStickerModal } from '@/components/vehicle/PrintStickerModal';
+import { VehicleStickerData } from '@/components/vehicle/VehicleSticker';
 
 import { decodeVin, VinDecodeResult } from '@/services/vinService';
 import { Button } from '@/components/ui/button';
@@ -35,6 +37,7 @@ import {
   User,
   Wand2,
   Ban,
+  Printer,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -71,6 +74,8 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
   // Vehicle Picture Capture State
   const [photoUrl, setPhotoUrl] = useState<string>('');
   const [isSaving, setIsSaving] = useState(false);
+  const [stickerVehicle, setStickerVehicle] = useState<VehicleStickerData | null>(null);
+  const [isStickerOpen, setIsStickerOpen] = useState(false);
   
   // References for device camera / file capture
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -250,7 +255,8 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
       return;
     }
 
-    const currentOp = storageService.getSettings().operatorName;
+    const settings = storageService.getSettings();
+    const currentOp = settings.operatorName;
     const finalCustomerName = sellerName.trim() || (originSource.trim() ? `Tow Origin: ${originSource}` : 'Tow Intake');
     const pendingVin = vin.trim() || `PENDING-${customReceiptNumber.trim()}`;
 
@@ -307,10 +313,11 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
       notes: notes.trim() || undefined,
     };
 
+    const intakeDate = new Date().toISOString();
     const newTicket: Ticket = {
       id: customReceiptNumber.trim(),
       ticketType: 'CAR_SALVAGE',
-      createdAt: new Date().toISOString(),
+      createdAt: intakeDate,
       status: 'PENDING',
       customerName: finalCustomerName,
       customerPhone: sellerPhone.trim() || undefined,
@@ -333,8 +340,16 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
     setIsSaving(true);
     try {
       storageService.saveTicket(newTicket);
+      setStickerVehicle({
+        businessName: settings.yardName,
+        make: carRecord.make || 'Unknown Make',
+        model: carRecord.model || 'Unknown Model',
+        year: carRecord.year,
+        vin: carRecord.vin,
+        intakeDate,
+      });
       toast.success(`Vehicle saved to inventory`, {
-        description: `${year} ${make} ${model} added as pending intake.`,
+        description: `${year} ${make} ${model} added as pending intake. Sticker is ready to print.`,
       });
 
       setVin('');
@@ -1019,12 +1034,32 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
                 {isSaving ? <RefreshCw className="w-5 h-5 mr-2 animate-spin" /> : <CheckCircle2 className="w-5 h-5 mr-2" />}
                 {isSaving ? 'Saving Pending Intake…' : 'Save to Pending Group'}
               </Button>
+
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsStickerOpen(true)}
+                disabled={!stickerVehicle || isSaving}
+                className="h-11 w-full rounded-xl border-amber-400/50 bg-slate-950 font-bold text-amber-300 hover:bg-amber-400 hover:text-slate-950 disabled:border-slate-700 disabled:text-slate-600"
+              >
+                <Printer className="mr-2 size-4" />
+                {stickerVehicle ? 'Print Saved Vehicle Sticker' : 'Print Sticker After Saving'}
+              </Button>
+              <p className="text-center text-[10px] text-slate-500">
+                Sticker printing unlocks after a successful vehicle save.
+              </p>
             </CardContent>
           </Card>
 
         </div>
 
       </div>
+
+      <PrintStickerModal
+        open={isStickerOpen}
+        onOpenChange={setIsStickerOpen}
+        vehicle={stickerVehicle}
+      />
     </div>
   );
 };
