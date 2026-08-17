@@ -97,7 +97,6 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
     vehiclePhotoUrl: undefined,
     licensePlatePhotoUrl: undefined,
     loadPhotoUrl: undefined,
-    signatureUrl: undefined,
   });
   const [isComplianceModalOpen, setIsComplianceModalOpen] = useState(false);
 
@@ -303,7 +302,6 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
       vehiclePhotoUrl: undefined,
       licensePlatePhotoUrl: undefined,
       loadPhotoUrl: undefined,
-      signatureUrl: undefined,
     });
     setCurrentStep(1);
   };
@@ -844,13 +842,13 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
 
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 border-t border-slate-800">
                     <p className="text-xs text-slate-400">
-                      5-point photo verification, digital signatures & ID scan suite.
+                      5-point photo verification and ID scan suite. Both parties sign the printed voucher.
                     </p>
                     <Button
                       onClick={() => setIsComplianceModalOpen(true)}
                       className="bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs gap-2 min-h-[44px]"
                     >
-                      <Camera className="w-4 h-4" /> Launch Camera & Signature Studio
+                      <Camera className="w-4 h-4" /> Launch Photo Compliance Studio
                     </Button>
                   </div>
                 </CardContent>

@@ -41,7 +41,6 @@ const emptyCaptures: ComplianceCaptures = {
   vehiclePhotoUrl: undefined,
   licensePlatePhotoUrl: undefined,
   loadPhotoUrl: undefined,
-  signatureUrl: undefined,
 };
 
 const makeTicketNumber = () => storageService.generateScrapReceiptNumber();
