@@ -7,6 +7,7 @@ export interface VehicleStickerData {
   year: number;
   vin: string;
   intakeDate: string;
+  publicUrl: string;
 }
 
 interface VehicleStickerProps {
@@ -42,12 +43,12 @@ export const VehicleSticker = ({ vehicle }: VehicleStickerProps) => (
       <div className="my-4 flex flex-1 items-center justify-center">
         <div className="rounded-2xl border-4 border-slate-950 bg-white p-3">
           <QRCode
-            value={vehicle.vin}
+            value={vehicle.publicUrl}
             size={190}
             bgColor="#ffffff"
             fgColor="#020617"
             level="H"
-            title={`VIN ${vehicle.vin}`}
+            title={`Public details for VIN ${vehicle.vin}`}
           />
         </div>
       </div>
@@ -65,7 +66,7 @@ export const VehicleSticker = ({ vehicle }: VehicleStickerProps) => (
             <p className="text-lg font-black">{formatIntakeDate(vehicle.intakeDate)}</p>
           </div>
           <p className="text-right text-[10px] font-bold uppercase leading-tight text-slate-600">
-            Scan for<br />vehicle VIN
+            Scan for public<br />vehicle details
           </p>
         </div>
       </div>

@@ -347,6 +347,7 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
         year: carRecord.year,
         vin: carRecord.vin,
         intakeDate,
+        publicUrl: `${window.location.origin}/inventory/vehicle/${encodeURIComponent(carRecord.vin)}`,
       });
       toast.success(`Vehicle saved to inventory`, {
         description: `${year} ${make} ${model} added as pending intake. Sticker is ready to print.`,

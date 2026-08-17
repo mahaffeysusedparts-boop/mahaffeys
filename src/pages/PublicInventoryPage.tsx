@@ -1,10 +1,11 @@
 import React, { lazy, Suspense, useCallback, useDeferredValue, useEffect, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { fetchInventory, type InventoryResponse } from "@/services/inventoryService";
 import { storageService } from "@/services/storageService";
 import { PullYardVehicle } from "@/types/scrap";
 import { generateSamplePhoto } from "@/utils/complianceUtils";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { VehicleAvailabilityBadge } from "@/components/inventory/VehicleAvailabilityBadge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -18,27 +19,26 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import {
+  Sheet,
+  SheetClose,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
+import {
   Car,
   Search,
-  MapPin,
-  Sparkles,
-  Printer,
-  Wrench,
-  Filter,
-  CheckCircle2,
-  Clock,
   ChevronLeft,
   ChevronRight,
   ShieldCheck,
   Bell,
-  Layers,
-  Calendar,
   AlertCircle,
   Layers3,
-  Image as ImageIcon,
   RefreshCw,
   Eye,
-  Radio,
   Loader2,
   Lock,
   Scale,
@@ -47,6 +47,8 @@ import {
   BellRing,
   Phone,
   CalendarClock,
+  SlidersHorizontal,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -98,14 +100,15 @@ const formatInventoryAge = (updatedAt: string | null, now: number) => {
 
 export default function PublicInventoryPage() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
   const yardSettings = storageService.getSettings();
   const yardName = yardSettings.yardName;
   const [inventory, setInventory] = useState<InventoryResponse>(EMPTY_INVENTORY);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [refreshToken, setRefreshToken] = useState(0);
-  const [selectedVehicle, setSelectedVehicle] = useState<PullYardVehicle | null>(null);
   const [interchangeOpen, setInterchangeOpen] = useState(false);
+  const [filterOpen, setFilterOpen] = useState(false);
   const [favoriteVehicles, setFavoriteVehicles] = useState<PullYardVehicle[]>(readFavorites);
   const [watchedIds, setWatchedIds] = useState<string[]>(() => Object.keys(readWatches()));
   const [favoritesOnly, setFavoritesOnly] = useState(false);
@@ -191,13 +194,6 @@ export default function PublicInventoryPage() {
   }, [vehicles]);
 
   useEffect(() => {
-    const requestedVehicleId = searchParams.get("vehicle");
-    if (!requestedVehicleId || selectedVehicle?.id === requestedVehicleId) return;
-    const requestedVehicle = vehicles.find((vehicle) => vehicle.id === requestedVehicleId);
-    if (requestedVehicle) setSelectedVehicle(requestedVehicle);
-  }, [searchParams, selectedVehicle?.id, vehicles]);
-
-  useEffect(() => {
     if (!vehicles.length || !watchedIds.length) return;
     const watches = readWatches();
     let changed = false;
@@ -223,13 +219,7 @@ export default function PublicInventoryPage() {
   }, [vehicles, watchedIds]);
 
   const openVehicle = (vehicle: PullYardVehicle) => {
-    setSelectedVehicle(vehicle);
-    updateQuery({ vehicle: vehicle.id });
-  };
-
-  const closeVehicle = () => {
-    setSelectedVehicle(null);
-    updateQuery({ vehicle: null });
+    navigate(`/inventory/vehicle/${encodeURIComponent(vehicle.vin)}`);
   };
 
   const toggleFavorite = (vehicle: PullYardVehicle) => {
@@ -265,9 +255,7 @@ export default function PublicInventoryPage() {
   };
 
   const shareVehicle = async (vehicle: PullYardVehicle) => {
-    const url = new URL("/inventory", window.location.origin);
-    url.searchParams.set("search", vehicle.vin);
-    url.searchParams.set("vehicle", vehicle.id);
+    const url = new URL(`/inventory/vehicle/${encodeURIComponent(vehicle.vin)}`, window.location.origin);
     const shareData = {
       title: `${vehicle.year} ${vehicle.make} ${vehicle.model}`,
       text: `View this vehicle at ${yardName}`,
@@ -308,6 +296,8 @@ export default function PublicInventoryPage() {
   };
 
   const availableCount = inventory.counts.available;
+  const activeFilterCount = [search.trim(), selectedSection !== "ALL" ? selectedSection : "", partFilter !== "ALL" ? partFilter : ""].filter(Boolean).length;
+  const clearFilters = () => updateQuery({ search: null, section: null, part: null, page: null });
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
@@ -383,60 +373,74 @@ export default function PublicInventoryPage() {
         ) : null}
 
         {/* Quick Search & Filtering Bar */}
-        <Card className="bg-slate-900 border-slate-800 text-white shadow-xl">
-          <CardContent className="p-4 space-y-3">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              
-              {/* Text Search */}
-              <div className="relative">
-                <Search className="w-4 h-4 absolute left-3 top-3 text-slate-500" />
-                <Input
-                  placeholder="Search Year, Make, Model, or VIN..."
-                  value={search}
-                  onChange={(e) => updateQuery({ search: e.target.value, page: null })}
-                  className="bg-slate-950 border-slate-800 text-white text-xs pl-9 h-10"
-                />
+        <div className="md:hidden">
+          <Sheet open={filterOpen} onOpenChange={setFilterOpen}>
+            <SheetTrigger asChild>
+              <Button type="button" className="h-12 w-full rounded-2xl bg-amber-400 font-black text-slate-950 hover:bg-amber-300">
+                <SlidersHorizontal className="mr-2 size-4" /> Search & Filter Inventory
+                {activeFilterCount ? <Badge className="ml-2 rounded-full bg-slate-950 px-2 text-white">{activeFilterCount}</Badge> : null}
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="bottom" className="max-h-[88vh] overflow-y-auto rounded-t-[28px] border-slate-700 bg-slate-950 p-0 text-white">
+              <SheetHeader className="border-b border-slate-800 px-5 py-5 text-left">
+                <SheetTitle className="flex items-center gap-2 text-xl font-black text-white"><SlidersHorizontal className="size-5 text-amber-400" /> Find a vehicle</SheetTitle>
+                <SheetDescription className="text-xs text-slate-400">Search the live catalog by vehicle, yard section, or needed component.</SheetDescription>
+              </SheetHeader>
+              <div className="space-y-5 px-5 py-6">
+                <div>
+                  <label className="mb-2 block text-xs font-black uppercase tracking-wider text-slate-400">Vehicle search</label>
+                  <div className="relative">
+                    <Search className="absolute left-3 top-3.5 size-4 text-slate-500" />
+                    <Input value={search} onChange={(event) => updateQuery({ search: event.target.value, page: null })} placeholder="Year, make, model, or VIN" className="h-12 rounded-xl border-slate-700 bg-slate-900 pl-10 text-white" />
+                  </div>
+                </div>
+                <div>
+                  <label className="mb-2 block text-xs font-black uppercase tracking-wider text-slate-400">Yard section</label>
+                  <Select value={selectedSection} onValueChange={(value) => updateQuery({ section: value, page: null })}>
+                    <SelectTrigger className="h-12 rounded-xl border-slate-700 bg-slate-900 text-white"><SelectValue placeholder="All yard sections" /></SelectTrigger>
+                    <SelectContent className="border-slate-700 bg-slate-900 text-white">
+                      <SelectItem value="ALL">All Yard Sections</SelectItem><SelectItem value="Domestic Trucks & SUVs">Domestic Trucks & SUVs</SelectItem><SelectItem value="Ford & Lincoln">Ford & Lincoln</SelectItem><SelectItem value="GM & Chevrolet">GM & Chevrolet</SelectItem><SelectItem value="Asian Imports">Asian Imports</SelectItem><SelectItem value="Chrysler & Dodge">Chrysler & Dodge</SelectItem><SelectItem value="European">European</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <label className="mb-2 block text-xs font-black uppercase tracking-wider text-slate-400">Needed component</label>
+                  <Select value={partFilter} onValueChange={(value) => updateQuery({ part: value, page: null })}>
+                    <SelectTrigger className="h-12 rounded-xl border-slate-700 bg-slate-900 text-white"><SelectValue placeholder="All components" /></SelectTrigger>
+                    <SelectContent className="border-slate-700 bg-slate-900 text-white">
+                      <SelectItem value="ALL">All Available Components</SelectItem><SelectItem value="Engine">Engine / Short Block</SelectItem><SelectItem value="Transmission">Transmission</SelectItem><SelectItem value="Doors">Doors & Panels</SelectItem><SelectItem value="Wheels">Alloy Wheels & Rims</SelectItem><SelectItem value="Headlights">Headlights / Lenses</SelectItem><SelectItem value="Fenders">Fenders / Body</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
+              <SheetFooter className="sticky bottom-0 grid grid-cols-2 gap-2 border-t border-slate-800 bg-slate-950 px-5 py-4 sm:space-x-0">
+                <Button type="button" variant="outline" onClick={clearFilters} disabled={!activeFilterCount} className="h-11 rounded-xl border-slate-700 bg-slate-900 text-slate-200">Clear filters</Button>
+                <SheetClose asChild><Button type="button" className="h-11 rounded-xl bg-amber-400 font-black text-slate-950 hover:bg-amber-300">Show {inventory.total} vehicles</Button></SheetClose>
+              </SheetFooter>
+            </SheetContent>
+          </Sheet>
+        </div>
 
-              {/* Yard Section Filter */}
-              <div>
-                <Select value={selectedSection} onValueChange={(value) => updateQuery({ section: value, page: null })}>
-                  <SelectTrigger className="bg-slate-950 border-slate-800 text-white text-xs h-10">
-                    <SelectValue placeholder="All Yard Sections" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-slate-900 border-slate-800 text-white text-xs">
-                    <SelectItem value="ALL">All Yard Sections ({inventory.total} Matches)</SelectItem>
-                    <SelectItem value="Domestic Trucks & SUVs">Domestic Trucks & SUVs</SelectItem>
-                    <SelectItem value="Ford & Lincoln">Ford & Lincoln</SelectItem>
-                    <SelectItem value="GM & Chevrolet">GM & Chevrolet</SelectItem>
-                    <SelectItem value="Asian Imports">Asian Imports</SelectItem>
-                    <SelectItem value="Chrysler & Dodge">Chrysler & Dodge</SelectItem>
-                    <SelectItem value="European">European</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Specific Part Component Filter */}
-              <div>
-                <Select value={partFilter} onValueChange={(value) => updateQuery({ part: value, page: null })}>
-                  <SelectTrigger className="bg-slate-950 border-slate-800 text-white text-xs h-10">
-                    <SelectValue placeholder="Filter by Needed Component" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-slate-900 border-slate-800 text-white text-xs">
-                    <SelectItem value="ALL">All Available Components</SelectItem>
-                    <SelectItem value="Engine">Engine / Short Block</SelectItem>
-                    <SelectItem value="Transmission">Transmission</SelectItem>
-                    <SelectItem value="Doors">Doors & Panels</SelectItem>
-                    <SelectItem value="Wheels">Alloy Wheels & Rims</SelectItem>
-                    <SelectItem value="Headlights">Headlights / Lenses</SelectItem>
-                    <SelectItem value="Fenders">Fenders / Body</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
+        <Card className="hidden border-slate-800 bg-slate-900 text-white shadow-xl md:block">
+          <CardContent className="p-4">
+            <div className="grid grid-cols-[1.2fr_1fr_1fr_auto] gap-3">
+              <div className="relative"><Search className="absolute left-3 top-3 size-4 text-slate-500" /><Input placeholder="Search year, make, model, or VIN" value={search} onChange={(event) => updateQuery({ search: event.target.value, page: null })} className="h-10 border-slate-800 bg-slate-950 pl-9 text-xs text-white" /></div>
+              <Select value={selectedSection} onValueChange={(value) => updateQuery({ section: value, page: null })}><SelectTrigger className="h-10 border-slate-800 bg-slate-950 text-xs text-white"><SelectValue placeholder="All Yard Sections" /></SelectTrigger><SelectContent className="border-slate-800 bg-slate-900 text-xs text-white"><SelectItem value="ALL">All Yard Sections</SelectItem><SelectItem value="Domestic Trucks & SUVs">Domestic Trucks & SUVs</SelectItem><SelectItem value="Ford & Lincoln">Ford & Lincoln</SelectItem><SelectItem value="GM & Chevrolet">GM & Chevrolet</SelectItem><SelectItem value="Asian Imports">Asian Imports</SelectItem><SelectItem value="Chrysler & Dodge">Chrysler & Dodge</SelectItem><SelectItem value="European">European</SelectItem></SelectContent></Select>
+              <Select value={partFilter} onValueChange={(value) => updateQuery({ part: value, page: null })}><SelectTrigger className="h-10 border-slate-800 bg-slate-950 text-xs text-white"><SelectValue placeholder="All components" /></SelectTrigger><SelectContent className="border-slate-800 bg-slate-900 text-xs text-white"><SelectItem value="ALL">All Available Components</SelectItem><SelectItem value="Engine">Engine / Short Block</SelectItem><SelectItem value="Transmission">Transmission</SelectItem><SelectItem value="Doors">Doors & Panels</SelectItem><SelectItem value="Wheels">Alloy Wheels & Rims</SelectItem><SelectItem value="Headlights">Headlights / Lenses</SelectItem><SelectItem value="Fenders">Fenders / Body</SelectItem></SelectContent></Select>
+              <Button type="button" variant="outline" onClick={clearFilters} disabled={!activeFilterCount} className="h-10 rounded-xl border-slate-700 bg-slate-950 px-5 text-xs font-black text-slate-200 hover:bg-slate-800">Clear filters</Button>
             </div>
           </CardContent>
         </Card>
+
+        {activeFilterCount ? (
+          <div className="flex flex-wrap items-center gap-2" aria-label="Active filters">
+            <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Active filters</span>
+            {search.trim() ? <button type="button" onClick={() => updateQuery({ search: null, page: null })} className="flex items-center gap-1 rounded-full border border-sky-500/30 bg-sky-500/10 px-3 py-1 text-xs text-sky-200">Search: {search.trim()} <X className="size-3" /></button> : null}
+            {selectedSection !== "ALL" ? <button type="button" onClick={() => updateQuery({ section: null, page: null })} className="flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-xs text-amber-200">{selectedSection} <X className="size-3" /></button> : null}
+            {partFilter !== "ALL" ? <button type="button" onClick={() => updateQuery({ part: null, page: null })} className="flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs text-emerald-200">Part: {partFilter} <X className="size-3" /></button> : null}
+            <Button type="button" variant="ghost" size="sm" onClick={clearFilters} className="h-7 rounded-full px-3 text-xs font-bold text-rose-300 hover:bg-rose-500/10 hover:text-rose-200">Clear all</Button>
+          </div>
+        ) : null}
 
         {recentVehicles.length > 0 && !favoritesOnly ? (
           <section aria-labelledby="recent-arrivals-heading" className="space-y-3">
@@ -461,12 +465,13 @@ export default function PublicInventoryPage() {
                     className="size-16 shrink-0 rounded-xl object-cover"
                     onError={(event) => { (event.currentTarget as HTMLImageElement).src = FALLBACK_VEHICLE_PHOTO; }}
                   />
-                  <span className="min-w-0">
+                  <div className="min-w-0">
                     <span className="block truncate text-sm font-black text-white group-hover:text-amber-300">
                       {vehicle.year} {vehicle.make} {vehicle.model}
                     </span>
                     <span className="mt-1 block truncate text-xs text-slate-400">{vehicle.section}</span>
-                  </span>
+                    <div className="mt-2"><VehicleAvailabilityBadge vehicle={vehicle} showRecent={false} /></div>
+                  </div>
                 </button>
               ))}
             </div>
@@ -551,9 +556,6 @@ export default function PublicInventoryPage() {
               )}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" aria-busy={isLoading}>
                 {catalogVehicles.map((veh) => {
-                  const daysAgo = Math.floor(
-                    (Date.now() - new Date(veh.dateSetInYard).getTime()) / (1000 * 60 * 60 * 24)
-                  );
                   const displayPhoto = veh.photoUrl || FALLBACK_VEHICLE_PHOTO;
                   const isFavorite = favoriteIds.includes(veh.id);
                   const isWatched = watchedIds.includes(veh.id);
@@ -584,20 +586,8 @@ export default function PublicInventoryPage() {
                         </Badge>
                       </div>
 
-                      <div className="absolute top-2 right-2 z-10">
-                        {veh.status === "AVAILABLE" ? (
-                          <Badge className="bg-emerald-950/90 backdrop-blur-md text-emerald-300 border-emerald-500/40 text-[10px] gap-1 shadow-md">
-                            <Sparkles className="w-3 h-3 text-emerald-400" /> {daysAgo === 0 ? "STAGED TODAY" : `${daysAgo}d ON YARD`}
-                          </Badge>
-                        ) : veh.status === "PENDING" ? (
-                          <Badge className="bg-amber-950/90 backdrop-blur-md text-amber-300 border-amber-500/40 text-[10px] shadow-md">
-                            PENDING INTAKE
-                          </Badge>
-                        ) : (
-                          <Badge variant="outline" className="bg-slate-950/90 backdrop-blur-md border-rose-800 text-rose-400 text-[10px]">
-                            CRUSHED / STRIPPED
-                          </Badge>
-                        )}
+                      <div className="absolute right-2 top-2 z-10 max-w-[72%]">
+                        <VehicleAvailabilityBadge vehicle={veh} />
                       </div>
 
                       <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between text-[11px] font-mono font-bold text-white bg-slate-950/80 backdrop-blur-md px-2.5 py-1 rounded-lg border border-slate-800">
@@ -651,24 +641,28 @@ export default function PublicInventoryPage() {
                       {/* Available Parts checklist */}
                       <div className="space-y-1.5">
                         <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
-                          Intact Components ({veh.partsRemaining.length}):
+                          {veh.status === "CRUSHED" ? "Component availability" : `Intact Components (${veh.partsRemaining.length}):`}
                         </span>
-                        <div className="flex flex-wrap gap-1">
-                          {veh.partsRemaining.map((part, i) => (
-                            <span
-                              key={i}
-                              className="text-[10px] px-2 py-0.5 rounded bg-slate-950 text-slate-300 border border-slate-800 font-mono"
-                            >
-                              {part}
-                            </span>
-                          ))}
-                        </div>
+                        {veh.status === "CRUSHED" ? (
+                          <p className="text-xs font-semibold text-rose-300">This vehicle is no longer available for parts.</p>
+                        ) : (
+                          <div className="flex flex-wrap gap-1">
+                            {veh.partsRemaining.map((part, i) => (
+                              <span
+                                key={i}
+                                className="text-[10px] px-2 py-0.5 rounded bg-slate-950 text-slate-300 border border-slate-800 font-mono"
+                              >
+                                {part}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </CardContent>
 
                     <div className="p-3 bg-slate-950/80 border-t border-slate-800 flex items-center justify-between text-xs text-amber-400 font-semibold group-hover:bg-amber-950/30 transition-colors">
                       <span className="flex items-center gap-1.5">
-                        <Eye className="w-3.5 h-3.5" /> View Photo & Location Pass
+                        <Eye className="w-3.5 h-3.5" /> View vehicle details
                       </span>
                       <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                     </div>
@@ -738,119 +732,6 @@ export default function PublicInventoryPage() {
           </div>
         </div>
       </footer>
-
-      {/* Vehicle Detailed Location & Printable Ticket Modal */}
-      {selectedVehicle && (
-        <Dialog open={!!selectedVehicle} onOpenChange={(open) => { if (!open) closeVehicle(); }}>
-          <DialogContent className="max-w-lg bg-slate-950 text-slate-100 border-slate-800 p-6 max-h-[90vh] overflow-y-auto">
-            <DialogHeader className="border-b border-slate-800 pb-3">
-              <div className="flex items-center justify-between">
-                <Badge className="bg-amber-950 text-amber-300 border-amber-500/40 text-xs font-mono">
-                  {selectedVehicle.section}
-                </Badge>
-                <Badge variant="outline" className="border-slate-700 text-slate-300 text-xs">
-                  {selectedVehicle.status}
-                </Badge>
-              </div>
-              <DialogTitle className="text-xl font-bold text-white mt-2">
-                {selectedVehicle.year} {selectedVehicle.make} {selectedVehicle.model}
-              </DialogTitle>
-              <DialogDescription className="text-xs text-slate-400">
-                Self-Service Vehicle Locator & Component Sheet
-              </DialogDescription>
-            </DialogHeader>
-
-            <div className="space-y-4 pt-2">
-              {/* Full Photo Display */}
-              <div className="aspect-video bg-slate-950 rounded-xl overflow-hidden border border-slate-800">
-                <img
-                  src={selectedVehicle.photoUrl || FALLBACK_VEHICLE_PHOTO}
-                  alt="Vehicle Full Photo"
-                  decoding="async"
-                  className="w-full h-full object-cover"
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).src = FALLBACK_VEHICLE_PHOTO;
-                  }}
-                />
-              </div>
-
-              <div className="bg-slate-900 p-4 rounded-xl border border-slate-800 space-y-2 text-xs font-mono">
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Yard Section:</span>
-                  <span className="text-amber-300 font-bold">{selectedVehicle.section}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Color:</span>
-                  <span className="text-white font-bold">{selectedVehicle.color || "White"}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Full VIN:</span>
-                  <span className="text-amber-300 font-bold">{selectedVehicle.vin}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Date Set In Yard:</span>
-                  <span className="text-slate-200">{new Date(selectedVehicle.dateSetInYard).toLocaleDateString()}</span>
-                </div>
-              </div>
-
-              {/* Available Parts Checklist */}
-              <div className="space-y-2">
-                <span className="text-xs font-bold text-slate-300 uppercase tracking-wider block">
-                  Intact Parts Available for Harvesting:
-                </span>
-                <div className="grid grid-cols-2 gap-1.5 text-xs">
-                  {selectedVehicle.partsRemaining.map((part, idx) => (
-                    <div key={idx} className="p-2 bg-slate-900 rounded border border-slate-800 flex items-center gap-1.5 text-slate-200">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                      <span>{part}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Rules Reminder */}
-              <div className="p-3 bg-amber-950/30 border border-amber-500/30 rounded-lg text-[11px] text-amber-200 space-y-1">
-                <div className="font-bold flex items-center gap-1">
-                  <ShieldCheck className="w-4 h-4 text-amber-400" /> Yard Safety Rules:
-                </div>
-                <p className="text-slate-300">
-                  {yardSettings.safetyRequirements || "Closed-toe boots and safety glasses are required."}
-                </p>
-              </div>
-            </div>
-
-            <DialogFooter className="grid grid-cols-3 gap-2 pt-3 border-t border-slate-800 sm:grid-cols-3 sm:space-x-0">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => toggleFavorite(selectedVehicle)}
-                className="rounded-xl border-slate-700 bg-slate-900 text-xs text-slate-200"
-              >
-                <Heart className={`mr-1.5 size-4 ${favoriteIds.includes(selectedVehicle.id) ? "fill-current text-rose-300" : ""}`} /> Save
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => void toggleWatch(selectedVehicle)}
-                className="rounded-xl border-slate-700 bg-slate-900 text-xs text-slate-200"
-              >
-                <BellRing className={`mr-1.5 size-4 ${watchedIds.includes(selectedVehicle.id) ? "fill-current text-amber-300" : ""}`} /> Notify
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => void shareVehicle(selectedVehicle)}
-                className="rounded-xl border-slate-700 bg-slate-900 text-xs text-slate-200"
-              >
-                <Share2 className="mr-1.5 size-4" /> Share
-              </Button>
-              <Button onClick={() => window.print()} className="col-span-3 w-full rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs gap-1.5">
-                <Printer className="w-4 h-4" /> Print / Save Location Pass
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      )}
 
       {/* Request Vehicle Alert Modal */}
       <Dialog open={notifyOpen} onOpenChange={setNotifyOpen}>

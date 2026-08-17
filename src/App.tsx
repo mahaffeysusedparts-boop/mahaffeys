@@ -12,6 +12,7 @@ import "./print.css";
 const DashboardPage = lazy(() => import("./pages/DashboardPage"));
 const IntakePage = lazy(() => import("./pages/IntakePage"));
 const PublicInventoryPage = lazy(() => import("./pages/PublicInventoryPage"));
+const PublicVehicleDetailPage = lazy(() => import("./pages/PublicVehicleDetailPage"));
 const PublicVehicleInventoryPage = lazy(() => import("./pages/PublicVehicleInventoryPage"));
 const TicketsPage = lazy(() => import("./pages/TicketsPage"));
 const PricingPage = lazy(() => import("./pages/PricingPage"));
@@ -54,6 +55,7 @@ const App = () => (
 
             {/* PUBLIC YARD PARTS CATALOG EXCEPTION (Guest Accessible) */}
             <Route path="/inventory" element={<PublicInventoryPage />} />
+            <Route path="/inventory/vehicle/:vin" element={<PublicVehicleDetailPage />} />
             <Route path="/vehicles" element={<PublicVehicleInventoryPage />} />
 
             {/* PROTECTED WORKSTATION ROUTES */}

@@ -27,7 +27,7 @@ export const PrintStickerModal = ({ open, onOpenChange, vehicle }: PrintStickerM
           Windshield Sticker Preview
         </DialogTitle>
         <DialogDescription className="text-slate-400">
-          The printed sticker will match this preview and the QR code will contain the VIN.
+          The printed sticker will match this preview and the QR code will open the vehicle's public details.
         </DialogDescription>
       </DialogHeader>
 
