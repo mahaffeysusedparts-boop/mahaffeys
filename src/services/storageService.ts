@@ -151,6 +151,8 @@ export const INITIAL_SETTINGS: YardSettings = {
   operatorName: 'Operator',
   cashDrawerFloatLimit: 0,
   admissionFeeUsd: 0,
+  publicHours: 'Monday–Saturday, 8:00 AM–5:00 PM',
+  safetyRequirements: 'Closed-toe boots and safety glasses are required. Jacks, torches, and power cutting saws are prohibited.',
   customDomain: '',
 };
 
@@ -699,7 +701,7 @@ export const storageService = {
       sharedStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(INITIAL_SETTINGS));
       return INITIAL_SETTINGS;
     }
-    return JSON.parse(data);
+    return { ...INITIAL_SETTINGS, ...(JSON.parse(data) as YardSettings) };
   },
 
   saveSettings(settings: YardSettings): void {

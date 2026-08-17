@@ -389,6 +389,39 @@ export default function SettingsPage() {
                   className="bg-slate-950 border-slate-800 text-white text-xs mt-1"
                 />
               </div>
+
+              <div>
+                <Label className="text-xs text-slate-300">Public Yard Hours</Label>
+                <Input
+                  value={settings.publicHours || ''}
+                  onChange={(e) => handleChange('publicHours', e.target.value)}
+                  placeholder="Monday–Saturday, 8:00 AM–5:00 PM"
+                  className="bg-slate-950 border-slate-800 text-white text-xs mt-1"
+                />
+              </div>
+
+              <div>
+                <Label className="text-xs text-slate-300">Public Admission Fee ($)</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={settings.admissionFeeUsd || 0}
+                  onChange={(e) => handleChange('admissionFeeUsd', Math.max(0, Number(e.target.value) || 0))}
+                  className="bg-slate-950 border-slate-800 text-white text-xs mt-1"
+                />
+              </div>
+
+              <div className="sm:col-span-2">
+                <Label className="text-xs text-slate-300">Public Safety Requirements</Label>
+                <Textarea
+                  value={settings.safetyRequirements || ''}
+                  onChange={(e) => handleChange('safetyRequirements', e.target.value)}
+                  rows={2}
+                  placeholder="Required protective equipment and prohibited tools"
+                  className="bg-slate-950 border-slate-800 text-white text-xs mt-1"
+                />
+              </div>
             </div>
 
             {/* Receipt text */}

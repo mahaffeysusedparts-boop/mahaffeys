@@ -42,6 +42,11 @@ import {
   Loader2,
   Lock,
   Scale,
+  Heart,
+  Share2,
+  BellRing,
+  Phone,
+  CalendarClock,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -56,16 +61,56 @@ const EMPTY_INVENTORY: InventoryResponse = {
   items: [], total: 0, page: 1, limit: INVENTORY_PAGE_SIZE, totalPages: 1,
   counts: { available: 0, pending: 0, crushed: 0 }, updatedAt: null,
 };
+const FAVORITES_KEY = "mahaffeys-public-inventory-favorites";
+const WATCHES_KEY = "mahaffeys-public-inventory-watches";
+
+type VehicleWatch = { status: PullYardVehicle["status"]; label: string };
+type VehicleWatches = Record<string, VehicleWatch>;
+
+const readFavorites = (): PullYardVehicle[] => {
+  try {
+    const saved = JSON.parse(localStorage.getItem(FAVORITES_KEY) || "[]") as unknown;
+    return Array.isArray(saved) && saved.every((item) => typeof item === "object" && item !== null && "id" in item)
+      ? saved as PullYardVehicle[]
+      : [];
+  } catch {
+    return [];
+  }
+};
+
+const readWatches = (): VehicleWatches => {
+  try {
+    return JSON.parse(localStorage.getItem(WATCHES_KEY) || "{}") as VehicleWatches;
+  } catch {
+    return {};
+  }
+};
+
+const formatInventoryAge = (updatedAt: string | null, now: number) => {
+  if (!updatedAt) return "Inventory update time unavailable";
+  const minutes = Math.max(0, Math.floor((now - new Date(updatedAt).getTime()) / 60_000));
+  if (minutes < 1) return "Inventory updated less than a minute ago";
+  if (minutes === 1) return "Inventory updated 1 minute ago";
+  if (minutes < 60) return `Inventory updated ${minutes} minutes ago`;
+  const hours = Math.floor(minutes / 60);
+  return `Inventory updated ${hours} ${hours === 1 ? "hour" : "hours"} ago`;
+};
 
 export default function PublicInventoryPage() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const yardName = storageService.getSettings().yardName;
+  const yardSettings = storageService.getSettings();
+  const yardName = yardSettings.yardName;
   const [inventory, setInventory] = useState<InventoryResponse>(EMPTY_INVENTORY);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [refreshToken, setRefreshToken] = useState(0);
   const [selectedVehicle, setSelectedVehicle] = useState<PullYardVehicle | null>(null);
   const [interchangeOpen, setInterchangeOpen] = useState(false);
+  const [favoriteVehicles, setFavoriteVehicles] = useState<PullYardVehicle[]>(readFavorites);
+  const [watchedIds, setWatchedIds] = useState<string[]>(() => Object.keys(readWatches()));
+  const [favoritesOnly, setFavoritesOnly] = useState(false);
+  const [now, setNow] = useState(Date.now());
+  const favoriteIds = favoriteVehicles.map((vehicle) => vehicle.id);
   const search = searchParams.get("search") || "";
   const selectedSection = searchParams.get("section") || "ALL";
   const partFilter = searchParams.get("part") || "ALL";
@@ -115,16 +160,149 @@ export default function PublicInventoryPage() {
   }, [deferredSearch, page, partFilter, refreshToken, selectedSection, updateQuery]);
 
   const vehicles = inventory.items;
-  const lastUpdatedTime = inventory.updatedAt ? new Date(inventory.updatedAt).toLocaleTimeString() : "waiting for sync";
+  const catalogVehicles = favoritesOnly ? favoriteVehicles : vehicles;
+  const recentVehicles = vehicles
+    .filter((vehicle) => Date.now() - new Date(vehicle.dateSetInYard).getTime() <= 7 * 86_400_000)
+    .slice(0, 4);
+  const freshnessLabel = formatInventoryAge(inventory.updatedAt, now);
+  const freshnessMinutes = inventory.updatedAt
+    ? Math.max(0, Math.floor((now - new Date(inventory.updatedAt).getTime()) / 60_000))
+    : null;
+  const inventoryIsStale = freshnessMinutes === null || freshnessMinutes > 15;
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    if (!vehicles.length) return;
+    setFavoriteVehicles((current) => {
+      let changed = false;
+      const next = current.map((savedVehicle) => {
+        const currentVehicle = vehicles.find((vehicle) => vehicle.id === savedVehicle.id);
+        if (!currentVehicle || currentVehicle === savedVehicle) return savedVehicle;
+        changed = true;
+        return currentVehicle;
+      });
+      if (changed) localStorage.setItem(FAVORITES_KEY, JSON.stringify(next));
+      return changed ? next : current;
+    });
+  }, [vehicles]);
+
+  useEffect(() => {
+    const requestedVehicleId = searchParams.get("vehicle");
+    if (!requestedVehicleId || selectedVehicle?.id === requestedVehicleId) return;
+    const requestedVehicle = vehicles.find((vehicle) => vehicle.id === requestedVehicleId);
+    if (requestedVehicle) setSelectedVehicle(requestedVehicle);
+  }, [searchParams, selectedVehicle?.id, vehicles]);
+
+  useEffect(() => {
+    if (!vehicles.length || !watchedIds.length) return;
+    const watches = readWatches();
+    let changed = false;
+
+    vehicles.forEach((vehicle) => {
+      if (!watchedIds.includes(vehicle.id)) return;
+      const previous = watches[vehicle.id];
+      const label = `${vehicle.year} ${vehicle.make} ${vehicle.model}`;
+      if (previous && previous.status !== vehicle.status) {
+        const message = `${label} changed from ${previous.status} to ${vehicle.status}.`;
+        toast.info("Watched vehicle status changed", { description: message });
+        if ("Notification" in window && Notification.permission === "granted") {
+          new Notification("Vehicle status changed", { body: message });
+        }
+      }
+      if (!previous || previous.status !== vehicle.status || previous.label !== label) {
+        watches[vehicle.id] = { status: vehicle.status, label };
+        changed = true;
+      }
+    });
+
+    if (changed) localStorage.setItem(WATCHES_KEY, JSON.stringify(watches));
+  }, [vehicles, watchedIds]);
+
+  const openVehicle = (vehicle: PullYardVehicle) => {
+    setSelectedVehicle(vehicle);
+    updateQuery({ vehicle: vehicle.id });
+  };
+
+  const closeVehicle = () => {
+    setSelectedVehicle(null);
+    updateQuery({ vehicle: null });
+  };
+
+  const toggleFavorite = (vehicle: PullYardVehicle) => {
+    const next = favoriteIds.includes(vehicle.id)
+      ? favoriteVehicles.filter((savedVehicle) => savedVehicle.id !== vehicle.id)
+      : [...favoriteVehicles, vehicle];
+    setFavoriteVehicles(next);
+    localStorage.setItem(FAVORITES_KEY, JSON.stringify(next));
+    toast.success(next.some((savedVehicle) => savedVehicle.id === vehicle.id) ? "Vehicle saved to your watchlist" : "Vehicle removed from your watchlist");
+  };
+
+  const toggleWatch = async (vehicle: PullYardVehicle) => {
+    const watches = readWatches();
+    if (watchedIds.includes(vehicle.id)) {
+      delete watches[vehicle.id];
+      const next = watchedIds.filter((id) => id !== vehicle.id);
+      setWatchedIds(next);
+      localStorage.setItem(WATCHES_KEY, JSON.stringify(watches));
+      toast.info("Status notifications turned off");
+      return;
+    }
+
+    if ("Notification" in window && Notification.permission === "default") {
+      await Notification.requestPermission();
+    }
+    const label = `${vehicle.year} ${vehicle.make} ${vehicle.model}`;
+    watches[vehicle.id] = { status: vehicle.status, label };
+    setWatchedIds([...watchedIds, vehicle.id]);
+    localStorage.setItem(WATCHES_KEY, JSON.stringify(watches));
+    toast.success("Status notifications turned on", {
+      description: "This device will alert you when the catalog is open or revisited and the status has changed.",
+    });
+  };
+
+  const shareVehicle = async (vehicle: PullYardVehicle) => {
+    const url = new URL("/inventory", window.location.origin);
+    url.searchParams.set("search", vehicle.vin);
+    url.searchParams.set("vehicle", vehicle.id);
+    const shareData = {
+      title: `${vehicle.year} ${vehicle.make} ${vehicle.model}`,
+      text: `View this vehicle at ${yardName}`,
+      url: url.toString(),
+    };
+
+    try {
+      if (navigator.share) await navigator.share(shareData);
+      else {
+        await navigator.clipboard.writeText(url.toString());
+        toast.success("Vehicle link copied");
+      }
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      toast.error("Could not share this vehicle");
+    }
+  };
 
   const handleSendNotifyRequest = () => {
     if (!reqPhone.trim()) {
       toast.error("Please enter a contact phone or email");
       return;
     }
-    toast.success(`Vehicle Alert Created for ${reqMake} ${reqModel}!`, {
-      description: "We will SMS text you the moment this vehicle passes through the intake scale desk.",
+    toast.success(`Vehicle request saved for ${reqMake} ${reqModel}`, {
+      description: "Your request has been saved on this device.",
     });
+    let requests: Array<Record<string, string>> = [];
+    try {
+      const saved = JSON.parse(localStorage.getItem("mahaffeys-public-arrival-alerts") || "[]") as unknown;
+      if (Array.isArray(saved)) requests = saved as Array<Record<string, string>>;
+    } catch {
+      requests = [];
+    }
+    requests.push({ make: reqMake.trim(), model: reqModel.trim(), contact: reqPhone.trim(), createdAt: new Date().toISOString() });
+    localStorage.setItem("mahaffeys-public-arrival-alerts", JSON.stringify(requests));
     setNotifyOpen(false);
     setReqPhone("");
   };
@@ -160,8 +338,12 @@ export default function PublicInventoryPage() {
                 <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/40 text-xs font-mono uppercase tracking-widest px-3 py-1">
                   LIVE YARD CATALOG
                 </Badge>
-                <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-500/40 text-xs font-mono gap-1">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping inline-block" /> REAL-TIME AUTO SYNC ({lastUpdatedTime})
+                <Badge className={inventoryIsStale
+                  ? "border-rose-500/40 bg-rose-500/15 text-xs font-mono text-rose-300"
+                  : "border-emerald-500/40 bg-emerald-500/20 text-xs font-mono text-emerald-300"
+                } title={inventory.updatedAt ? new Date(inventory.updatedAt).toLocaleString() : undefined}>
+                  <span className={`mr-1.5 inline-block size-2 rounded-full ${inventoryIsStale ? "bg-rose-400" : "animate-pulse bg-emerald-400"}`} />
+                  {freshnessLabel}
                 </Badge>
               </div>
               <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">
@@ -184,11 +366,21 @@ export default function PublicInventoryPage() {
                 onClick={() => setNotifyOpen(true)}
                 className="w-full sm:w-auto bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-xs px-5 h-10 gap-1.5 shadow-lg shadow-amber-950"
               >
-                <Bell className="w-4 h-4" /> Request Vehicle Alert
+                <Bell className="w-4 h-4" /> Save Vehicle Request
               </Button>
             </div>
           </div>
         </div>
+
+        {inventoryIsStale && !isLoading ? (
+          <div className="flex items-start gap-3 rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+            <AlertCircle className="mt-0.5 size-4 shrink-0 text-rose-400" />
+            <div>
+              <p className="font-bold">Inventory information may be out of date</p>
+              <p className="mt-0.5 text-xs text-rose-200/70">{freshnessLabel}. Call the yard before traveling for a specific vehicle.</p>
+            </div>
+          </div>
+        ) : null}
 
         {/* Quick Search & Filtering Bar */}
         <Card className="bg-slate-900 border-slate-800 text-white shadow-xl">
@@ -246,13 +438,61 @@ export default function PublicInventoryPage() {
           </CardContent>
         </Card>
 
+        {recentVehicles.length > 0 && !favoritesOnly ? (
+          <section aria-labelledby="recent-arrivals-heading" className="space-y-3">
+            <div className="flex items-end justify-between gap-4">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.24em] text-amber-400">Fresh on the lot</p>
+                <h2 id="recent-arrivals-heading" className="mt-1 text-xl font-black text-white">Recently arrived</h2>
+              </div>
+              <span className="text-xs text-slate-500">Added within the last 7 days</span>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              {recentVehicles.map((vehicle) => (
+                <button
+                  key={`recent-${vehicle.id}`}
+                  type="button"
+                  onClick={() => openVehicle(vehicle)}
+                  className="group flex items-center gap-3 rounded-2xl border border-slate-800 bg-slate-900 p-3 text-left transition hover:border-amber-500/60 hover:bg-slate-800"
+                >
+                  <img
+                    src={vehicle.photoUrl || FALLBACK_VEHICLE_PHOTO}
+                    alt=""
+                    className="size-16 shrink-0 rounded-xl object-cover"
+                    onError={(event) => { (event.currentTarget as HTMLImageElement).src = FALLBACK_VEHICLE_PHOTO; }}
+                  />
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-black text-white group-hover:text-amber-300">
+                      {vehicle.year} {vehicle.make} {vehicle.model}
+                    </span>
+                    <span className="mt-1 block truncate text-xs text-slate-400">{vehicle.section}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          </section>
+        ) : null}
+
         {/* Vehicle Catalog Cards Grid */}
         <div>
-          <div className="flex items-center justify-between mb-4">
+          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <h2 className="text-lg font-bold text-white flex items-center gap-2">
-              <Car className="w-5 h-5 text-amber-400" /> Currently Staged Vehicles ({inventory.total})
+              <Car className="w-5 h-5 text-amber-400" /> {favoritesOnly ? "My Saved Vehicles" : "Currently Staged Vehicles"} ({favoritesOnly ? catalogVehicles.length : inventory.total})
             </h2>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => setFavoritesOnly((current) => !current)}
+                className={favoritesOnly
+                  ? "h-8 rounded-full border-rose-500 bg-rose-500/20 text-xs text-rose-200 hover:bg-rose-500/30"
+                  : "h-8 rounded-full border-slate-700 bg-slate-900 text-xs text-slate-300 hover:bg-slate-800 hover:text-white"
+                }
+              >
+                <Heart className={`mr-1.5 size-3.5 ${favoritesOnly ? "fill-current" : ""}`} />
+                Saved ({favoriteIds.length})
+              </Button>
               <Badge variant="outline" className="border-emerald-500/40 text-emerald-400 text-xs font-mono">
                 {availableCount} Available Vehicles On Lot
               </Badge>
@@ -261,7 +501,7 @@ export default function PublicInventoryPage() {
                 variant="ghost"
                 onClick={loadData}
                 disabled={isLoading}
-                className="h-7 text-xs text-slate-400 hover:text-white"
+                className="h-8 text-xs text-slate-400 hover:text-white"
                 title="Refresh Inventory"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? "animate-spin" : ""}`} />
@@ -291,6 +531,15 @@ export default function PublicInventoryPage() {
                 Clear All Filters
               </Button>
             </Card>
+          ) : favoritesOnly && catalogVehicles.length === 0 ? (
+            <Card className="rounded-3xl border-slate-800 bg-slate-900 p-12 text-center text-slate-400">
+              <Heart className="mx-auto mb-3 size-10 text-slate-600" />
+              <p className="font-bold text-white">No saved vehicles yet</p>
+              <p className="mt-1 text-xs">Tap the heart on a vehicle to keep it in this browser.</p>
+              <Button type="button" variant="outline" onClick={() => setFavoritesOnly(false)} className="mt-4 rounded-xl border-slate-700 bg-slate-950 text-slate-200">
+                View all vehicles
+              </Button>
+            </Card>
           ) : (
             <div className="relative">
               {isLoading && (
@@ -301,16 +550,18 @@ export default function PublicInventoryPage() {
                 </div>
               )}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" aria-busy={isLoading}>
-                {vehicles.map((veh) => {
+                {catalogVehicles.map((veh) => {
                   const daysAgo = Math.floor(
                     (Date.now() - new Date(veh.dateSetInYard).getTime()) / (1000 * 60 * 60 * 24)
                   );
                   const displayPhoto = veh.photoUrl || FALLBACK_VEHICLE_PHOTO;
+                  const isFavorite = favoriteIds.includes(veh.id);
+                  const isWatched = watchedIds.includes(veh.id);
 
                   return (
                     <Card
                     key={veh.id}
-                    onClick={() => setSelectedVehicle(veh)}
+                    onClick={() => openVehicle(veh)}
                     className="group bg-slate-900 border-2 border-slate-800 hover:border-amber-500/70 transition-all duration-300 cursor-pointer shadow-xl overflow-hidden flex flex-col justify-between [content-visibility:auto] [contain-intrinsic-size:420px]"
                   >
                     {/* Vehicle Photo Banner */}
@@ -355,11 +606,44 @@ export default function PublicInventoryPage() {
                       </div>
                     </div>
 
-                    <CardHeader className="py-3.5 px-5 bg-slate-950/60 border-b border-slate-800 flex flex-row items-center justify-between">
-                      <div>
-                        <CardTitle className="text-lg font-black text-white group-hover:text-amber-400 transition-colors">
-                          {veh.year} {veh.make} {veh.model}
-                        </CardTitle>
+                    <CardHeader className="py-3.5 px-4 bg-slate-950/60 border-b border-slate-800 flex flex-row items-center justify-between gap-3">
+                      <CardTitle className="min-w-0 truncate text-lg font-black text-white group-hover:text-amber-400 transition-colors">
+                        {veh.year} {veh.make} {veh.model}
+                      </CardTitle>
+                      <div className="flex shrink-0 items-center gap-1">
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="ghost"
+                          aria-label={isFavorite ? "Remove from saved vehicles" : "Save vehicle"}
+                          title={isFavorite ? "Remove from saved vehicles" : "Save vehicle"}
+                          onClick={(event) => { event.stopPropagation(); toggleFavorite(veh); }}
+                          className={`size-8 rounded-full ${isFavorite ? "bg-rose-500/20 text-rose-300" : "text-slate-400 hover:text-rose-300"}`}
+                        >
+                          <Heart className={`size-4 ${isFavorite ? "fill-current" : ""}`} />
+                        </Button>
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="ghost"
+                          aria-label={isWatched ? "Turn off status notifications" : "Notify me if status changes"}
+                          title={isWatched ? "Status notifications on" : "Notify me if status changes"}
+                          onClick={(event) => { event.stopPropagation(); void toggleWatch(veh); }}
+                          className={`size-8 rounded-full ${isWatched ? "bg-amber-500/20 text-amber-300" : "text-slate-400 hover:text-amber-300"}`}
+                        >
+                          <BellRing className={`size-4 ${isWatched ? "fill-current" : ""}`} />
+                        </Button>
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="ghost"
+                          aria-label="Share vehicle"
+                          title="Share vehicle"
+                          onClick={(event) => { event.stopPropagation(); void shareVehicle(veh); }}
+                          className="size-8 rounded-full text-slate-400 hover:text-sky-300"
+                        >
+                          <Share2 className="size-4" />
+                        </Button>
                       </div>
                     </CardHeader>
 
@@ -393,43 +677,71 @@ export default function PublicInventoryPage() {
                 })}
               </div>
 
-              <div className="mt-8 flex flex-col items-center gap-3 border-t border-slate-800 pt-6">
-                <div className="flex items-center gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    disabled={inventory.page <= 1 || isLoading}
-                    onClick={() => updateQuery({ page: String(inventory.page - 1) })}
-                    className="rounded-xl border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-800"
-                  >
-                    <ChevronLeft className="mr-1 h-4 w-4" /> Previous
-                  </Button>
-                  <span className="min-w-28 text-center text-sm font-semibold text-slate-300">
-                    Page {inventory.page} of {inventory.totalPages}
+              {!favoritesOnly ? (
+                <div className="mt-8 flex flex-col items-center gap-3 border-t border-slate-800 pt-6">
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={inventory.page <= 1 || isLoading}
+                      onClick={() => updateQuery({ page: String(inventory.page - 1) })}
+                      className="rounded-xl border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-800"
+                    >
+                      <ChevronLeft className="mr-1 h-4 w-4" /> Previous
+                    </Button>
+                    <span className="min-w-28 text-center text-sm font-semibold text-slate-300">
+                      Page {inventory.page} of {inventory.totalPages}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={inventory.page >= inventory.totalPages || isLoading}
+                      onClick={() => updateQuery({ page: String(inventory.page + 1) })}
+                      className="rounded-xl border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-800"
+                    >
+                      Next <ChevronRight className="ml-1 h-4 w-4" />
+                    </Button>
+                  </div>
+                  <span className="text-xs text-slate-500">
+                    Showing {inventory.total ? (inventory.page - 1) * inventory.limit + 1 : 0}–{Math.min(inventory.page * inventory.limit, inventory.total)} of {inventory.total} matches
                   </span>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    disabled={inventory.page >= inventory.totalPages || isLoading}
-                    onClick={() => updateQuery({ page: String(inventory.page + 1) })}
-                    className="rounded-xl border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-800"
-                  >
-                    Next <ChevronRight className="ml-1 h-4 w-4" />
-                  </Button>
                 </div>
-                <span className="text-xs text-slate-500">
-                  Showing {inventory.total ? (inventory.page - 1) * inventory.limit + 1 : 0}–{Math.min(inventory.page * inventory.limit, inventory.total)} of {inventory.total} matches
-                </span>
-              </div>
+              ) : null}
             </div>
           )}
         </div>
 
       </main>
 
+      <footer className="mt-8 border-t border-slate-800 bg-slate-900/70">
+        <div className="mx-auto grid w-full max-w-7xl gap-6 px-4 py-8 sm:px-6 md:grid-cols-2 lg:grid-cols-4 lg:px-8">
+          <div>
+            <p className="text-sm font-black text-white">{yardName}</p>
+            <p className="mt-2 text-xs leading-relaxed text-slate-400">
+              {[yardSettings.address, yardSettings.cityStateZip].filter(Boolean).join(", ") || "Call for yard location details."}
+            </p>
+          </div>
+          <div>
+            <p className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-amber-300"><CalendarClock className="size-4" /> Yard hours</p>
+            <p className="mt-2 text-xs leading-relaxed text-slate-300">{yardSettings.publicHours || "Call for current operating hours."}</p>
+          </div>
+          <div>
+            <p className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-amber-300"><Phone className="size-4" /> Contact & admission</p>
+            {yardSettings.phone ? <a href={`tel:${yardSettings.phone}`} className="mt-2 block text-xs font-bold text-white hover:text-amber-300">{yardSettings.phone}</a> : <p className="mt-2 text-xs text-slate-400">Phone number not listed</p>}
+            <p className="mt-1 text-xs text-slate-400">Admission: {yardSettings.admissionFeeUsd ? `$${yardSettings.admissionFeeUsd.toFixed(2)}` : "Free"}</p>
+          </div>
+          <div>
+            <p className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-amber-300"><ShieldCheck className="size-4" /> Safety requirements</p>
+            <p className="mt-2 text-xs leading-relaxed text-slate-400">
+              {yardSettings.safetyRequirements || "Closed-toe boots and safety glasses are required."}
+            </p>
+          </div>
+        </div>
+      </footer>
+
       {/* Vehicle Detailed Location & Printable Ticket Modal */}
       {selectedVehicle && (
-        <Dialog open={!!selectedVehicle} onOpenChange={() => setSelectedVehicle(null)}>
+        <Dialog open={!!selectedVehicle} onOpenChange={(open) => { if (!open) closeVehicle(); }}>
           <DialogContent className="max-w-lg bg-slate-950 text-slate-100 border-slate-800 p-6 max-h-[90vh] overflow-y-auto">
             <DialogHeader className="border-b border-slate-800 pb-3">
               <div className="flex items-center justify-between">
@@ -502,13 +814,37 @@ export default function PublicInventoryPage() {
                   <ShieldCheck className="w-4 h-4 text-amber-400" /> Yard Safety Rules:
                 </div>
                 <p className="text-slate-300">
-                  Must wear closed-toe boots & safety glasses. Jacks, torches, and power cutting saws are strictly prohibited on the lot.
+                  {yardSettings.safetyRequirements || "Closed-toe boots and safety glasses are required."}
                 </p>
               </div>
             </div>
 
-            <DialogFooter className="pt-3 border-t border-slate-800">
-              <Button onClick={() => window.print()} className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs gap-1.5">
+            <DialogFooter className="grid grid-cols-3 gap-2 pt-3 border-t border-slate-800 sm:grid-cols-3 sm:space-x-0">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => toggleFavorite(selectedVehicle)}
+                className="rounded-xl border-slate-700 bg-slate-900 text-xs text-slate-200"
+              >
+                <Heart className={`mr-1.5 size-4 ${favoriteIds.includes(selectedVehicle.id) ? "fill-current text-rose-300" : ""}`} /> Save
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => void toggleWatch(selectedVehicle)}
+                className="rounded-xl border-slate-700 bg-slate-900 text-xs text-slate-200"
+              >
+                <BellRing className={`mr-1.5 size-4 ${watchedIds.includes(selectedVehicle.id) ? "fill-current text-amber-300" : ""}`} /> Notify
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => void shareVehicle(selectedVehicle)}
+                className="rounded-xl border-slate-700 bg-slate-900 text-xs text-slate-200"
+              >
+                <Share2 className="mr-1.5 size-4" /> Share
+              </Button>
+              <Button onClick={() => window.print()} className="col-span-3 w-full rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs gap-1.5">
                 <Printer className="w-4 h-4" /> Print / Save Location Pass
               </Button>
             </DialogFooter>
@@ -521,10 +857,10 @@ export default function PublicInventoryPage() {
         <DialogContent className="bg-slate-950 text-slate-100 border-slate-800 sm:max-w-[420px]">
           <DialogHeader>
             <DialogTitle className="text-base font-bold text-white flex items-center gap-2">
-              <Bell className="w-5 h-5 text-amber-400" /> Create Vehicle Arrival Alert
+              <Bell className="w-5 h-5 text-amber-400" /> Save Vehicle Request
             </DialogTitle>
             <DialogDescription className="text-xs text-slate-400">
-              We'll send an instant text message the moment a matching vehicle passes through the intake station.
+              Save the vehicle you need and your preferred contact information on this device for quick reference.
             </DialogDescription>
           </DialogHeader>
 
@@ -552,11 +888,11 @@ export default function PublicInventoryPage() {
             </div>
 
             <div>
-              <label className="text-slate-300 font-semibold block mb-1">SMS Mobile Phone # *</label>
+              <label className="text-slate-300 font-semibold block mb-1">Phone or Email *</label>
               <Input
                 value={reqPhone}
                 onChange={(e) => setReqPhone(e.target.value)}
-                placeholder="(555) 000-0000"
+                placeholder="Phone number or email"
                 className="bg-slate-900 border-slate-800 text-white text-xs"
               />
             </div>
@@ -567,7 +903,7 @@ export default function PublicInventoryPage() {
               Cancel
             </Button>
             <Button onClick={handleSendNotifyRequest} className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs">
-              Subscribe Alert
+              Save Request
             </Button>
           </DialogFooter>
         </DialogContent>

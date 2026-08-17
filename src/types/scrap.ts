@@ -384,6 +384,8 @@ export interface YardSettings {
   nmvtisReportingId?: string;
   cashDrawerFloatLimit?: number;
   admissionFeeUsd?: number;
+  publicHours?: string;
+  safetyRequirements?: string;
   customDomain?: string;
   shipmentVarianceTolerancePct?: number;
 }
