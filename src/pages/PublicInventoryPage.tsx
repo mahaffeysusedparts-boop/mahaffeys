@@ -1,8 +1,8 @@
 import React, { lazy, Suspense, useCallback, useDeferredValue, useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { fetchInventory, type InventoryResponse } from "@/services/inventoryService";
+import { storageService } from "@/services/storageService";
 import { PullYardVehicle } from "@/types/scrap";
-import { Navbar } from "@/components/layout/Navbar";
 import { generateSamplePhoto } from "@/utils/complianceUtils";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -40,6 +40,8 @@ import {
   Eye,
   Radio,
   Loader2,
+  Lock,
+  Scale,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -57,6 +59,7 @@ const EMPTY_INVENTORY: InventoryResponse = {
 
 export default function PublicInventoryPage() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const yardName = storageService.getSettings().yardName;
   const [inventory, setInventory] = useState<InventoryResponse>(EMPTY_INVENTORY);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
@@ -130,7 +133,22 @@ export default function PublicInventoryPage() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
-      <Navbar />
+      <header className="sticky top-0 z-40 border-b border-slate-800 bg-slate-950/95 backdrop-blur">
+        <div className="mx-auto flex h-16 w-full max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center gap-3">
+            <div className="flex size-10 items-center justify-center rounded-2xl bg-amber-400 text-slate-950 shadow-lg shadow-amber-950/40">
+              <Scale className="size-5" />
+            </div>
+            <div>
+              <p className="text-sm font-black uppercase tracking-[0.22em] text-amber-300">Public Inventory</p>
+              <p className="max-w-[220px] truncate text-xs font-semibold text-slate-400 sm:max-w-md">{yardName}</p>
+            </div>
+          </div>
+          <Badge className="rounded-full border-emerald-500/40 bg-emerald-500/15 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-emerald-300">
+            <Lock className="mr-1.5 size-3" /> Catalog Only
+          </Badge>
+        </div>
+      </header>
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
         
