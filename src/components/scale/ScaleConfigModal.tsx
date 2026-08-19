@@ -1,7 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { scaleService } from '@/services/scaleService';
-import { storageService } from '@/services/storageService';
-import { ScaleConnectionMode } from '@/types/scrap';
+import { ScaleStatus } from '@/types/scrap';
 import {
   Dialog,
   DialogContent,
@@ -11,12 +10,8 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Badge } from '@/components/ui/badge';
-import { Scale, Cpu, Wifi, AlertCircle } from 'lucide-react';
-import { toast } from 'sonner';
+import { AlertCircle, CheckCircle2, RefreshCw, Server, Scale } from 'lucide-react';
 
 interface ScaleConfigModalProps {
   open: boolean;
@@ -24,164 +19,86 @@ interface ScaleConfigModalProps {
 }
 
 export const ScaleConfigModal: React.FC<ScaleConfigModalProps> = ({ open, onOpenChange }) => {
-  const currentStatus = scaleService.getStatus();
-  const settings = storageService.getSettings();
+  const [status, setStatus] = useState<ScaleStatus>(scaleService.getStatus());
 
-  const [mode, setMode] = useState<ScaleConnectionMode>(currentStatus.mode || 'WEB_SERIAL');
-  const [baudRate, setBaudRate] = useState<number>(settings.serialBaudRate || 9600);
-  const [wsUrl, setWsUrl] = useState<string>(settings.webSocketUrl || 'ws://localhost:8080/scale');
-  const [loading, setLoading] = useState(false);
+  useEffect(() => scaleService.subscribe(setStatus), []);
 
-  const handleApply = async () => {
-    setLoading(true);
-
-    if (mode === 'WEB_SERIAL') {
-      const success = await scaleService.connectWebSerial(baudRate);
-      if (success) {
-        toast.success('Connected to Web Serial Scale Port');
-        const updated = storageService.getSettings();
-        updated.serialBaudRate = baudRate;
-        storageService.saveSettings(updated);
-        onOpenChange(false);
-      } else {
-        toast.error('Could not connect serial scale. Check connection or USB port.');
-      }
-    } else if (mode === 'WEBSOCKET') {
-      const success = scaleService.connectWebSocket(wsUrl);
-      if (success) {
-        toast.success(`Subscribed to scale network endpoint ${wsUrl}`);
-        const updated = storageService.getSettings();
-        updated.webSocketUrl = wsUrl;
-        storageService.saveSettings(updated);
-        onOpenChange(false);
-      } else {
-        toast.error('WebSocket scale endpoint unreachable.');
-      }
-    }
-
-    setLoading(false);
+  const handleReconnect = () => {
+    scaleService.connectServer();
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px] bg-slate-900 border-slate-800 text-slate-100">
+      <DialogContent className="sm:max-w-[500px] bg-slate-900 border-slate-800 text-slate-100 rounded-2xl">
         <DialogHeader>
           <div className="flex items-center gap-2">
             <Scale className="w-5 h-5 text-emerald-400" />
             <DialogTitle className="text-lg font-bold text-white">
-              Scale Hardware Connectivity
+              Rice Lake IQ710 Connection
             </DialogTitle>
           </div>
           <DialogDescription className="text-slate-400 text-xs">
-            Connect an industrial RS-232 / USB scale indicator via Web Serial or a network scale server stream.
+            The scale is read by the Linux server hosting this app. This browser receives the live weight from that server automatically.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-2">
-          {/* Mode Selection */}
-          <RadioGroup value={mode} onValueChange={(val) => setMode(val as ScaleConnectionMode)} className="space-y-3">
-            
-            {/* Option 1: Web Serial API */}
-            <div
-              className={`flex items-start space-x-3 p-3 rounded-lg border transition-colors cursor-pointer ${
-                mode === 'WEB_SERIAL'
-                  ? 'bg-emerald-950/40 border-emerald-500/60 text-white'
-                  : 'bg-slate-800/40 border-slate-800 hover:bg-slate-800/80 text-slate-300'
-              }`}
-              onClick={() => setMode('WEB_SERIAL')}
-            >
-              <RadioGroupItem value="WEB_SERIAL" id="mode-serial" className="mt-1" />
-              <div className="flex-1">
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="mode-serial" className="font-semibold text-sm cursor-pointer flex items-center gap-1.5">
-                    <Cpu className="w-4 h-4 text-blue-400" /> USB / Serial Port Scale (Web Serial)
-                  </Label>
-                  <Badge variant="outline" className="border-blue-500/40 text-blue-400 text-[10px]">
-                    DIRECT HARDWARE
+          <div className={`rounded-xl border p-4 ${
+            status.connected
+              ? 'border-emerald-500/50 bg-emerald-950/30'
+              : 'border-amber-700/50 bg-amber-950/20'
+          }`}>
+            <div className="flex items-start gap-3">
+              <div className="rounded-lg bg-slate-950 p-2.5">
+                <Server className="h-5 w-5 text-sky-400" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="font-semibold text-white">Hosted server serial port</p>
+                  <Badge className={status.connected
+                    ? 'border border-emerald-500/40 bg-emerald-950 text-emerald-300'
+                    : 'border border-amber-500/40 bg-amber-950 text-amber-300'
+                  }>
+                    {status.connected ? (
+                      <span className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3" /> Connected</span>
+                    ) : 'Waiting for scale'}
                   </Badge>
                 </div>
-                <p className="text-xs text-slate-400 mt-1">
-                  Direct connection to Rice Lake, Avery Weigh-Tronix, GSE, or Cardinal scale indicators via USB-to-Serial COM port.
+                <p className="mt-2 break-all font-mono text-xs text-slate-400">
+                  {status.portName || 'Searching the app server for a USB/serial device…'}
                 </p>
-
-                {mode === 'WEB_SERIAL' && (
-                  <div className="mt-3 grid grid-cols-2 gap-2 pt-2 border-t border-slate-800">
-                    <div>
-                      <Label className="text-[11px] text-slate-300">Baud Rate</Label>
-                      <Input
-                        type="number"
-                        value={baudRate}
-                        onChange={(e) => setBaudRate(parseInt(e.target.value) || 9600)}
-                        className="h-8 bg-slate-900 border-slate-700 text-xs text-white"
-                      />
-                    </div>
-                  </div>
-                )}
               </div>
             </div>
+          </div>
 
-            {/* Option 2: WebSocket Feed */}
-            <div
-              className={`flex items-start space-x-3 p-3 rounded-lg border transition-colors cursor-pointer ${
-                mode === 'WEBSOCKET'
-                  ? 'bg-emerald-950/40 border-emerald-500/60 text-white'
-                  : 'bg-slate-800/40 border-slate-800 hover:bg-slate-800/80 text-slate-300'
-              }`}
-              onClick={() => setMode('WEBSOCKET')}
-            >
-              <RadioGroupItem value="WEBSOCKET" id="mode-ws" className="mt-1" />
-              <div className="flex-1">
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="mode-ws" className="font-semibold text-sm cursor-pointer flex items-center gap-1.5">
-                    <Wifi className="w-4 h-4 text-purple-400" /> Network Scale Feed (WebSocket / TCP)
-                  </Label>
-                  <Badge variant="outline" className="border-purple-500/40 text-purple-400 text-[10px]">
-                    LOCAL NETWORK
-                  </Badge>
-                </div>
-                <p className="text-xs text-slate-400 mt-1">
-                  Connect to a yard scale server or network scale adapter streaming JSON or ASCII strings on your local LAN.
-                </p>
-
-                {mode === 'WEBSOCKET' && (
-                  <div className="mt-3 pt-2 border-t border-slate-800">
-                    <Label className="text-[11px] text-slate-300">Scale WebSocket Endpoint URL</Label>
-                    <Input
-                      value={wsUrl}
-                      onChange={(e) => setWsUrl(e.target.value)}
-                      placeholder="ws://192.168.1.100:8080/scale"
-                      className="h-8 bg-slate-900 border-slate-700 text-xs text-white"
-                    />
-                  </div>
-                )}
-              </div>
-            </div>
-
-          </RadioGroup>
-
-          {/* Current Scale Error Message if any */}
-          {currentStatus.errorMessage && (
-            <div className="p-3 bg-red-950/60 border border-red-800/60 rounded-lg flex items-center gap-2 text-xs text-red-300">
-              <AlertCircle className="w-4 h-4 shrink-0 text-red-400" />
-              <span>{currentStatus.errorMessage}</span>
+          {status.errorMessage && (
+            <div className="flex items-start gap-2 rounded-xl border border-red-800/60 bg-red-950/50 p-3 text-xs text-red-200">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-400" />
+              <span>{status.errorMessage}</span>
             </div>
           )}
+
+          <p className="text-xs leading-relaxed text-slate-400">
+            The server automatically detects common USB serial adapters. Its scale port can also be fixed with
+            <span className="mx-1 font-mono text-sky-300">NITRO_SCALE_SERIAL_PORT</span>
+            and the IQ710 baud rate with
+            <span className="ml-1 font-mono text-sky-300">NITRO_SCALE_SERIAL_BAUD_RATE</span>.
+          </p>
         </div>
 
-        <DialogFooter className="gap-2 sm:gap-0 border-t border-slate-800 pt-3">
+        <DialogFooter className="gap-2 border-t border-slate-800 pt-3 sm:gap-2">
           <Button
-            variant="ghost"
-            onClick={() => onOpenChange(false)}
-            className="text-slate-400 hover:text-white"
+            variant="outline"
+            onClick={handleReconnect}
+            className="border-slate-700 bg-slate-800 text-slate-200 hover:bg-slate-700 hover:text-white"
           >
-            Cancel
+            <RefreshCw className="mr-2 h-4 w-4" /> Check connection
           </Button>
           <Button
-            onClick={handleApply}
-            disabled={loading}
-            className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold"
+            onClick={() => onOpenChange(false)}
+            className="bg-emerald-600 font-bold text-white hover:bg-emerald-500"
           >
-            {loading ? 'Connecting...' : 'Apply & Connect Scale'}
+            Done
           </Button>
         </DialogFooter>
       </DialogContent>

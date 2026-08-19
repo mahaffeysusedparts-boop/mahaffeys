@@ -97,7 +97,7 @@ export const LiveScaleGauge: React.FC<LiveScaleGaugeProps> = ({
           </Badge>
 
           <Badge variant="secondary" className="bg-slate-800 text-slate-300 font-mono text-[10px] sm:text-xs hidden sm:inline-flex">
-            {scale.mode === 'WEB_SERIAL' ? 'USB SERIAL' : 'NETWORK'}
+            {scale.mode === 'SERVER' ? 'HOST SERVER' : scale.mode === 'WEB_SERIAL' ? 'USB SERIAL' : 'NETWORK'}
           </Badge>
         </div>
       </CardHeader>
