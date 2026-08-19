@@ -25,7 +25,7 @@ export type ScaleDetection = {
   sample: string;
 };
 
-const KNOWN_SERVER_PORTS = ["/dev/ttyS4", "/dev/ttyS5", "/dev/ttyS6", "/dev/ttyS7"];
+const KNOWN_SERVER_PORTS = ["/dev/ttyS4", "/dev/ttyS5", "/dev/ttyS6", "/dev/ttyS7", "/dev/tty16"];
 const DEFAULT_BAUD_RATES = [2400, 9600, 4800, 19200];
 
 export async function listSerialPorts() {
@@ -42,7 +42,7 @@ export async function listSerialPorts() {
   }));
 
   return [...paths]
-    .filter((path) => /^\/dev\/(ttyS\d+|ttyUSB\d+|ttyACM\d+|serial\/by-id\/.+)$/.test(path))
+    .filter((path) => /^\/dev\/(tty16|ttyS\d+|ttyUSB\d+|ttyACM\d+|serial\/by-id\/.+)$/.test(path))
     .sort();
 }
 

@@ -79,10 +79,7 @@ export const ScaleConfigModal: React.FC<ScaleConfigModalProps> = ({ open, onOpen
           )}
 
           <p className="text-xs leading-relaxed text-slate-400">
-            The server is configured for RS-232 ports /dev/ttyS4 through /dev/ttyS7. Select the connected port with
-            <span className="mx-1 font-mono text-sky-300">SCALE_SERIAL_PORT</span>
-            and the IQ710 baud rate with
-            <span className="ml-1 font-mono text-sky-300">SCALE_SERIAL_BAUD_RATE</span>.
+            An administrator can select or automatically detect /dev/ttyS4 through /dev/ttyS7 and /dev/tty16 from the Server Admin page. The selected connection is shared with every workstation.
           </p>
         </div>
 

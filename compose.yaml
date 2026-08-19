@@ -72,6 +72,7 @@ services:
       - "/dev/ttyS5:/dev/ttyS5"
       - "/dev/ttyS6:/dev/ttyS6"
       - "/dev/ttyS7:/dev/ttyS7"
+      - "/dev/tty16:/dev/tty16"
     group_add:
       - "20"
     volumes:
