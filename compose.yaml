@@ -65,6 +65,12 @@ services:
       NITRO_VISION_WORKER_URL: http://vision-worker:8000
       NITRO_VISION_UPLOAD_DIR: /var/lib/mahaffeys/vision-images
       NITRO_VISION_RETENTION_DAYS: ${NITRO_VISION_RETENTION_DAYS:-90}
+      NITRO_SCALE_SERIAL_PORT: /dev/scale
+      NITRO_SCALE_SERIAL_BAUD_RATE: ${SCALE_SERIAL_BAUD_RATE:-9600}
+    devices:
+      - "${SCALE_SERIAL_PORT:-/dev/ttyUSB0}:/dev/scale"
+    group_add:
+      - "20"
     volumes:
       - mahaffeys-vision-images:/var/lib/mahaffeys/vision-images
     healthcheck:

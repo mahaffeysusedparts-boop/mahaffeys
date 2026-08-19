@@ -1,4 +1,5 @@
-import { defineHandler, useRuntimeConfig } from "nitro";
+import { defineHandler } from "nitro";
+import { useRuntimeConfig } from "nitro/runtime-config";
 import { serverScale } from "../../../utils/scale";
 
 export default defineHandler(async () => {
