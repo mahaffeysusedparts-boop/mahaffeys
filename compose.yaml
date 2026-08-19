@@ -66,7 +66,7 @@ services:
       NITRO_VISION_UPLOAD_DIR: /var/lib/mahaffeys/vision-images
       NITRO_VISION_RETENTION_DAYS: ${NITRO_VISION_RETENTION_DAYS:-90}
       NITRO_SCALE_SERIAL_PORT: ${SCALE_SERIAL_PORT:-/dev/ttyS4}
-      NITRO_SCALE_SERIAL_BAUD_RATE: ${SCALE_SERIAL_BAUD_RATE:-9600}
+      NITRO_SCALE_SERIAL_BAUD_RATE: ${SCALE_SERIAL_BAUD_RATE:-2400}
     devices:
       - "/dev/ttyS4:/dev/ttyS4"
       - "/dev/ttyS5:/dev/ttyS5"

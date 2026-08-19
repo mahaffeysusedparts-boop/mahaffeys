@@ -22,14 +22,14 @@ class ServerScaleReader {
   private starting = false;
   private buffer = "";
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
-  private options: ScaleOptions = { baudRate: 9600 };
+  private options: ScaleOptions = { baudRate: 2400 };
   private status: ServerScaleStatus = {
     connected: false,
     weight: 0,
     unit: "LBS",
     isStable: false,
     isZero: true,
-    baudRate: 9600,
+    baudRate: 2400,
   };
 
   async start(options: ScaleOptions) {

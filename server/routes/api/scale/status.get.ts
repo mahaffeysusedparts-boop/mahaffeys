@@ -12,7 +12,7 @@ export default defineHandler(async () => {
       : undefined,
     baudRate: Number.isFinite(configuredBaudRate) && configuredBaudRate > 0
       ? configuredBaudRate
-      : 9600,
+      : 2400,
   });
 
   return serverScale.getStatus();

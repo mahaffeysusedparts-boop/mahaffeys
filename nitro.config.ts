@@ -4,6 +4,6 @@ export default defineConfig({
   serverDir: "./server",
   runtimeConfig: {
     scaleSerialPort: "",
-    scaleSerialBaudRate: 9600,
+    scaleSerialBaudRate: 2400,
   },
 });
