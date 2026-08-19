@@ -61,6 +61,8 @@ interface ScrapYardIntakeFormProps {
   onTicketCreated: (ticket: Ticket) => void;
 }
 
+const MAX_ACTIVE_LOADS = 10;
+
 export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack, onTicketCreated }) => {
   // Step 1: Field / Mobile Intake (Customer & Compliance Studio)
   // Step 2: Office PC Scale (Weight Entry, Metal Lines & Statutory Payout)
@@ -126,11 +128,13 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
     toast.info(`Generated Receipt #${newNum}`);
   };
 
-  // Refresh pending tickets
+  // Refresh active ticket drafts and pending tickets
   const refreshPendingTickets = () => {
     const allTickets = storageService.getTickets();
-    const pendings = allTickets.filter((t) => t.status === 'PENDING' && t.ticketType === 'SCRAP_METAL');
-    setPendingTickets(pendings);
+    const activeLoads = allTickets.filter(
+      (ticket) => ticket.ticketType === 'SCRAP_METAL' && (ticket.status === 'DRAFT' || ticket.status === 'PENDING')
+    );
+    setPendingTickets(activeLoads.slice(0, MAX_ACTIVE_LOADS));
   };
 
   useEffect(() => {
@@ -220,7 +224,69 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
     }
   };
 
+  const hasCurrentWork = () => Boolean(
+    customerName.trim() || customerPhone.trim() || customerIdNumber.trim() || vehicleLicensePlate.trim() || lines.length || notes.trim()
+  );
+
+  const saveCurrentDraft = (quiet = false, requestedStatus?: 'DRAFT' | 'PENDING') => {
+    if (!hasCurrentWork()) return true;
+    if (!customerName.trim()) {
+      if (!quiet) toast.error('Enter a customer or driver name before saving this active load');
+      return false;
+    }
+
+    const activeTickets = storageService.getTickets().filter(
+      (ticket) => ticket.ticketType === 'SCRAP_METAL' && (ticket.status === 'DRAFT' || ticket.status === 'PENDING')
+    );
+    const isExistingActiveTicket = activeTickets.some((ticket) => ticket.id === activeTicketId || ticket.id === customReceiptNumber.trim());
+    if (!isExistingActiveTicket && activeTickets.length >= MAX_ACTIVE_LOADS) {
+      toast.error(`Up to ${MAX_ACTIVE_LOADS} loads can be active at one time. Complete or remove one before starting another.`);
+      return false;
+    }
+
+    const ticketId = customReceiptNumber.trim() || storageService.generateScrapReceiptNumber();
+    const existingTicket = activeTickets.find((ticket) => ticket.id === activeTicketId || ticket.id === ticketId);
+    if (activeTicketId && activeTicketId !== ticketId) {
+      const update = storageService.updateTicketId(activeTicketId, ticketId);
+      if (!update.success) {
+        toast.error(update.message || 'Could not update the active load number');
+        return false;
+      }
+    }
+
+    const payoutTotal = lines.reduce((sum, line) => sum + line.lineTotal, 0);
+    const draftTicket: Ticket = {
+      id: ticketId,
+      ticketType: 'SCRAP_METAL',
+      createdAt: existingTicket?.createdAt || new Date().toISOString(),
+      status: requestedStatus || (existingTicket?.status === 'PENDING' ? 'PENDING' : 'DRAFT'),
+      customerId: selectedCustomerId || undefined,
+      customerName: customerName.trim(),
+      customerPhone: customerPhone.trim() || undefined,
+      customerIdNumber: customerIdNumber.trim() || undefined,
+      vehicleLicensePlate: vehicleLicensePlate.trim() || undefined,
+      scrapLines: lines,
+      complianceCaptures,
+      grossTotal: Math.round(payoutTotal * 100) / 100,
+      totalDeductions: 0,
+      finalPayout: Math.round(payoutTotal * 100) / 100,
+      payoutMethod,
+      checkNumber: payoutMethod === 'Check' ? checkNumber.trim() || undefined : undefined,
+      operatorName: storageService.getSettings().operatorName,
+      notes: notes.trim() || 'Active intake load in progress.',
+    };
+
+    storageService.saveTicket(draftTicket);
+    setActiveTicketId(ticketId);
+    setCustomReceiptNumber(ticketId);
+    refreshPendingTickets();
+    if (!quiet) toast.success(`Load #${ticketId} saved to the active queue`);
+    return true;
+  };
+
   const handleLoadPendingTicket = (pending: Ticket) => {
+    if (pending.id !== activeTicketId && !saveCurrentDraft(true)) return;
+
     setActiveTicketId(pending.id);
     setCustomReceiptNumber(pending.id);
     setSelectedCustomerId(pending.customerId || '');
@@ -228,60 +294,38 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
     setCustomerPhone(pending.customerPhone || '');
     setCustomerIdNumber(pending.customerIdNumber || '');
     setVehicleLicensePlate(pending.vehicleLicensePlate || '');
-    setIsDlScanned(true);
-    if (pending.complianceCaptures) {
-      setComplianceCaptures(pending.complianceCaptures);
-    }
-    if (pending.scrapLines && pending.scrapLines.length > 0) {
-      setLines(pending.scrapLines);
-    } else {
-      setLines([]);
-    }
+    setIsDlScanned(Boolean(pending.customerIdNumber || pending.complianceCaptures?.idPhotoUrl));
+    setComplianceCaptures(pending.complianceCaptures || {});
+    setLines(pending.scrapLines || []);
     setNotes(pending.notes || '');
+    setPayoutMethod(pending.payoutMethod === 'Check' ? 'Check' : 'Cash');
+    if (pending.checkNumber) setCheckNumber(pending.checkNumber);
 
-    setCurrentStep(2);
+    setCurrentStep(pending.scrapLines?.length ? 2 : 1);
     setIsPendingModalOpen(false);
-    toast.success(`Selected Pending Intake #${pending.id} for Finalization!`, {
-      description: `Customer: ${pending.customerName} | Ready for scale weighing & payout.`,
+    toast.success(`Switched to active load #${pending.id}`, {
+      description: `${pending.customerName} · ${pending.scrapLines?.length || 0} weighed load(s)`,
     });
   };
 
-  const handleSaveAsPendingGroup = () => {
-    if (!customerName.trim()) {
-      toast.error('Please enter customer/seller name before saving to pending group');
+  const handleStartNewLoad = () => {
+    if (!saveCurrentDraft(true)) return;
+    const activeCount = storageService.getTickets().filter(
+      (ticket) => ticket.ticketType === 'SCRAP_METAL' && (ticket.status === 'DRAFT' || ticket.status === 'PENDING')
+    ).length;
+    if (activeCount >= MAX_ACTIVE_LOADS) {
+      toast.error(`The active queue is full (${MAX_ACTIVE_LOADS}/${MAX_ACTIVE_LOADS}). Complete a load before starting another.`);
       return;
     }
+    resetForm();
+    toast.success('New intake load opened', { description: `${MAX_ACTIVE_LOADS - activeCount} active slot(s) remaining.` });
+  };
 
-    const currentOp = storageService.getSettings().operatorName;
-    const ticketId = customReceiptNumber.trim() || storageService.generateScrapReceiptNumber();
-
-    const pendingTicket: Ticket = {
-      id: ticketId,
-      ticketType: 'SCRAP_METAL',
-      createdAt: new Date().toISOString(),
-      status: 'PENDING',
-      customerId: selectedCustomerId || undefined,
-      customerName,
-      customerPhone: customerPhone.trim() || undefined,
-      customerIdNumber,
-      vehicleLicensePlate,
-      scrapLines: lines,
-      complianceCaptures,
-      grossTotal: 0,
-      totalDeductions: 0,
-      finalPayout: 0,
-      payoutMethod: 'Cash',
-      operatorName: currentOp,
-      notes: notes || 'Intake recorded. Awaiting final scale weighing.',
-    };
-
-    storageService.saveTicket(pendingTicket);
-    refreshPendingTickets();
-
-    toast.success(`Saved Scrap Intake #${pendingTicket.id} into Pending Group!`, {
-      description: `Customer ${customerName} added to the pending finalization queue.`,
+  const handleSaveAsPendingGroup = () => {
+    if (!saveCurrentDraft(false, 'PENDING')) return;
+    toast.success(`Load #${customReceiptNumber} is ready for final weighing`, {
+      description: `${customerName} remains available in the active load queue.`,
     });
-
     resetForm();
   };
 
@@ -337,6 +381,8 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
 
     const newLine: ScrapTicketLine = {
       id: `line-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      loadNumber: lines.length + 1,
+      capturedAt: new Date().toISOString(),
       metalGradeId: selectedMetal.id,
       metalName: selectedMetal.name,
       metalCategory: selectedMetal.category,
@@ -351,7 +397,7 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
     };
 
     setLines([...lines, newLine]);
-    toast.success(`Added ${newLine.billableWeight} LBS of ${newLine.metalName}`);
+    toast.success(`Load ${newLine.loadNumber}: ${newLine.billableWeight} LBS of ${newLine.metalName} added`);
 
     setGrossWeight(0);
     setTareWeight(0);
@@ -494,21 +540,27 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
           </div>
         </div>
 
-        {/* Action Controls & Pending Queue Indicator */}
+        {/* Action Controls & Active Load Queue */}
         <div className="flex items-center gap-2 flex-wrap">
+          <Button
+            size="sm"
+            onClick={handleStartNewLoad}
+            disabled={pendingTickets.length >= MAX_ACTIVE_LOADS && !activeTicketId}
+            className="bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs gap-1.5"
+          >
+            <Plus className="w-3.5 h-3.5" /> New Active Load
+          </Button>
           <Button
             size="sm"
             variant="outline"
             onClick={() => { refreshPendingTickets(); setIsPendingModalOpen(true); }}
             className="relative bg-amber-500/10 border-amber-500/40 hover:bg-amber-500/20 text-amber-300 font-bold text-xs gap-1.5"
           >
-            <Clock className="w-3.5 h-3.5 text-amber-400" />
-            <span>Pending Group Queue</span>
-            {pendingTickets.length > 0 && (
-              <Badge className="ml-1 bg-amber-500 text-slate-950 font-black text-[10px] px-1.5 py-0">
-                {pendingTickets.length}
-              </Badge>
-            )}
+            <Layers className="w-3.5 h-3.5 text-amber-400" />
+            <span>Active Loads</span>
+            <Badge className="ml-1 bg-amber-500 text-slate-950 font-black text-[10px] px-1.5 py-0">
+              {pendingTickets.length}/{MAX_ACTIVE_LOADS}
+            </Badge>
           </Button>
 
           <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800">
@@ -538,15 +590,15 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
 
       <EntranceLprMonitor onTicketCreated={() => refreshPendingTickets()} />
 
-      {/* PENDING SCRAP INTAKES GROUP */}
+      {/* SIMULTANEOUS ACTIVE LOAD WORKSPACE */}
       {pendingTickets.length > 0 && (
         <Card className="bg-slate-900 border-2 border-amber-500/40 text-white shadow-xl overflow-hidden">
 
-          <CardHeader className="py-3 px-4 bg-gradient-to-r from-amber-950/80 to-slate-950 border-b border-amber-500/30 flex flex-row items-center justify-between">
+          <CardHeader className="py-3 px-4 bg-amber-950/40 border-b border-amber-500/30 flex flex-row items-center justify-between">
             <div className="flex items-center gap-2">
-              <Clock className="w-4 h-4 text-amber-400" />
+              <Layers className="w-4 h-4 text-amber-400" />
               <CardTitle className="text-sm font-bold tracking-wide uppercase text-amber-300">
-                Pending Group — Select Which Intake to Finalize Next ({pendingTickets.length})
+                Active Load Workspace — Switch Between Open Tickets ({pendingTickets.length}/{MAX_ACTIVE_LOADS})
               </CardTitle>
             </div>
             <Button

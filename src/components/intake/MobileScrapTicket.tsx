@@ -183,6 +183,8 @@ export const MobileScrapTicket: React.FC<MobileScrapTicketProps> = ({ onBack, on
     const lineTotal = Math.round(billableWeight * selectedMetal.ratePerLb * 100) / 100;
     const line: ScrapTicketLine = {
       id: `line-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      loadNumber: lines.length + 1,
+      capturedAt: new Date().toISOString(),
       metalGradeId: selectedMetal.id,
       metalName: selectedMetal.name,
       metalCategory: selectedMetal.category,

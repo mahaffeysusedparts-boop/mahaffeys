@@ -233,6 +233,8 @@ export interface ComplianceCaptures {
 
 export interface ScrapTicketLine {
   id: string;
+  loadNumber?: number;
+  capturedAt?: string;
   metalGradeId: string;
   metalName: string;
   metalCategory: string;
