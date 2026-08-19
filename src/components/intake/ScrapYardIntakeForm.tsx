@@ -407,7 +407,7 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
   };
 
   const handleRemoveLine = (id: string) => {
-    setLines(lines.filter((l) => l.id !== id));
+    setLines(lines.filter((l) => l.id !== id).map((l, index) => ({ ...l, loadNumber: index + 1 })));
   };
 
   const totalBillableWeight = lines.reduce((acc, l) => acc + l.billableWeight, 0);
@@ -613,11 +613,16 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
 
           <CardContent className="p-3">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {pendingTickets.map((ticket) => (
+              {pendingTickets.map((ticket) => {
+                const ticketLoads = ticket.scrapLines || [];
+                const ticketWeight = ticketLoads.reduce((sum, line) => sum + line.billableWeight, 0);
+                const ticketMaterials = [...new Set(ticketLoads.map((line) => line.metalName))].slice(0, 3);
+                const isCurrent = activeTicketId === ticket.id || (!activeTicketId && customReceiptNumber.trim() === ticket.id);
+                return (
                 <div
                   key={ticket.id}
                   className={`p-3 rounded-xl border text-left transition-all space-y-2.5 ${
-                    activeTicketId === ticket.id
+                    isCurrent
                       ? "bg-amber-950/60 border-amber-500 text-white ring-1 ring-amber-500/50"
                       : "bg-slate-950 border-slate-800 hover:border-amber-500/40 text-slate-200"
                   }`}
@@ -629,9 +634,15 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
                         #{ticket.id} • {new Date(ticket.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </div>
                     </div>
-                    <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/40 text-[9px] font-mono shrink-0">
-                      PENDING
-                    </Badge>
+                    {isCurrent ? (
+                      <Badge className="bg-emerald-500 text-slate-950 text-[9px] font-mono shrink-0 font-black">
+                        CURRENT
+                      </Badge>
+                    ) : (
+                      <Badge className={`${ticket.status === 'PENDING' ? 'bg-amber-500/20 text-amber-300 border-amber-500/40' : 'bg-sky-500/20 text-sky-300 border-sky-500/40'} text-[9px] font-mono shrink-0 border`}>
+                        {ticket.status}
+                      </Badge>
+                    )}
                   </div>
 
                   <div className="text-[11px] text-slate-400 space-y-0.5 font-mono">
@@ -640,15 +651,34 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
                     {ticket.vehicleLicensePlate && <div>Tag: <span className="text-slate-200">{ticket.vehicleLicensePlate}</span></div>}
                   </div>
 
+                  <div className="rounded-lg bg-slate-900/80 border border-slate-800 px-2.5 py-2 space-y-1">
+                    <div className="flex items-center justify-between text-[10px] font-mono">
+                      <span className="text-slate-500 uppercase tracking-wide">Weighed loads</span>
+                      <span className="text-white font-bold">{ticketLoads.length}</span>
+                    </div>
+                    {ticketWeight > 0 && (
+                      <div className="flex items-center justify-between text-[10px] font-mono">
+                        <span className="text-slate-500 uppercase tracking-wide">Current weight</span>
+                        <span className="text-emerald-400 font-bold">{ticketWeight.toLocaleString()} LBS</span>
+                      </div>
+                    )}
+                    {ticketMaterials.length > 0 && (
+                      <div className="text-[10px] font-mono text-slate-400 truncate">
+                        {ticketMaterials.join(' · ')}{ticketLoads.length > 0 && ticket.scrapLines!.length > ticketMaterials.length ? ' +' : ''}
+                      </div>
+                    )}
+                  </div>
+
                   <Button
                     size="sm"
                     onClick={() => handleLoadPendingTicket(ticket)}
                     className="w-full h-8 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs gap-1.5 shadow"
                   >
-                    <Scale className="w-3.5 h-3.5" /> Select & Finalize Next
+                    <Scale className="w-3.5 h-3.5" /> {isCurrent ? 'Continue This Load' : 'Switch to This Load'}
                   </Button>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </CardContent>
         </Card>
@@ -1163,19 +1193,20 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
               <Card className="bg-slate-900 border-slate-800 text-white shadow-lg overflow-hidden">
                 <CardHeader className="py-3 px-4 bg-slate-950/60 border-b border-slate-800 flex flex-row items-center justify-between">
                   <CardTitle className="text-sm font-bold tracking-wide uppercase text-slate-300">
-                    Ticket Itemized Lines ({lines.length})
+                    Weighed Loads on This Ticket ({lines.length})
                   </CardTitle>
                 </CardHeader>
 
                 <CardContent className="p-0">
                   {lines.length === 0 ? (
                     <div className="p-8 text-center text-slate-500 text-xs">
-                      No scrap line items added yet. Capture weight from the scale gauge and tap "Add Line Item".
+                      No loads weighed on this ticket yet. Capture weight from the scale gauge and tap "Add Line Item" — each line is a separate weighed load.
                     </div>
                   ) : (
                     <Table>
                       <TableHeader className="bg-slate-950/80">
                         <TableRow className="border-slate-800 hover:bg-slate-950 text-xs">
+                          <TableHead className="text-slate-400">Load #</TableHead>
                           <TableHead className="text-slate-400">Metal Grade</TableHead>
                           <TableHead className="text-slate-400 text-right">Net Weight</TableHead>
                           <TableHead className="text-slate-400 text-right">Deductions</TableHead>
@@ -1188,6 +1219,9 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
                       <TableBody>
                         {lines.map((line) => (
                           <TableRow key={line.id} className="border-slate-800 hover:bg-slate-800/40 font-mono text-xs">
+                            <TableCell className="text-amber-300 font-bold">
+                              #{line.loadNumber || lines.indexOf(line) + 1}
+                            </TableCell>
                             <TableCell className="font-semibold text-white font-sans">
                               {line.metalName}
                               <span className="block text-[10px] text-slate-400">{line.metalCategory}</span>
@@ -1368,9 +1402,9 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
         <DialogContent className="sm:max-w-[680px] bg-slate-900 border-slate-800 text-white">
           <DialogHeader className="border-b border-slate-800 pb-3 flex flex-row items-center justify-between">
             <div className="flex items-center gap-2">
-              <Clock className="w-5 h-5 text-amber-400" />
+              <Layers className="w-5 h-5 text-amber-400" />
               <DialogTitle className="text-base font-bold font-mono">
-                Pending Group Queue ({pendingTickets.length})
+                Active Loads Queue ({pendingTickets.length}/{MAX_ACTIVE_LOADS})
               </DialogTitle>
             </div>
             <Button
@@ -1387,7 +1421,7 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
             <div className="relative">
               <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-500" />
               <Input
-                placeholder="Filter pending by seller name, phone, ID, or vehicle tag..."
+                placeholder="Filter active loads by seller name, phone, ID, or vehicle tag..."
                 value={pendingSearch}
                 onChange={(e) => setPendingSearch(e.target.value)}
                 className="bg-slate-950 border-slate-800 text-xs pl-8 h-9"
@@ -1397,14 +1431,17 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
             <div className="space-y-2.5 max-h-[60vh] overflow-y-auto pr-1">
               {filteredPendingTickets.length === 0 ? (
                 <div className="p-8 text-center text-slate-400 text-xs space-y-2">
-                  <Clock className="w-8 h-8 text-slate-600 mx-auto" />
-                  <p className="font-bold text-slate-300">No Pending Scrap Intakes Found</p>
+                  <Layers className="w-8 h-8 text-slate-600 mx-auto" />
+                  <p className="font-bold text-slate-300">No Active Loads Right Now</p>
                   <p className="text-[11px] text-slate-500">
-                    When intake step 1 is saved, tickets appear in this Pending Group so scale operators can choose which one to finalize next.
+                    Start intake step 1 or press "New Active Load" — up to {MAX_ACTIVE_LOADS} loads can stay open at once while you weigh them one at a time.
                   </p>
                 </div>
               ) : (
-                filteredPendingTickets.map((ticket) => (
+                filteredPendingTickets.map((ticket) => {
+                  const modalLoads = ticket.scrapLines || [];
+                  const modalWeight = modalLoads.reduce((sum, line) => sum + line.billableWeight, 0);
+                  return (
                   <div
                     key={ticket.id}
                     className="bg-slate-950 border border-slate-800 hover:border-amber-500/50 p-4 rounded-xl space-y-3 transition-all"
@@ -1416,12 +1453,20 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
                           <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/30 text-[10px]">
                             #{ticket.id}
                           </Badge>
+                          <Badge className={`${ticket.status === 'PENDING' ? 'bg-amber-500/20 text-amber-300' : 'bg-sky-500/20 text-sky-300'} border-0 text-[9px] font-mono`}>
+                            {ticket.status}
+                          </Badge>
                         </div>
                         <p className="text-xs text-slate-400 font-mono mt-0.5">
                           Phone: <span className="text-emerald-400">{ticket.customerPhone || 'N/A'}</span> | ID #: {ticket.customerIdNumber || 'On File'} | Vehicle Tag: {ticket.vehicleLicensePlate || 'N/A'}
                         </p>
                         <p className="text-[10px] text-slate-500 mt-0.5">
                           Saved: {new Date(ticket.createdAt).toLocaleTimeString()} ({ticket.operatorName})
+                        </p>
+                        <p className="text-[10px] text-slate-400 font-mono mt-1">
+                          Loads: <span className="text-white font-bold">{modalLoads.length}</span>
+                          {modalWeight > 0 && <> · Weight: <span className="text-emerald-400 font-bold">{modalWeight.toLocaleString()} LBS</span></>}
+                          {modalLoads.length > 0 && <> · {modalLoads.map((line) => line.metalName).filter((value, index, all) => all.indexOf(value) === index).join(', ')}</>}
                         </p>
                       </div>
 
@@ -1430,7 +1475,7 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
                         onClick={() => handleLoadPendingTicket(ticket)}
                         className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs gap-1.5 shadow-md shrink-0"
                       >
-                        <Scale className="w-3.5 h-3.5" /> Select & Finalize Next
+                        <Scale className="w-3.5 h-3.5" /> Switch to Load
                       </Button>
                     </div>
 
@@ -1451,7 +1496,8 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
                       </div>
                     )}
                   </div>
-                ))
+                  );
+                })
               )}
             </div>
           </div>

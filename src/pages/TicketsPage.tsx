@@ -302,6 +302,10 @@ export default function TicketsPage() {
                             <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/30 text-[10px]">
                               PENDING
                             </Badge>
+                          ) : t.status === 'DRAFT' ? (
+                            <Badge className="bg-sky-500/20 text-sky-300 border-sky-500/30 text-[10px]">
+                              ACTIVE LOAD
+                            </Badge>
                           ) : (
                             <Badge variant="outline" className="border-red-500/40 text-red-400 text-[10px]">
                               VOIDED
