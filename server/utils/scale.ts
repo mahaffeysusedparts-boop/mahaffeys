@@ -1,3 +1,4 @@
+import { access } from "node:fs/promises";
 import { SerialPort } from "serialport";
 
 export type ServerScaleStatus = {
@@ -8,18 +9,88 @@ export type ServerScaleStatus = {
   isZero: boolean;
   portName?: string;
   baudRate: number;
+  scanning: boolean;
   errorMessage?: string;
   updatedAt?: string;
 };
 
-type ScaleOptions = {
+export type ScaleOptions = {
   path?: string;
   baudRate: number;
 };
 
+export type ScaleDetection = {
+  path: string;
+  baudRate: number;
+  sample: string;
+};
+
+const KNOWN_SERVER_PORTS = ["/dev/ttyS4", "/dev/ttyS5", "/dev/ttyS6", "/dev/ttyS7"];
+const DEFAULT_BAUD_RATES = [2400, 9600, 4800, 19200];
+
+export async function listSerialPorts() {
+  const listed = await SerialPort.list().catch(() => []);
+  const paths = new Set(listed.map((port) => port.path));
+
+  await Promise.all(KNOWN_SERVER_PORTS.map(async (path) => {
+    try {
+      await access(path);
+      paths.add(path);
+    } catch {
+      // Port is not exposed to this server process.
+    }
+  }));
+
+  return [...paths]
+    .filter((path) => /^\/dev\/(ttyS\d+|ttyUSB\d+|ttyACM\d+|serial\/by-id\/.+)$/.test(path))
+    .sort();
+}
+
+function detectScaleLine(buffer: string) {
+  const lines = buffer.split(/[\r\n]+/);
+  for (const line of lines) {
+    const clean = line.trim();
+    if (!clean || !/[-+]?\d+(?:\.\d+)?/.test(clean)) continue;
+    const printable = [...clean].filter((character) => character >= " " && character <= "~").length;
+    if (printable / clean.length >= 0.85) return clean.slice(0, 120);
+  }
+  return null;
+}
+
+async function probePort(path: string, baudRate: number, timeoutMs = 1400): Promise<string | null> {
+  const port = new SerialPort({ path, baudRate, dataBits: 8, stopBits: 1, parity: "none", autoOpen: false });
+
+  return new Promise((resolve) => {
+    let complete = false;
+    let buffer = "";
+    let timer: ReturnType<typeof setTimeout>;
+
+    const finish = (sample: string | null) => {
+      if (complete) return;
+      complete = true;
+      clearTimeout(timer);
+      port.removeAllListeners();
+      if (port.isOpen) port.close(() => resolve(sample));
+      else resolve(sample);
+    };
+
+    port.on("data", (chunk: Buffer) => {
+      buffer = (buffer + chunk.toString("utf8")).slice(-2048);
+      const sample = detectScaleLine(buffer);
+      if (sample) finish(sample);
+    });
+    port.on("error", () => finish(null));
+    timer = setTimeout(() => finish(null), timeoutMs);
+    port.open((error) => {
+      if (error) finish(null);
+    });
+  });
+}
+
 class ServerScaleReader {
   private port: SerialPort | null = null;
   private starting = false;
+  private scanning = false;
   private buffer = "";
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private options: ScaleOptions = { baudRate: 2400 };
@@ -30,20 +101,24 @@ class ServerScaleReader {
     isStable: false,
     isZero: true,
     baudRate: 2400,
+    scanning: false,
   };
 
   async start(options: ScaleOptions) {
+    if (this.scanning || this.starting) return;
+    if (this.port?.isOpen && this.options.path === options.path && this.options.baudRate === options.baudRate) return;
+    if (this.port?.isOpen) await this.stop();
+
     this.options = options;
     this.status.baudRate = options.baudRate;
-    if (this.port?.isOpen || this.starting) return;
-
+    this.status.updatedAt = undefined;
+    this.status.weight = 0;
     this.starting = true;
     try {
       const path = options.path || (await this.findScalePort());
-      if (!path) {
-        throw new Error("No USB/serial scale port was found on the app server.");
-      }
+      if (!path) throw new Error("No serial scale port was found on the app server.");
 
+      this.options.path = path;
       this.status.portName = path;
       const port = new SerialPort({
         path,
@@ -74,16 +149,56 @@ class ServerScaleReader {
     }
   }
 
+  async scan(baudRates = DEFAULT_BAUD_RATES): Promise<ScaleDetection | null> {
+    if (this.scanning) return null;
+    const previousOptions = { ...this.options };
+    this.scanning = true;
+    this.status.scanning = true;
+    this.status.connected = false;
+    this.status.errorMessage = undefined;
+    await this.stop();
+
+    try {
+      const paths = await listSerialPorts();
+      for (const baudRate of baudRates) {
+        for (const path of paths) {
+          const sample = await probePort(path, baudRate);
+          if (!sample) continue;
+          const detection = { path, baudRate, sample };
+          this.options = detection;
+          return detection;
+        }
+      }
+      this.status.errorMessage = "No valid scale weight data was detected on the available serial ports.";
+      return null;
+    } finally {
+      this.scanning = false;
+      this.status.scanning = false;
+      const selected = this.options.path ? this.options : previousOptions;
+      await this.start(selected);
+    }
+  }
+
+  async stop() {
+    if (this.retryTimer) {
+      clearTimeout(this.retryTimer);
+      this.retryTimer = null;
+    }
+    const port = this.port;
+    this.port = null;
+    if (!port) return;
+    port.removeAllListeners();
+    if (port.isOpen) {
+      await new Promise<void>((resolve) => port.close(() => resolve()));
+    }
+  }
+
   getStatus(): ServerScaleStatus {
-    return { ...this.status };
+    return { ...this.status, scanning: this.scanning };
   }
 
   private async findScalePort() {
-    const ports = await SerialPort.list();
-    const preferred = ports.find((port) =>
-      /tty(USB|ACM)|cu\.usb|COM\d+/i.test(port.path),
-    );
-    return preferred?.path;
+    return (await listSerialPorts())[0];
   }
 
   private consume(chunk: string) {
@@ -96,7 +211,6 @@ class ServerScaleReader {
   private parse(raw: string) {
     const clean = raw.trim().toUpperCase();
     if (!clean) return;
-
     const numberMatch = clean.match(/[-+]?\d+(?:\.\d+)?/);
     if (!numberMatch) return;
 
@@ -120,7 +234,7 @@ class ServerScaleReader {
   }
 
   private scheduleRetry() {
-    if (this.retryTimer) return;
+    if (this.retryTimer || this.scanning) return;
     this.retryTimer = setTimeout(() => {
       this.retryTimer = null;
       void this.start(this.options);

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Activity, Cpu, Database, HardDrive, RefreshCw, RotateCw, Server, Terminal } from "lucide-react";
 import { Navbar } from "@/components/layout/Navbar";
+import { ScaleServerManager } from "@/components/server/ScaleServerManager";
 import { StorageBayManager } from "@/components/server/StorageBayManager";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -172,6 +173,7 @@ export default function ServerAdminPage() {
               <MetricCard icon={HardDrive} label="App disk" value={`${diskPercent}% used`} detail={`${formatBytes(snapshot.host.diskUsed)} of ${formatBytes(snapshot.host.diskTotal)}`} accent="amber" />
             </section>
 
+            <ScaleServerManager />
             <StorageBayManager />
 
             <Card className="mt-5 rounded-3xl border-slate-800 bg-slate-900 text-slate-100 shadow-xl">
