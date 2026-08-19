@@ -68,7 +68,7 @@ services:
       NITRO_SCALE_SERIAL_PORT: /dev/scale
       NITRO_SCALE_SERIAL_BAUD_RATE: ${SCALE_SERIAL_BAUD_RATE:-9600}
     devices:
-      - "${SCALE_SERIAL_PORT:-/dev/ttyUSB0}:/dev/scale"
+      - "${SCALE_SERIAL_PORT:-/dev/ttyS0}:/dev/scale"
     group_add:
       - "20"
     volumes:
