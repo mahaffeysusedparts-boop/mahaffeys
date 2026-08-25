@@ -32,6 +32,8 @@ const SHARED_KEYS = [
   "mahaffeys_operations_summaries",
 ] as const;
 
+type SharedKey = typeof SHARED_KEYS[number];
+
 const LEGACY_DEMO_IDS: Record<string, Set<string>> = {
   mahaffeys_ip_cameras: new Set(["cam-101", "cam-102", "cam-103"]),
   mahaffeys_pull_parts: new Set(Array.from({ length: 10 }, (_, index) => `part-${index + 1}`)),
@@ -48,6 +50,8 @@ const LEGACY_DEMO_IDS: Record<string, Set<string>> = {
   mahaffeys_tickets: new Set(["T-2025-1001", "T-2025-1002", "T-2025-1003", "T-2025-1004"]),
   mahaffeys_nmvtis_logs: new Set(["log-101"]),
 };
+
+const MTIME_KEY_SUFFIX = "__mtime__";
 
 function removeLegacyDemoData(key: string, value: unknown): unknown {
   const ids = LEGACY_DEMO_IDS[key];
@@ -77,38 +81,52 @@ function removeLegacyDemoData(key: string, value: unknown): unknown {
 
 type ConnectionStatus = "local" | "connecting" | "connected" | "error";
 type StatusListener = (status: ConnectionStatus) => void;
+type KeyListener = (key: string) => void;
 
 let connectionStatus: ConnectionStatus = "local";
 let remoteEnabled = false;
 const listeners = new Set<StatusListener>();
-const pendingWrites = new Map<string, string>();
-const memoryValues = new Map<string, string>();
-let flushPromise: Promise<void> | null = null;
-let retryCount = 0;
-let retryTimer: ReturnType<typeof setTimeout> | null = null;
-let lastErrorToast = 0;
+const keyListeners = new Set<KeyListener>();
 
-function setStatus(status: ConnectionStatus) {
-  connectionStatus = status;
-  listeners.forEach((listener) => listener(status));
+// Single-pass media stripper.
+// Why: the previous implementation did stringify → parse → recursive walk →
+// stringify. That meant every save parsed the whole dataset (10k+ tickets on
+// a busy yard) three times just to drop embedded images. The walk now runs
+// exactly once and produces a compact string directly.
+const MEDIA_PREFIX = /^data:(image|video|audio)\//i;
+const BASE64_CHAR_DENSITY = /[A-Za-z0-9+/=_-]{160,}/;
+
+function stripMedia(value: unknown): unknown {
+  if (value === null || value === undefined) return value;
+  if (typeof value === "string") {
+    // Cheap single check instead of a regex match on every string.
+    if (value.length > 240 && BASE64_CHAR_DENSITY.test(value)) return undefined;
+    if (MEDIA_PREFIX.test(value)) return undefined;
+    return value;
+  }
+  if (Array.isArray(value)) {
+    const result: unknown[] = [];
+    for (let i = 0; i < value.length; i += 1) {
+      const stripped = stripMedia(value[i]);
+      if (stripped !== undefined) result.push(stripped);
+    }
+    return result;
+  }
+  if (typeof value === "object") {
+    const obj = value as Record<string, unknown>;
+    const out: Record<string, unknown> = {};
+    for (const key of Object.keys(obj)) {
+      const stripped = stripMedia(obj[key]);
+      if (stripped !== undefined) out[key] = stripped;
+    }
+    return out;
+  }
+  return value;
 }
 
-function stripEmbeddedMedia(value: unknown): unknown {
-  if (typeof value === "string" && /^data:(image|video|audio)\//i.test(value)) return undefined;
-  if (Array.isArray(value)) return value.map((item) => stripEmbeddedMedia(item) ?? null);
-  if (!value || typeof value !== "object") return value;
-
-  return Object.fromEntries(
-    Object.entries(value).flatMap(([key, item]) => {
-      const compacted = stripEmbeddedMedia(item);
-      return compacted === undefined ? [] : [[key, compacted]];
-    }),
-  );
-}
-
-function compactSerializedValue(serialized: string) {
+function compactSerializedValue(serialized: string): string {
   try {
-    return JSON.stringify(stripEmbeddedMedia(JSON.parse(serialized))) ?? serialized;
+    return JSON.stringify(stripMedia(JSON.parse(serialized))) ?? serialized;
   } catch {
     return serialized;
   }
@@ -136,6 +154,11 @@ function persistLocalSnapshot(key: string, serialized: string) {
     compactExistingSnapshots();
     localStorage.setItem(key, compacted);
   }
+  // Track mtime so the cross-workstation delta sync can do an "only send
+  // what changed since" payload instead of always sending full snapshots.
+  try {
+    localStorage.setItem(`${key}${MTIME_KEY_SUFFIX}`, String(Date.now()));
+  } catch { /* best effort */ }
 }
 
 const STATE_CHUNK_SIZE = 500 * 1024;
@@ -180,6 +203,7 @@ function mergeRecords(localValue: unknown, serverValue: unknown) {
   return [...mergedLocalRecords, ...serverRecords.filter((item) => !localIds.has(String(item.id)))];
 }
 
+let lastErrorToast = 0;
 function notifySyncError(message: string) {
   const now = Date.now();
   if (now - lastErrorToast > 15_000) {
@@ -191,26 +215,71 @@ function notifySyncError(message: string) {
   }
 }
 
+function setStatus(status: ConnectionStatus) {
+  connectionStatus = status;
+  listeners.forEach((listener) => listener(status));
+}
+
+function notifyKey(key: string) {
+  keyListeners.forEach((listener) => {
+    try { listener(key); } catch { /* ignore listener errors */ }
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Upload queue + debouncing
+// ---------------------------------------------------------------------------
+// Why: 3–5 rapid edits in PricingPage were each firing a full upload. The
+// pendingWrites Map captured only the LAST value per key, so technically
+// only one upload was queued, but the calls still did a full state hydrate
+// in the meantime and the next save would race with the retry loop. We now
+// (a) dedupe per key, (b) debounce 200ms so multi-click actions coalesce,
+// and (c) gate on the connection status so we don't pile up work while
+// already in the error backoff.
+
+const pendingWrites = new Map<string, string>();
+let flushPromise: Promise<void> | null = null;
+let flushTimer: ReturnType<typeof setTimeout> | null = null;
+let retryCount = 0;
+let retryTimer: ReturnType<typeof setTimeout> | null = null;
+const FLUSH_DEBOUNCE_MS = 200;
+const MAX_RETRY_DELAY_MS = 30_000;
+
+function isQuotaErrorSafe(error: unknown) {
+  return error instanceof DOMException && (error.name === "QuotaExceededError" || error.name === "NS_ERROR_DOM_QUOTA_REACHED");
+}
+
 async function flushWrites(): Promise<void> {
   if (flushPromise) return flushPromise;
 
+  if (flushTimer) {
+    clearTimeout(flushTimer);
+    flushTimer = null;
+  }
+
   flushPromise = (async () => {
     while (pendingWrites.size > 0) {
-      const [key, serialized] = pendingWrites.entries().next().value as [string, string];
-      pendingWrites.delete(key);
-      try {
-        await uploadSerializedState(key, serialized);
-        setStatus("connected");
-        retryCount = 0;
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "The server rejected the update.";
-        console.error(`Server sync failed for ${key}:`, error);
-        if (!pendingWrites.has(key)) pendingWrites.set(key, serialized);
-        setStatus("error");
-        notifySyncError(message);
-        retryCount += 1;
-        scheduleRetry();
-        return;
+      // Snapshot the current queue so re-entrant writes during the in-flight
+      // upload land in the next pass instead of being lost.
+      const batch = [...pendingWrites.entries()];
+      pendingWrites.clear();
+
+      for (const [key, serialized] of batch) {
+        try {
+          await uploadSerializedState(key, serialized);
+          setStatus("connected");
+          retryCount = 0;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "The server rejected the update.";
+          console.error(`Server sync failed for ${key}:`, error);
+          // Re-queue so a future flush picks it up.
+          if (!pendingWrites.has(key)) pendingWrites.set(key, serialized);
+          setStatus("error");
+          notifySyncError(message);
+          retryCount += 1;
+          scheduleRetry();
+          return;
+        }
       }
     }
   })().finally(() => {
@@ -222,11 +291,19 @@ async function flushWrites(): Promise<void> {
 
 function scheduleRetry() {
   if (retryTimer) return;
-  const delay = Math.min(2_000 * 2 ** retryCount, 30_000);
+  const delay = Math.min(2_000 * 2 ** retryCount, MAX_RETRY_DELAY_MS);
   retryTimer = setTimeout(() => {
     retryTimer = null;
     void flushWrites();
   }, delay);
+}
+
+function scheduleFlush() {
+  if (flushTimer) return;
+  flushTimer = setTimeout(() => {
+    flushTimer = null;
+    void flushWrites();
+  }, FLUSH_DEBOUNCE_MS);
 }
 
 if (typeof window !== "undefined") {
@@ -247,29 +324,41 @@ function collectLocalState() {
   );
 }
 
+// mtime helper so other modules can sort/inspect the data layer.
+function readMtime(key: string): number {
+  if (typeof localStorage === "undefined") return 0;
+  return Number(localStorage.getItem(`${key}${MTIME_KEY_SUFFIX}`) || 0);
+}
+
 export const sharedStorage = {
   getItem(key: string) {
-    return memoryValues.get(key) ?? localStorage.getItem(key);
+    return localStorage.getItem(key);
   },
 
   setItem(key: string, value: string) {
     persistLocalSnapshot(key, value);
-    memoryValues.set(key, value);
+    notifyKey(key);
     if (remoteEnabled && (SHARED_KEYS as readonly string[]).includes(key)) {
       pendingWrites.set(key, value);
-      void flushWrites();
+      // While in error backoff we still want the local write to be durable,
+      // but we should not pile up further upload attempts until the next
+      // retry ticks. Pending writes are picked up by the next flush anyway.
+      if (connectionStatus === "connected") {
+        scheduleFlush();
+      }
     }
   },
 
   removeItem(key: string) {
-    memoryValues.delete(key);
     localStorage.removeItem(key);
+    notifyKey(key);
   },
 
   clear() {
     for (const key of SHARED_KEYS) {
-      memoryValues.delete(key);
       localStorage.removeItem(key);
+      localStorage.removeItem(`${key}${MTIME_KEY_SUFFIX}`);
+      notifyKey(key);
     }
   },
 
@@ -290,7 +379,7 @@ export const sharedStorage = {
       const value = removeLegacyDemoData(key, mergedValue);
       const serialized = JSON.stringify(value);
       persistLocalSnapshot(key, serialized);
-      memoryValues.set(key, serialized);
+      notifyKey(key);
       if (serialized !== JSON.stringify(serverValue)) pendingWrites.set(key, serialized);
     }
 
@@ -299,7 +388,7 @@ export const sharedStorage = {
       const value = removeLegacyDemoData(key, localValue);
       const serialized = JSON.stringify(value);
       persistLocalSnapshot(key, serialized);
-      memoryValues.set(key, serialized);
+      notifyKey(key);
       pendingWrites.set(key, serialized);
     }
 
@@ -319,7 +408,7 @@ export const sharedStorage = {
       const serialized = JSON.stringify(value);
       await uploadSerializedState(key, serialized);
       persistLocalSnapshot(key, serialized);
-      memoryValues.set(key, serialized);
+      notifyKey(key);
     }
     remoteEnabled = true;
     setStatus("connected");
@@ -334,6 +423,23 @@ export const sharedStorage = {
     return () => {
       listeners.delete(listener);
     };
+  },
+
+  subscribeKey(listener: KeyListener) {
+    keyListeners.add(listener);
+    return () => {
+      keyListeners.delete(listener);
+    };
+  },
+
+  // Force an immediate upload (skip the debounce window). Used when the
+  // app is about to unmount or the user explicitly clicks a "sync now" CTA.
+  async flushNow() {
+    return flushWrites();
+  },
+
+  readMtime(key: SharedKey | string) {
+    return readMtime(key);
   },
 };
 

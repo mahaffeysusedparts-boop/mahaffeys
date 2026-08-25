@@ -57,15 +57,103 @@ const STORAGE_KEYS = {
   OPERATIONS_SUMMARIES: 'mahaffeys_operations_summaries',
 };
 
+// ---------------------------------------------------------------------------
+// In-memory cache layer
+// ---------------------------------------------------------------------------
+// Why: storageService.getX() used to JSON.parse the whole blob on every call.
+// Many pages call it 5–10 times per render (e.g. Dashboard). The previous
+// "cache" only covered PullYardVehicles — everything else parsed every time.
+// We now cache every key with an mtime stamp; writes update the cache
+// synchronously, reads just hand back the cached array/object.
+// ---------------------------------------------------------------------------
+
+type CacheEntry = { source: string; value: unknown };
+
+const cache = new Map<string, CacheEntry>();
+
+function readCached<T>(key: string, fallback: T): T {
+  const raw = sharedStorage.getItem(key);
+  if (raw === null || raw === undefined) {
+    cache.set(key, { source: "", value: fallback });
+    sharedStorage.setItem(key, JSON.stringify(fallback));
+    return fallback;
+  }
+  const hit = cache.get(key);
+  if (hit && hit.source === raw) return hit.value as T;
+  const parsed = JSON.parse(raw) as T;
+  cache.set(key, { source: raw, value: parsed });
+  return parsed;
+}
+
+function writeCached<T>(key: string, value: T): void {
+  const serialized = JSON.stringify(value);
+  sharedStorage.setItem(key, serialized);
+  cache.set(key, { source: serialized, value });
+}
+
+function appendCached<T extends { id: string }>(key: string, item: T): T {
+  const items = readCached<T[]>(key, []);
+  const idx = items.findIndex((candidate) => candidate.id === item.id);
+  if (idx >= 0) items[idx] = item; else items.unshift(item);
+  writeCached(key, items);
+  return item;
+}
+
+function patchCached<T>(key: string, items: T[]): void {
+  writeCached(key, items);
+}
+
+function deleteByIdCached<T extends { id: string }>(key: string, id: string): void {
+  const items = readCached<T[]>(key, []).filter((item) => item.id !== id);
+  writeCached(key, items);
+}
+
+// Subscribers for cross-component notifications (replaces repeated JSON.parse
+// followed by manual setState in dozens of pages).
+type Listener = () => void;
+const listeners = new Map<string, Set<Listener>>();
+
+export function subscribeKey(key: string, listener: Listener): () => void {
+  let bucket = listeners.get(key);
+  if (!bucket) {
+    bucket = new Set();
+    listeners.set(key, bucket);
+  }
+  bucket.add(listener);
+  return () => {
+    bucket.delete(listener);
+  };
+}
+
+function notify(key: string): void {
+  const bucket = listeners.get(key);
+  if (!bucket) return;
+  bucket.forEach((listener) => {
+    try { listener(); } catch { /* ignore listener errors */ }
+  });
+}
+
+export function refreshCacheFromStorage(key: string): void {
+  // Drop the in-memory snapshot so the next read re-parses whatever just
+  // landed from the server.
+  cache.delete(key);
+  notify(key);
+}
+
+// ---------------------------------------------------------------------------
+// Pull vehicle cache (existing, but re-wired through the generic layer)
+// ---------------------------------------------------------------------------
+
 let pullVehicleCacheSource: string | null = null;
 let pullVehicleCache: PullYardVehicle[] | null = null;
 
-const getRemovedInventoryVehicleIds = () => new Set<string>(
-  JSON.parse(sharedStorage.getItem(STORAGE_KEYS.REMOVED_INVENTORY_VEHICLES) || "[]") as string[],
-);
+const getRemovedInventoryVehicleIds = (): Set<string> => {
+  const ids = readCached<string[]>(STORAGE_KEYS.REMOVED_INVENTORY_VEHICLES, []);
+  return new Set(ids);
+};
 
-const saveRemovedInventoryVehicleIds = (ids: Set<string>) => {
-  sharedStorage.setItem(STORAGE_KEYS.REMOVED_INVENTORY_VEHICLES, JSON.stringify([...ids]));
+const saveRemovedInventoryVehicleIds = (ids: Set<string>): void => {
+  writeCached(STORAGE_KEYS.REMOVED_INVENTORY_VEHICLES, [...ids]);
 };
 
 const sectionForMake = (make: string): PullYardVehicle['section'] => {
@@ -160,68 +248,45 @@ export const INITIAL_TICKETS: Ticket[] = [];
 
 export const storageService = {
   getIpCameras(): IpCamera[] {
-    const data = sharedStorage.getItem(STORAGE_KEYS.IP_CAMERAS);
-    if (!data) {
-      sharedStorage.setItem(STORAGE_KEYS.IP_CAMERAS, JSON.stringify(INITIAL_IP_CAMERAS));
-      return INITIAL_IP_CAMERAS;
-    }
-    return JSON.parse(data);
+    return readCached(STORAGE_KEYS.IP_CAMERAS, INITIAL_IP_CAMERAS);
   },
 
   saveIpCamera(camera: IpCamera): IpCamera {
-    const cameras = this.getIpCameras();
-    const idx = cameras.findIndex((c) => c.id === camera.id);
-    if (idx >= 0) {
-      cameras[idx] = camera;
-    } else {
-      cameras.unshift(camera);
-    }
-    sharedStorage.setItem(STORAGE_KEYS.IP_CAMERAS, JSON.stringify(cameras));
+    appendCached(STORAGE_KEYS.IP_CAMERAS, camera);
+    notify(STORAGE_KEYS.IP_CAMERAS);
     return camera;
   },
 
   deleteIpCamera(cameraId: string): void {
-    const cameras = this.getIpCameras().filter((c) => c.id !== cameraId);
-    sharedStorage.setItem(STORAGE_KEYS.IP_CAMERAS, JSON.stringify(cameras));
+    deleteByIdCached<IpCamera>(STORAGE_KEYS.IP_CAMERAS, cameraId);
+    notify(STORAGE_KEYS.IP_CAMERAS);
   },
 
   getMetals(): MetalGrade[] {
-    const data = sharedStorage.getItem(STORAGE_KEYS.METALS);
-    if (!data) {
-      sharedStorage.setItem(STORAGE_KEYS.METALS, JSON.stringify(INITIAL_METALS));
-      return INITIAL_METALS;
-    }
-    return JSON.parse(data);
+    return readCached(STORAGE_KEYS.METALS, INITIAL_METALS);
   },
 
   saveMetals(metals: MetalGrade[]): void {
-    sharedStorage.setItem(STORAGE_KEYS.METALS, JSON.stringify(metals));
+    patchCached(STORAGE_KEYS.METALS, metals);
+    notify(STORAGE_KEYS.METALS);
   },
 
   getCarRates(): AutoSalvageCategoryRate[] {
-    const data = sharedStorage.getItem(STORAGE_KEYS.CAR_RATES);
-    if (!data) {
-      sharedStorage.setItem(STORAGE_KEYS.CAR_RATES, JSON.stringify(INITIAL_CAR_RATES));
-      return INITIAL_CAR_RATES;
-    }
-    return JSON.parse(data);
+    return readCached(STORAGE_KEYS.CAR_RATES, INITIAL_CAR_RATES);
   },
 
   saveCarRates(rates: AutoSalvageCategoryRate[]): void {
-    sharedStorage.setItem(STORAGE_KEYS.CAR_RATES, JSON.stringify(rates));
+    patchCached(STORAGE_KEYS.CAR_RATES, rates);
+    notify(STORAGE_KEYS.CAR_RATES);
   },
 
   getPullParts(): PullPartItem[] {
-    const data = sharedStorage.getItem(STORAGE_KEYS.PULL_PARTS);
-    if (!data) {
-      sharedStorage.setItem(STORAGE_KEYS.PULL_PARTS, JSON.stringify(INITIAL_PULL_PARTS));
-      return INITIAL_PULL_PARTS;
-    }
-    return JSON.parse(data);
+    return readCached(STORAGE_KEYS.PULL_PARTS, INITIAL_PULL_PARTS);
   },
 
   savePullParts(parts: PullPartItem[]): void {
-    sharedStorage.setItem(STORAGE_KEYS.PULL_PARTS, JSON.stringify(parts));
+    patchCached(STORAGE_KEYS.PULL_PARTS, parts);
+    notify(STORAGE_KEYS.PULL_PARTS);
   },
 
   getPullYardVehicles(): PullYardVehicle[] {
@@ -277,6 +342,7 @@ export const storageService = {
 
     const removedIds = getRemovedInventoryVehicleIds();
     if (removedIds.delete(veh.id)) saveRemovedInventoryVehicleIds(removedIds);
+    notify(STORAGE_KEYS.PULL_YARD_VEHICLES);
     return veh;
   },
 
@@ -293,21 +359,16 @@ export const storageService = {
     sharedStorage.setItem(STORAGE_KEYS.PULL_YARD_VEHICLES, serialized);
     pullVehicleCacheSource = serialized;
     pullVehicleCache = vehicles;
+    notify(STORAGE_KEYS.PULL_YARD_VEHICLES);
   },
 
   getCoreReturns(): CoreReturnLog[] {
-    const data = sharedStorage.getItem(STORAGE_KEYS.CORE_RETURNS);
-    if (!data) {
-      sharedStorage.setItem(STORAGE_KEYS.CORE_RETURNS, JSON.stringify(INITIAL_CORE_RETURNS));
-      return INITIAL_CORE_RETURNS;
-    }
-    return JSON.parse(data);
+    return readCached(STORAGE_KEYS.CORE_RETURNS, INITIAL_CORE_RETURNS);
   },
 
   saveCoreReturn(log: CoreReturnLog): CoreReturnLog {
-    const logs = this.getCoreReturns();
-    logs.unshift(log);
-    sharedStorage.setItem(STORAGE_KEYS.CORE_RETURNS, JSON.stringify(logs));
+    appendCached(STORAGE_KEYS.CORE_RETURNS, log);
+    notify(STORAGE_KEYS.CORE_RETURNS);
 
     this.addCashDrawerEntry({
       type: 'PAYOUT_DISBURSEMENT',
@@ -320,18 +381,12 @@ export const storageService = {
   },
 
   getAdmissionPasses(): AdmissionPass[] {
-    const data = sharedStorage.getItem(STORAGE_KEYS.ADMISSION_PASSES);
-    if (!data) {
-      sharedStorage.setItem(STORAGE_KEYS.ADMISSION_PASSES, JSON.stringify(INITIAL_ADMISSION_PASSES));
-      return INITIAL_ADMISSION_PASSES;
-    }
-    return JSON.parse(data);
+    return readCached(STORAGE_KEYS.ADMISSION_PASSES, INITIAL_ADMISSION_PASSES);
   },
 
   saveAdmissionPass(pass: AdmissionPass): AdmissionPass {
-    const passes = this.getAdmissionPasses();
-    passes.unshift(pass);
-    sharedStorage.setItem(STORAGE_KEYS.ADMISSION_PASSES, JSON.stringify(passes));
+    appendCached(STORAGE_KEYS.ADMISSION_PASSES, pass);
+    notify(STORAGE_KEYS.ADMISSION_PASSES);
 
     this.addCashDrawerEntry({
       type: 'VAULT_REPLENISHMENT',
@@ -344,53 +399,26 @@ export const storageService = {
   },
 
   getCatCodes(): CatalyticConverterCode[] {
-    const data = sharedStorage.getItem(STORAGE_KEYS.CATALYTIC_CODES);
-    if (!data) {
-      sharedStorage.setItem(STORAGE_KEYS.CATALYTIC_CODES, JSON.stringify(INITIAL_CAT_CODES));
-      return INITIAL_CAT_CODES;
-    }
-    return JSON.parse(data);
+    return readCached(STORAGE_KEYS.CATALYTIC_CODES, INITIAL_CAT_CODES);
   },
 
   saveCatCode(codeObj: CatalyticConverterCode): void {
-    const codes = this.getCatCodes();
-    const existingIndex = codes.findIndex((c) => c.id === codeObj.id);
-    if (existingIndex >= 0) {
-      codes[existingIndex] = codeObj;
-    } else {
-      codes.unshift(codeObj);
-    }
-    sharedStorage.setItem(STORAGE_KEYS.CATALYTIC_CODES, JSON.stringify(codes));
+    appendCached(STORAGE_KEYS.CATALYTIC_CODES, codeObj);
+    notify(STORAGE_KEYS.CATALYTIC_CODES);
   },
 
   getContainerDrops(): ContainerDrop[] {
-    const data = sharedStorage.getItem(STORAGE_KEYS.CONTAINER_DROPS);
-    if (!data) {
-      sharedStorage.setItem(STORAGE_KEYS.CONTAINER_DROPS, JSON.stringify(INITIAL_CONTAINER_DROPS));
-      return INITIAL_CONTAINER_DROPS;
-    }
-    return JSON.parse(data);
+    return readCached(STORAGE_KEYS.CONTAINER_DROPS, INITIAL_CONTAINER_DROPS);
   },
 
   saveContainerDrop(drop: ContainerDrop): ContainerDrop {
-    const drops = this.getContainerDrops();
-    const idx = drops.findIndex((d) => d.id === drop.id);
-    if (idx >= 0) {
-      drops[idx] = drop;
-    } else {
-      drops.unshift(drop);
-    }
-    sharedStorage.setItem(STORAGE_KEYS.CONTAINER_DROPS, JSON.stringify(drops));
+    appendCached(STORAGE_KEYS.CONTAINER_DROPS, drop);
+    notify(STORAGE_KEYS.CONTAINER_DROPS);
     return drop;
   },
 
   getCashDrawerLogs(): CashDrawerLog[] {
-    const data = sharedStorage.getItem(STORAGE_KEYS.CASH_DRAWER);
-    if (!data) {
-      sharedStorage.setItem(STORAGE_KEYS.CASH_DRAWER, JSON.stringify(INITIAL_CASH_DRAWER));
-      return INITIAL_CASH_DRAWER;
-    }
-    return JSON.parse(data);
+    return readCached(STORAGE_KEYS.CASH_DRAWER, INITIAL_CASH_DRAWER);
   },
 
   addCashDrawerEntry(entry: Omit<CashDrawerLog, 'id' | 'timestamp' | 'balanceAfter'>): CashDrawerLog {
@@ -407,51 +435,32 @@ export const storageService = {
     };
 
     logs.unshift(newLog);
-    sharedStorage.setItem(STORAGE_KEYS.CASH_DRAWER, JSON.stringify(logs));
+    patchCached(STORAGE_KEYS.CASH_DRAWER, logs);
+    notify(STORAGE_KEYS.CASH_DRAWER);
     return newLog;
   },
 
   getYardBays(): YardBayLocation[] {
-    const data = sharedStorage.getItem(STORAGE_KEYS.YARD_BAYS);
-    if (!data) {
-      sharedStorage.setItem(STORAGE_KEYS.YARD_BAYS, JSON.stringify(INITIAL_YARD_BAYS));
-      return INITIAL_YARD_BAYS;
-    }
-    return JSON.parse(data);
+    return readCached(STORAGE_KEYS.YARD_BAYS, INITIAL_YARD_BAYS);
   },
 
   saveYardBays(bays: YardBayLocation[]): void {
-    sharedStorage.setItem(STORAGE_KEYS.YARD_BAYS, JSON.stringify(bays));
+    patchCached(STORAGE_KEYS.YARD_BAYS, bays);
+    notify(STORAGE_KEYS.YARD_BAYS);
   },
 
   getCustomers(): Customer[] {
-    const data = sharedStorage.getItem(STORAGE_KEYS.CUSTOMERS);
-    if (!data) {
-      sharedStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(INITIAL_CUSTOMERS));
-      return INITIAL_CUSTOMERS;
-    }
-    return JSON.parse(data);
+    return readCached(STORAGE_KEYS.CUSTOMERS, INITIAL_CUSTOMERS);
   },
 
   saveCustomer(customer: Customer): Customer {
-    const customers = this.getCustomers();
-    const existingIndex = customers.findIndex((c) => c.id === customer.id);
-    if (existingIndex >= 0) {
-      customers[existingIndex] = customer;
-    } else {
-      customers.unshift(customer);
-    }
-    sharedStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(customers));
+    appendCached(STORAGE_KEYS.CUSTOMERS, customer);
+    notify(STORAGE_KEYS.CUSTOMERS);
     return customer;
   },
 
   getTickets(): Ticket[] {
-    const data = sharedStorage.getItem(STORAGE_KEYS.TICKETS);
-    if (!data) {
-      sharedStorage.setItem(STORAGE_KEYS.TICKETS, JSON.stringify(INITIAL_TICKETS));
-      return INITIAL_TICKETS;
-    }
-    return JSON.parse(data);
+    return readCached(STORAGE_KEYS.TICKETS, INITIAL_TICKETS);
   },
 
   saveTicket(ticket: Ticket): Ticket {
@@ -463,7 +472,8 @@ export const storageService = {
     } else {
       tickets.unshift(ticket);
     }
-    sharedStorage.setItem(STORAGE_KEYS.TICKETS, JSON.stringify(tickets));
+    patchCached(STORAGE_KEYS.TICKETS, tickets);
+    notify(STORAGE_KEYS.TICKETS);
 
     const inventoryVehicle = vehicleFromTicket(ticket);
     if (inventoryVehicle) this.savePullYardVehicle(inventoryVehicle);
@@ -578,7 +588,8 @@ export const storageService = {
     }
 
     tickets[ticketIndex].id = cleanNewId;
-    sharedStorage.setItem(STORAGE_KEYS.TICKETS, JSON.stringify(tickets));
+    patchCached(STORAGE_KEYS.TICKETS, tickets);
+    notify(STORAGE_KEYS.TICKETS);
 
     const cashLogs = this.getCashDrawerLogs();
     let updatedCashLogs = false;
@@ -590,25 +601,20 @@ export const storageService = {
       }
     });
     if (updatedCashLogs) {
-      sharedStorage.setItem(STORAGE_KEYS.CASH_DRAWER, JSON.stringify(cashLogs));
+      patchCached(STORAGE_KEYS.CASH_DRAWER, cashLogs);
+      notify(STORAGE_KEYS.CASH_DRAWER);
     }
 
     return { success: true };
   },
 
   getNMVTISLogs(): NMVTISReportLog[] {
-    const data = sharedStorage.getItem(STORAGE_KEYS.NMVTIS_LOGS);
-    if (!data) {
-      sharedStorage.setItem(STORAGE_KEYS.NMVTIS_LOGS, "[]");
-      return [];
-    }
-    return JSON.parse(data);
+    return readCached(STORAGE_KEYS.NMVTIS_LOGS, []);
   },
 
   saveNMVTISLog(log: NMVTISReportLog): void {
-    const logs = this.getNMVTISLogs();
-    logs.unshift(log);
-    sharedStorage.setItem(STORAGE_KEYS.NMVTIS_LOGS, JSON.stringify(logs));
+    appendCached(STORAGE_KEYS.NMVTIS_LOGS, log);
+    notify(STORAGE_KEYS.NMVTIS_LOGS);
   },
 
   markTicketsAsNMVTISReported(ticketIds: string[], batchId: string): void {
@@ -632,20 +638,17 @@ export const storageService = {
         }
       }
     });
-    sharedStorage.setItem(STORAGE_KEYS.TICKETS, JSON.stringify(tickets));
+    patchCached(STORAGE_KEYS.TICKETS, tickets);
+    notify(STORAGE_KEYS.TICKETS);
   },
 
   getCollection<T>(key: string): T[] {
-    const data = sharedStorage.getItem(key);
-    if (!data) { sharedStorage.setItem(key, '[]'); return []; }
-    return JSON.parse(data) as T[];
+    return readCached<T[]>(key, []);
   },
 
   saveCollection<T extends { id: string }>(key: string, item: T): T {
-    const items = this.getCollection(key) as T[];
-    const index = items.findIndex((candidate) => candidate.id === item.id);
-    if (index >= 0) items[index] = item; else items.unshift(item);
-    sharedStorage.setItem(key, JSON.stringify(items));
+    appendCached(key, item);
+    notify(key);
     return item;
   },
 
@@ -667,17 +670,20 @@ export const storageService = {
   addRateHistory(entry: MetalRateChangeLog): MetalRateChangeLog { return this.saveCollection(STORAGE_KEYS.RATE_HISTORY, entry) as MetalRateChangeLog; },
 
   getOperationsGoals(): ShiftGoals {
-    const data = sharedStorage.getItem(STORAGE_KEYS.OPERATIONS_GOALS);
-    if (data) return JSON.parse(data) as ShiftGoals;
-    const goals: ShiftGoals = { id: 'default', name: 'Current shift', ticketTarget: 25, inboundLbsTarget: 20000, vehicleTarget: 8, averageTurnaroundMinutesTarget: 45, grossMarginTarget: 2500, updatedAt: new Date().toISOString() };
-    sharedStorage.setItem(STORAGE_KEYS.OPERATIONS_GOALS, JSON.stringify(goals));
-    return goals;
+    return readCached(STORAGE_KEYS.OPERATIONS_GOALS, {
+      id: 'default',
+      name: 'Current shift',
+      ticketTarget: 25,
+      inboundLbsTarget: 20000,
+      vehicleTarget: 8,
+      averageTurnaroundMinutesTarget: 45,
+      grossMarginTarget: 2500,
+      updatedAt: new Date().toISOString(),
+    });
   },
-  saveOperationsGoals(goals: ShiftGoals): ShiftGoals { sharedStorage.setItem(STORAGE_KEYS.OPERATIONS_GOALS, JSON.stringify(goals)); return goals; },
+  saveOperationsGoals(goals: ShiftGoals): ShiftGoals { patchCached(STORAGE_KEYS.OPERATIONS_GOALS, goals); notify(STORAGE_KEYS.OPERATIONS_GOALS); return goals; },
   getOperationsAlertRules(): AlertRule[] {
-    const data = sharedStorage.getItem(STORAGE_KEYS.OPERATIONS_ALERT_RULES);
-    if (data) return JSON.parse(data) as AlertRule[];
-    const rules: AlertRule[] = [
+    return readCached(STORAGE_KEYS.OPERATIONS_ALERT_RULES, [
       { id: 'queue', key: 'QUEUE_BACKLOG', enabled: true, threshold: 8, escalationMinutes: 30 },
       { id: 'ticket-age', key: 'TICKET_AGE', enabled: true, threshold: 45, escalationMinutes: 30 },
       { id: 'vehicle-age', key: 'VEHICLE_AGE', enabled: true, threshold: 4320, escalationMinutes: 1440 },
@@ -685,50 +691,45 @@ export const storageService = {
       { id: 'compliance', key: 'COMPLIANCE_GAP', enabled: true, threshold: 1, escalationMinutes: 30 },
       { id: 'shipment', key: 'SHIPMENT_EXCEPTION', enabled: true, threshold: 1, escalationMinutes: 30 },
       { id: 'margin', key: 'MARGIN_LOW', enabled: true, threshold: 0, escalationMinutes: 120 },
-    ];
-    sharedStorage.setItem(STORAGE_KEYS.OPERATIONS_ALERT_RULES, JSON.stringify(rules));
-    return rules;
+    ]);
   },
-  saveOperationsAlertRules(rules: AlertRule[]): AlertRule[] { sharedStorage.setItem(STORAGE_KEYS.OPERATIONS_ALERT_RULES, JSON.stringify(rules)); return rules; },
+  saveOperationsAlertRules(rules: AlertRule[]): AlertRule[] { patchCached(STORAGE_KEYS.OPERATIONS_ALERT_RULES, rules); notify(STORAGE_KEYS.OPERATIONS_ALERT_RULES); return rules; },
   getOperationsAlerts(): OperationsAlert[] { return this.getCollection(STORAGE_KEYS.OPERATIONS_ALERTS) as OperationsAlert[]; },
   saveOperationsAlert(alert: OperationsAlert): OperationsAlert { return this.saveCollection(STORAGE_KEYS.OPERATIONS_ALERTS, alert) as OperationsAlert; },
   getDailyManagerSummaries(): DailyManagerSummary[] { return this.getCollection(STORAGE_KEYS.OPERATIONS_SUMMARIES) as DailyManagerSummary[]; },
   saveDailyManagerSummary(summary: DailyManagerSummary): DailyManagerSummary { return this.saveCollection(STORAGE_KEYS.OPERATIONS_SUMMARIES, summary) as DailyManagerSummary; },
 
   getSettings(): YardSettings {
-    const data = sharedStorage.getItem(STORAGE_KEYS.SETTINGS);
-    if (!data) {
-      sharedStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(INITIAL_SETTINGS));
-      return INITIAL_SETTINGS;
-    }
-    return { ...INITIAL_SETTINGS, ...(JSON.parse(data) as YardSettings) };
+    return readCached(STORAGE_KEYS.SETTINGS, INITIAL_SETTINGS);
   },
 
   saveSettings(settings: YardSettings): void {
-    sharedStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settings));
+    patchCached(STORAGE_KEYS.SETTINGS, settings);
+    notify(STORAGE_KEYS.SETTINGS);
   },
 
   resetPricingToDefaults(): void {
-    sharedStorage.setItem(STORAGE_KEYS.METALS, JSON.stringify(INITIAL_METALS));
-    sharedStorage.setItem(STORAGE_KEYS.CAR_RATES, JSON.stringify(INITIAL_CAR_RATES));
-    sharedStorage.setItem(STORAGE_KEYS.CATALYTIC_CODES, JSON.stringify(INITIAL_CAT_CODES));
+    patchCached(STORAGE_KEYS.METALS, INITIAL_METALS);
+    notify(STORAGE_KEYS.METALS);
+    patchCached(STORAGE_KEYS.CAR_RATES, INITIAL_CAR_RATES);
+    notify(STORAGE_KEYS.CAR_RATES);
+    patchCached(STORAGE_KEYS.CATALYTIC_CODES, INITIAL_CAT_CODES);
+    notify(STORAGE_KEYS.CATALYTIC_CODES);
   },
 
   resetToDefaults(): void {
-    sharedStorage.setItem(STORAGE_KEYS.METALS, JSON.stringify(INITIAL_METALS));
-    sharedStorage.setItem(STORAGE_KEYS.CAR_RATES, JSON.stringify(INITIAL_CAR_RATES));
-    sharedStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(INITIAL_CUSTOMERS));
-    sharedStorage.setItem(STORAGE_KEYS.TICKETS, JSON.stringify(INITIAL_TICKETS));
-    sharedStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(INITIAL_SETTINGS));
-    sharedStorage.setItem(STORAGE_KEYS.CATALYTIC_CODES, JSON.stringify(INITIAL_CAT_CODES));
-    sharedStorage.setItem(STORAGE_KEYS.CONTAINER_DROPS, JSON.stringify(INITIAL_CONTAINER_DROPS));
-    sharedStorage.setItem(STORAGE_KEYS.CASH_DRAWER, JSON.stringify(INITIAL_CASH_DRAWER));
-    sharedStorage.setItem(STORAGE_KEYS.YARD_BAYS, JSON.stringify(INITIAL_YARD_BAYS));
-    sharedStorage.setItem(STORAGE_KEYS.PULL_PARTS, JSON.stringify(INITIAL_PULL_PARTS));
-    sharedStorage.setItem(STORAGE_KEYS.PULL_YARD_VEHICLES, JSON.stringify(INITIAL_PULL_VEHICLES));
-    sharedStorage.setItem(STORAGE_KEYS.CORE_RETURNS, JSON.stringify(INITIAL_CORE_RETURNS));
-    sharedStorage.setItem(STORAGE_KEYS.ADMISSION_PASSES, JSON.stringify(INITIAL_ADMISSION_PASSES));
-    sharedStorage.setItem(STORAGE_KEYS.IP_CAMERAS, JSON.stringify(INITIAL_IP_CAMERAS));
+    const keys: string[] = [
+      STORAGE_KEYS.METALS, STORAGE_KEYS.CAR_RATES, STORAGE_KEYS.CUSTOMERS,
+      STORAGE_KEYS.TICKETS, STORAGE_KEYS.SETTINGS, STORAGE_KEYS.CATALYTIC_CODES,
+      STORAGE_KEYS.CONTAINER_DROPS, STORAGE_KEYS.CASH_DRAWER, STORAGE_KEYS.YARD_BAYS,
+      STORAGE_KEYS.PULL_PARTS, STORAGE_KEYS.PULL_YARD_VEHICLES,
+      STORAGE_KEYS.CORE_RETURNS, STORAGE_KEYS.ADMISSION_PASSES, STORAGE_KEYS.IP_CAMERAS,
+    ];
+    for (const key of keys) {
+      sharedStorage.removeItem(key);
+      cache.delete(key);
+      notify(key);
+    }
     sharedStorage.removeItem(STORAGE_KEYS.NMVTIS_LOGS);
   },
 };

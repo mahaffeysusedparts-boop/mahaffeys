@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState } from "react";
 import { AccountStatus, UserAccount, UserRole } from "@/types/scrap";
 import { authService } from "@/services/authService";
 import { sharedStorage } from "@/services/sharedStorage";
+import { syncService } from "@/services/syncService";
 
 interface AuthContextType {
   user: UserAccount | null;
@@ -52,7 +53,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const initialize = async () => {
       try {
         const status = await authService.initialize();
-        if (status.user?.status === "approved") await sharedStorage.hydrate();
+        if (status.user?.status === "approved") {
+          await sharedStorage.hydrate();
+          syncService.start();
+        }
         syncState();
       } catch (error) {
         setServerError(error instanceof Error ? error.message : "Unable to reach the Mahaffeys server");
@@ -61,15 +65,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     };
     void initialize();
+
+    return () => {
+      syncService.stop();
+    };
   }, []);
 
   const login = async (username: string, password: string) => {
     const loggedInUser = await authService.login(username, password);
-    if (loggedInUser.status === "approved") await sharedStorage.hydrate();
+    if (loggedInUser.status === "approved") {
+      await sharedStorage.hydrate();
+      syncService.start();
+    }
     syncState();
   };
 
   const logout = async () => {
+    syncService.stop();
     await authService.logout();
     sharedStorage.disconnect();
     sharedStorage.clear();
@@ -84,6 +96,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const setupAdmin = async (data: { fullName: string; username: string; password: string; email?: string }) => {
     await authService.setupInitialAdmin(data);
     await sharedStorage.hydrate();
+    syncService.start();
     syncState();
   };
 
