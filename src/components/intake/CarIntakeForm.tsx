@@ -473,66 +473,8 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
       {/* Main Intake Layout Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
-        {/* Left 2 Columns: Photo, Specs, Financial & Notes */}
+        {/* Left 2 Columns: Photo, Specs, Seller, Financial & Notes */}
         <div className="lg:col-span-2 space-y-6">
-
-          {/* WHO IT CAME FROM (SELLER) CARD */}
-          <Card className="bg-slate-900 border-blue-500/40 text-white shadow-xl overflow-hidden">
-            <CardHeader className="py-3 px-4 bg-blue-950/40 border-b border-blue-500/30 flex flex-row items-center justify-between">
-              <CardTitle className="text-sm font-bold tracking-wide uppercase text-blue-300 flex items-center gap-2">
-                <User className="w-4 h-4 text-blue-400" /> Who It Came From (Seller) *
-              </CardTitle>
-              {sellerName.trim() && (
-                <Badge className="bg-emerald-950 text-emerald-300 border-emerald-500/40 text-[10px] font-mono">
-                  SELLER ON FILE
-                </Badge>
-              )}
-            </CardHeader>
-
-            <CardContent className="p-4 space-y-3">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <Label className="text-xs text-slate-300">
-                    <span>Seller / Source Full Name</span>
-                  </Label>
-                  <Input
-                    value={sellerName}
-                    onChange={(e) => setSellerName(e.target.value)}
-                    placeholder="e.g. Marcus Vance / Vance Repair Shop"
-                    className="bg-slate-950 border-slate-800 text-white text-xs mt-1 h-10 font-bold"
-                  />
-                </div>
-
-                <div>
-                  <Label className="text-xs text-slate-300">
-                    <span>Driver License / State ID # (Optional)</span>
-                  </Label>
-                  <Input
-                    value={sellerIdNumber}
-                    onChange={(e) => setSellerIdNumber(e.target.value)}
-                    placeholder="e.g. DL-9823145-GA"
-                    className="bg-slate-950 border-slate-800 text-amber-300 font-mono text-xs mt-1 h-10 font-bold"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <div>
-                  <Label className="text-xs text-slate-300">Phone</Label>
-                  <Input value={sellerPhone} onChange={(e) => setSellerPhone(e.target.value)} placeholder="(555) 555-0123" className="mt-1 h-10 bg-slate-950 border-slate-800 text-white text-xs" />
-                </div>
-                <div>
-                  <Label className="flex items-center justify-between text-xs text-slate-300"><span>License Plate</span>{licensePlate && <span className="font-mono text-[10px] text-sky-300">PLATE ON FILE</span>}</Label>
-                  <Input value={licensePlate} onChange={(e) => setLicensePlate(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))} placeholder="ABC1234" className="mt-1 h-10 bg-slate-950 border-slate-800 text-amber-300 font-mono font-bold uppercase" />
-                </div>
-                <div className="sm:col-span-2">
-
-                  <Label className="text-xs text-slate-300">Seller Address</Label>
-                  <Input value={sellerAddress} onChange={(e) => setSellerAddress(e.target.value)} placeholder="Street, city, state, ZIP" className="mt-1 h-10 bg-slate-950 border-slate-800 text-white text-xs" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
 
           {/* 1. VEHICLE PICTURE CAPTURE */}
           <Card className="bg-slate-900 border-amber-500/40 text-white shadow-xl overflow-hidden">
@@ -777,7 +719,65 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
             </CardContent>
           </Card>
 
-          {/* 3. FINANCIAL & ORIGIN LOGGING */}
+          {/* 3. WHO IT CAME FROM (SELLER) CARD */}
+          <Card className="bg-slate-900 border-blue-500/40 text-white shadow-xl overflow-hidden">
+            <CardHeader className="py-3 px-4 bg-blue-950/40 border-b border-blue-500/30 flex flex-row items-center justify-between">
+              <CardTitle className="text-sm font-bold tracking-wide uppercase text-blue-300 flex items-center gap-2">
+                <User className="w-4 h-4 text-blue-400" /> Who It Came From (Seller) *
+              </CardTitle>
+              {sellerName.trim() && (
+                <Badge className="bg-emerald-950 text-emerald-300 border-emerald-500/40 text-[10px] font-mono">
+                  SELLER ON FILE
+                </Badge>
+              )}
+            </CardHeader>
+
+            <CardContent className="p-4 space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <Label className="text-xs text-slate-300">
+                    <span>Seller / Source Full Name</span>
+                  </Label>
+                  <Input
+                    value={sellerName}
+                    onChange={(e) => setSellerName(e.target.value)}
+                    placeholder="e.g. Marcus Vance / Vance Repair Shop"
+                    className="bg-slate-950 border-slate-800 text-white text-xs mt-1 h-10 font-bold"
+                  />
+                </div>
+
+                <div>
+                  <Label className="text-xs text-slate-300">
+                    <span>Driver License / State ID # (Optional)</span>
+                  </Label>
+                  <Input
+                    value={sellerIdNumber}
+                    onChange={(e) => setSellerIdNumber(e.target.value)}
+                    placeholder="e.g. DL-9823145-GA"
+                    className="bg-slate-950 border-slate-800 text-amber-300 font-mono text-xs mt-1 h-10 font-bold"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <Label className="text-xs text-slate-300">Phone</Label>
+                  <Input value={sellerPhone} onChange={(e) => setSellerPhone(e.target.value)} placeholder="(555) 555-0123" className="mt-1 h-10 bg-slate-950 border-slate-800 text-white text-xs" />
+                </div>
+                <div>
+                  <Label className="flex items-center justify-between text-xs text-slate-300"><span>License Plate</span>{licensePlate && <span className="font-mono text-[10px] text-sky-300">PLATE ON FILE</span>}</Label>
+                  <Input value={licensePlate} onChange={(e) => setLicensePlate(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))} placeholder="ABC1234" className="mt-1 h-10 bg-slate-950 border-slate-800 text-amber-300 font-mono font-bold uppercase" />
+                </div>
+                <div className="sm:col-span-2">
+
+                  <Label className="text-xs text-slate-300">Seller Address</Label>
+                  <Input value={sellerAddress} onChange={(e) => setSellerAddress(e.target.value)} placeholder="Street, city, state, ZIP" className="mt-1 h-10 bg-slate-950 border-slate-800 text-white text-xs" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* 4. FINANCIAL & ORIGIN LOGGING */}
           <Card className="bg-slate-900 border-slate-800 text-white shadow-lg">
             <CardHeader className="py-3 px-4 bg-slate-950/60 border-b border-slate-800">
               <CardTitle className="text-sm font-bold tracking-wide uppercase text-slate-300 flex items-center gap-2">
@@ -883,7 +883,7 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
             </CardContent>
           </Card>
 
-          {/* 4. TOW DRIVER NOTES SECTION */}
+          {/* 5. TOW DRIVER NOTES SECTION */}
           <Card className="bg-slate-900 border-slate-800 text-white shadow-lg">
             <CardHeader className="py-3 px-4 bg-slate-950/60 border-b border-slate-800">
               <CardTitle className="text-sm font-bold tracking-wide uppercase text-slate-300 flex items-center gap-2">
