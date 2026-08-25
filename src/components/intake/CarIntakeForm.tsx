@@ -1,8 +1,7 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { CarIntakeRecord, Ticket } from '@/types/scrap';
 import { storageService } from '@/services/storageService';
-import { analyzeDriverLicenseImage, analyzeLicensePlateImage } from '@/services/aiVisionService';
-import { PhotoIntakeCard } from '@/components/photo-intake/PhotoIntakeCard';
+import { analyzeLicensePlateImage } from '@/services/aiVisionService';
 import { uploadDataUrl } from '@/services/mediaService';
 import { PrintStickerModal } from '@/components/vehicle/PrintStickerModal';
 import { VehicleStickerData } from '@/components/vehicle/VehicleSticker';
@@ -31,11 +30,8 @@ import {
   FileCheck,
   Hash,
   RefreshCw,
-  Sparkles,
 
-  CreditCard,
   User,
-  Wand2,
   Ban,
   Printer,
 } from 'lucide-react';
@@ -80,19 +76,17 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
   // References for device camera / file capture
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const dlInputRef = useRef<HTMLInputElement>(null);
 
   // Editable Receipt / Ticket Number
   const [customReceiptNumber, setCustomReceiptNumber] = useState<string>(
     `T-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`
   );
 
-  // Seller Details (AI Auto-Filled)
+  // Who the vehicle came from (Seller)
   const [sellerName, setSellerName] = useState<string>('');
   const [sellerIdNumber, setSellerIdNumber] = useState<string>('');
   const [sellerPhone, setSellerPhone] = useState<string>('');
   const [sellerAddress, setSellerAddress] = useState<string>('');
-  const [isDlScanned, setIsDlScanned] = useState<boolean>(false);
   const [licensePlate, setLicensePlate] = useState('');
 
   // Vehicle Details
@@ -111,7 +105,6 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
   const [fuelType, setFuelType] = useState<string>('');
   const [decodedVehicle, setDecodedVehicle] = useState<VinDecodeResult | null>(null);
   const [isDecodingVin, setIsDecodingVin] = useState(false);
-  const [confirmedVisionScanIds, setConfirmedVisionScanIds] = useState<string[]>([]);
   
   const [titleStatus, setTitleStatus] = useState<CarIntakeRecord['titleStatus']>('Salvage Title');
   const [titleNumber, setTitleNumber] = useState<string>('');
@@ -138,30 +131,6 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
     const newNum = `T-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
     setCustomReceiptNumber(newNum);
     toast.info(`Generated Receipt #${newNum}`);
-  };
-
-  // AI Driver License OCR Scanner for Vehicle Intake
-  const handleDlPictureUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      toast.info("AI Vision analyzing Driver's License photo...", { icon: "✨" });
-      const reader = new FileReader();
-      reader.onload = async (event) => {
-        const dataUrl = event.target?.result as string;
-        try {
-          const result = await analyzeDriverLicenseImage(dataUrl);
-          if (result.fullName) setSellerName(result.fullName);
-          if (result.idNumber) setSellerIdNumber(result.idNumber);
-          setIsDlScanned(true);
-          toast.success("AI OCR Extracted Seller Name & DL Number!", {
-            description: `Seller: ${result.fullName} | ID: ${result.idNumber}`,
-          });
-        } catch (err) {
-          console.warn("AI OCR Error:", err);
-        }
-      };
-      reader.readAsDataURL(file);
-    }
   };
 
   // Handle local image file upload for vehicle photo
@@ -242,12 +211,24 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
     void handleDecodeVinWithVin(vin);
   };
 
+  // Automatically decode the VIN as soon as a complete 17-character VIN is typed
+  useEffect(() => {
+    const clean = vin.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (/^[A-HJ-NPR-Z0-9]{17}$/.test(clean)) {
+      void handleDecodeVinWithVin(clean);
+    }
+  }, [vin]);
+
   const handleSubmitTicket = () => {
 
     if (isSaving) return;
 
     if (!customReceiptNumber.trim()) {
       toast.error('Please enter a Receipt / Ticket Number');
+      return;
+    }
+    if (!sellerName.trim()) {
+      toast.error('Enter who the vehicle came from (seller name)');
       return;
     }
     if (purchasePrice < 0 || isNaN(purchasePrice)) {
@@ -257,7 +238,7 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
 
     const settings = storageService.getSettings();
     const currentOp = settings.operatorName;
-    const finalCustomerName = sellerName.trim() || (originSource.trim() ? `Tow Origin: ${originSource}` : 'Tow Intake');
+    const finalCustomerName = sellerName.trim();
     const pendingVin = vin.trim() || `PENDING-${customReceiptNumber.trim()}`;
 
     const carRecord: CarIntakeRecord = {
@@ -288,7 +269,6 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
       plantState: decodedVehicle?.plantState || undefined,
       vinDecodedAt: decodedVehicle ? new Date().toISOString() : undefined,
       vinDecoderSource: decodedVehicle?.source,
-      confirmedVisionScanIds: confirmedVisionScanIds.length ? confirmedVisionScanIds : undefined,
       titleStatus,
       titleNumber,
       yardStatus: 'PENDING',
@@ -360,7 +340,6 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
       setSellerPhone('');
       setSellerAddress('');
       setLicensePlate('');
-      setIsDlScanned(false);
       setPhotoUrl('');
 
       setNotes('');
@@ -419,21 +398,6 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
         accept="image/*"
         className="hidden"
       />
-
-      {/* Driver's License Input */}
-      <input
-        type="file"
-        ref={dlInputRef}
-        onChange={handleDlPictureUpload}
-        accept="image/*"
-        className="hidden"
-      />
-
-      <PhotoIntakeCard onConfirmed={(scan) => {
-        setConfirmedVisionScanIds((current) => current.includes(scan.id) ? current : [...current, scan.id]);
-        if (scan.result.normalizedVin && scan.result.vinValid) void handleDecodeVinWithVin(scan.result.normalizedVin);
-        if (scan.result.plateText) setLicensePlate(scan.result.plateText);
-      }} />
 
       {/* Top Header Bar */}
 
@@ -512,15 +476,15 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
         {/* Left 2 Columns: Photo, Specs, Financial & Notes */}
         <div className="lg:col-span-2 space-y-6">
 
-          {/* AI SELLER / DL SCAN CARD */}
+          {/* WHO IT CAME FROM (SELLER) CARD */}
           <Card className="bg-slate-900 border-blue-500/40 text-white shadow-xl overflow-hidden">
-            <CardHeader className="py-3 px-4 bg-gradient-to-r from-blue-950/80 to-slate-950 border-b border-blue-500/30 flex flex-row items-center justify-between">
+            <CardHeader className="py-3 px-4 bg-blue-950/40 border-b border-blue-500/30 flex flex-row items-center justify-between">
               <CardTitle className="text-sm font-bold tracking-wide uppercase text-blue-300 flex items-center gap-2">
-                <User className="w-4 h-4 text-blue-400" /> Seller Credentials (AI OCR Scan)
+                <User className="w-4 h-4 text-blue-400" /> Who It Came From (Seller) *
               </CardTitle>
-              {isDlScanned && (
-                <Badge className="bg-emerald-950 text-emerald-300 border-emerald-500/40 text-[10px] font-mono gap-1">
-                  <Wand2 className="w-3 h-3 text-emerald-400" /> AI OCR AUTOFILLED
+              {sellerName.trim() && (
+                <Badge className="bg-emerald-950 text-emerald-300 border-emerald-500/40 text-[10px] font-mono">
+                  SELLER ON FILE
                 </Badge>
               )}
             </CardHeader>
@@ -528,22 +492,20 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
             <CardContent className="p-4 space-y-3">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <Label className="text-xs text-slate-300 flex items-center justify-between">
-                    <span>Seller Full Name</span>
-                    {isDlScanned && <span className="text-[10px] text-emerald-400 font-mono">AI AUTOFILLED</span>}
+                  <Label className="text-xs text-slate-300">
+                    <span>Seller / Source Full Name</span>
                   </Label>
                   <Input
                     value={sellerName}
                     onChange={(e) => setSellerName(e.target.value)}
-                    placeholder="e.g. Marcus Vance"
+                    placeholder="e.g. Marcus Vance / Vance Repair Shop"
                     className="bg-slate-950 border-slate-800 text-white text-xs mt-1 h-10 font-bold"
                   />
                 </div>
 
                 <div>
-                  <Label className="text-xs text-slate-300 flex items-center justify-between">
-                    <span>Driver License / State ID #</span>
-                    {isDlScanned && <span className="text-[10px] text-emerald-400 font-mono">AI AUTOFILLED</span>}
+                  <Label className="text-xs text-slate-300">
+                    <span>Driver License / State ID # (Optional)</span>
                   </Label>
                   <Input
                     value={sellerIdNumber}
@@ -568,19 +530,6 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
                   <Label className="text-xs text-slate-300">Seller Address</Label>
                   <Input value={sellerAddress} onChange={(e) => setSellerAddress(e.target.value)} placeholder="Street, city, state, ZIP" className="mt-1 h-10 bg-slate-950 border-slate-800 text-white text-xs" />
                 </div>
-              </div>
-
-              <div className="pt-2 flex items-center justify-between gap-2 border-t border-slate-800">
-                <span className="text-[11px] text-slate-400">Scan DL photo with device camera to auto-fill seller fields:</span>
-
-                <Button
-                  type="button"
-                  size="sm"
-                  onClick={() => dlInputRef.current?.click()}
-                  className="bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs gap-1.5 shrink-0"
-                >
-                  <CreditCard className="w-3.5 h-3.5 text-amber-300" /> AI Scan DL Photo
-                </Button>
               </div>
             </CardContent>
           </Card>
@@ -655,7 +604,7 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
           <Card className="bg-slate-900 border-slate-800 text-white shadow-lg">
             <CardHeader className="py-3 px-4 bg-slate-950/60 border-b border-slate-800 flex flex-row items-center justify-between">
               <CardTitle className="text-sm font-bold tracking-wide uppercase text-slate-300 flex items-center gap-2">
-                <Car className="w-4 h-4 text-amber-400" /> Vehicle Identification Specs & VIN OCR
+                <Car className="w-4 h-4 text-amber-400" /> Vehicle Identification Specs & VIN Decoder
               </CardTitle>
             </CardHeader>
 
@@ -699,7 +648,7 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
                   </Button>
                 </div>
                 <p className="text-[10px] text-slate-400">
-                  Use the Vision Intake Scanner above for a reviewed VIN capture, or tap <strong>"Skip / No VIN"</strong>.
+                  Type the full 17-character VIN — it <strong>decodes automatically</strong> and fills in year, make, model, and engine details. No VIN on the vehicle? Tap <strong>"Skip / No VIN"</strong>.
                 </p>
               </div>
 
@@ -840,7 +789,7 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <Label className="text-xs text-emerald-400 font-bold block mb-1">
-                    Payout / Purchase Price ($) *
+                    How Much We Paid ($) *
                   </Label>
                   <div className="relative">
                     <span className="absolute left-3 top-2.5 text-slate-500 font-bold">$</span>
@@ -853,13 +802,13 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
                     />
                   </div>
                   <span className="text-[10px] text-slate-400 mt-1 block">
-                    Amount paid to acquire vehicle
+                    Purchase price paid to acquire the vehicle
                   </span>
                 </div>
 
                 <div>
                   <Label className="text-xs text-slate-300 font-bold block mb-1">
-                    Vehicle Origin / Tow Source *
+                    Where It Came From / Tow Source
                   </Label>
                   <div className="relative">
                     <MapPin className="w-4 h-4 absolute left-3 top-3 text-amber-400" />
@@ -1016,7 +965,7 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
                   <span className="text-amber-300 font-mono font-bold text-sm">{customReceiptNumber}</span>
                 </div>
                 <div className="flex justify-between items-baseline pt-1">
-                  <span className="text-sm text-slate-300 font-medium">Purchase Payout:</span>
+                  <span className="text-sm text-slate-300 font-medium">We Paid:</span>
                   <span className="text-3xl font-black text-emerald-400 font-mono">
                     ${purchasePrice.toFixed(2)}
                   </span>

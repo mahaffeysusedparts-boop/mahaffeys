@@ -225,8 +225,8 @@ export const Navbar: React.FC = () => {
 
               {/* Logo */}
               <Link to="/" className="flex items-center gap-2 group">
-                <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-700 flex items-center justify-center shadow-md shadow-emerald-950/50 group-hover:scale-105 transition-transform">
-                  <Scale className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
+                <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-slate-950/90 border border-slate-700/80 overflow-hidden shadow-md shadow-emerald-950/50 group-hover:scale-105 transition-transform">
+                  <img src="/mahaffeys-logo.png" alt="Mahaffey's logo" className="h-full w-full object-contain p-1" />
                 </div>
                 <div className="hidden sm:block">
                   <div className="flex items-center gap-1.5">
