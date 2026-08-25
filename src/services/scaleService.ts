@@ -4,12 +4,13 @@ type ScaleListener = (status: ScaleStatus) => void;
 
 type ServerScaleStatus = {
   connected: boolean;
+  connectionType: 'serial' | 'tcp';
   weight: number;
   unit: WeightUnit;
   isStable: boolean;
   isZero: boolean;
   portName?: string;
-  baudRate: number;
+  baudRate?: number;
   errorMessage?: string;
 };
 
@@ -88,9 +89,9 @@ class ScaleService {
       this.status.connected = serverStatus.connected;
       this.status.isStable = serverStatus.isStable;
       this.status.isZero = serverStatus.isZero;
-      this.status.portName = serverStatus.portName
+      this.status.portName = serverStatus.portName && serverStatus.baudRate
         ? `${serverStatus.portName} @ ${serverStatus.baudRate} baud`
-        : undefined;
+        : serverStatus.portName;
       this.status.errorMessage = serverStatus.errorMessage;
       this.status.unit = serverStatus.unit;
       this.updateWeights(serverStatus.weight);

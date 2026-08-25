@@ -1,28 +1,32 @@
 import { access } from "node:fs/promises";
+import { connect as netConnect, type Socket } from "node:net";
 import { SerialPort } from "serialport";
+import type { ScaleConfig } from "./scaleConfig";
 
 export type ServerScaleStatus = {
   connected: boolean;
+  connectionType: "serial" | "tcp";
   weight: number;
   unit: "LBS" | "KG";
   isStable: boolean;
   isZero: boolean;
   portName?: string;
-  baudRate: number;
+  baudRate?: number;
   scanning: boolean;
   errorMessage?: string;
   updatedAt?: string;
-};
-
-export type ScaleOptions = {
-  path?: string;
-  baudRate: number;
 };
 
 export type ScaleDetection = {
   path: string;
   baudRate: number;
   sample: string;
+};
+
+export type TcpProbeResult = {
+  reachable: boolean;
+  sample: string | null;
+  detail?: string;
 };
 
 const KNOWN_SERVER_PORTS = ["/dev/ttyS4", "/dev/ttyS5", "/dev/ttyS6", "/dev/ttyS7", "/dev/tty16"];
@@ -87,15 +91,55 @@ async function probePort(path: string, baudRate: number, timeoutMs = 1400): Prom
   });
 }
 
+export async function probeTcpScale(host: string, port: number, timeoutMs = 2500): Promise<TcpProbeResult> {
+  return new Promise((resolve) => {
+    let complete = false;
+    let buffer = "";
+    let connected = false;
+    const socket: Socket = netConnect({ host, port });
+
+    const finish = (result: TcpProbeResult) => {
+      if (complete) return;
+      complete = true;
+      socket.removeAllListeners();
+      socket.destroy();
+      resolve(result);
+    };
+
+    socket.setTimeout(timeoutMs);
+    socket.on("connect", () => {
+      connected = true;
+    });
+    socket.on("data", (chunk: Buffer) => {
+      buffer = (buffer + chunk.toString("utf8")).slice(-2048);
+      const sample = detectScaleLine(buffer);
+      if (sample) finish({ reachable: true, sample });
+    });
+    socket.on("timeout", () => {
+      finish(connected
+        ? { reachable: true, sample: null, detail: "Connected, but no weight data was received yet." }
+        : { reachable: false, sample: null, detail: `Could not reach ${host}:${port} within ${timeoutMs / 1000}s.` });
+    });
+    socket.on("error", (error) => {
+      finish({ reachable: false, sample: null, detail: error.message });
+    });
+    socket.on("close", () => {
+      finish({ reachable: connected, sample: null, detail: connected ? undefined : `The connection to ${host}:${port} was refused.` });
+    });
+  });
+}
+
 class ServerScaleReader {
   private port: SerialPort | null = null;
+  private socket: Socket | null = null;
   private starting = false;
   private scanning = false;
   private buffer = "";
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
-  private options: ScaleOptions = { baudRate: 2400 };
+  private options: ScaleConfig | null = null;
   private status: ServerScaleStatus = {
     connected: false,
+    connectionType: "serial",
     weight: 0,
     unit: "LBS",
     isStable: false,
@@ -104,21 +148,34 @@ class ServerScaleReader {
     scanning: false,
   };
 
-  async start(options: ScaleOptions) {
+  async start(options: ScaleConfig) {
     if (this.scanning || this.starting) return;
-    if (this.port?.isOpen && this.options.path === options.path && this.options.baudRate === options.baudRate) return;
-    if (this.port?.isOpen) await this.stop();
 
+    const sameSerial = this.port?.isOpen
+      && this.options?.type === "serial" && options.type === "serial"
+      && this.options.path === options.path && this.options.baudRate === options.baudRate;
+    const sameTcp = this.socket && !this.socket.destroyed
+      && this.options?.type === "tcp" && options.type === "tcp"
+      && this.options.host === options.host && this.options.port === options.port;
+    if (sameSerial || sameTcp) return;
+
+    await this.stop();
     this.options = options;
-    this.status.baudRate = options.baudRate;
     this.status.updatedAt = undefined;
     this.status.weight = 0;
+
+    if (options.type === "tcp") {
+      await this.startTcp(options);
+      return;
+    }
+
     this.starting = true;
+    this.status.connectionType = "serial";
+    this.status.baudRate = options.baudRate;
     try {
-      const path = options.path || (await this.findScalePort());
+      const path = options.path || (await listSerialPorts())[0];
       if (!path) throw new Error("No serial scale port was found on the app server.");
 
-      this.options.path = path;
       this.status.portName = path;
       const port = new SerialPort({
         path,
@@ -149,9 +206,37 @@ class ServerScaleReader {
     }
   }
 
+  private async startTcp(options: Extract<ScaleConfig, { type: "tcp" }>) {
+    this.starting = true;
+    this.status.connectionType = "tcp";
+    this.status.baudRate = undefined;
+    this.status.portName = `TCP ${options.host}:${options.port}`;
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const socket = netConnect({ host: options.host, port: options.port }, () => resolve());
+        this.socket = socket;
+        socket.on("data", (chunk: Buffer) => this.consume(chunk.toString("utf8")));
+        socket.on("error", (error) => {
+          this.handleDisconnect(`TCP scale error: ${error.message}`);
+          reject(error);
+        });
+        socket.on("close", () => this.handleDisconnect(`The TCP scale connection to ${options.host}:${options.port} closed.`));
+      });
+
+      this.status.connected = true;
+      this.status.errorMessage = undefined;
+    } catch (error) {
+      this.status.connected = false;
+      this.status.errorMessage = error instanceof Error ? error.message : `Could not connect to the TCP scale at ${options.host}:${options.port}.`;
+      this.scheduleRetry();
+    } finally {
+      this.starting = false;
+    }
+  }
+
   async scan(baudRates = DEFAULT_BAUD_RATES): Promise<ScaleDetection | null> {
     if (this.scanning) return null;
-    const previousOptions = { ...this.options };
+    const previousOptions = this.options;
     this.scanning = true;
     this.status.scanning = true;
     this.status.connected = false;
@@ -165,17 +250,17 @@ class ServerScaleReader {
           const sample = await probePort(path, baudRate);
           if (!sample) continue;
           const detection = { path, baudRate, sample };
-          this.options = detection;
+          this.options = { type: "serial", path, baudRate };
           return detection;
         }
       }
-      this.status.errorMessage = "No valid scale weight data was detected on the available serial ports.";
+      this.status.errorMessage = "No valid scale weight data was detected on the available serial ports. For an Ethernet indicator, switch the connection type to TCP Network.";
       return null;
     } finally {
       this.scanning = false;
       this.status.scanning = false;
-      const selected = this.options.path ? this.options : previousOptions;
-      await this.start(selected);
+      const selected = this.options ?? previousOptions;
+      if (selected) await this.start(selected);
     }
   }
 
@@ -184,21 +269,26 @@ class ServerScaleReader {
       clearTimeout(this.retryTimer);
       this.retryTimer = null;
     }
+
     const port = this.port;
     this.port = null;
-    if (!port) return;
-    port.removeAllListeners();
-    if (port.isOpen) {
-      await new Promise<void>((resolve) => port.close(() => resolve()));
+    if (port) {
+      port.removeAllListeners();
+      if (port.isOpen) {
+        await new Promise<void>((resolve) => port.close(() => resolve()));
+      }
+    }
+
+    const socket = this.socket;
+    this.socket = null;
+    if (socket) {
+      socket.removeAllListeners();
+      socket.destroy();
     }
   }
 
   getStatus(): ServerScaleStatus {
     return { ...this.status, scanning: this.scanning };
-  }
-
-  private async findScalePort() {
-    return (await listSerialPorts())[0];
   }
 
   private consume(chunk: string) {
@@ -230,6 +320,7 @@ class ServerScaleReader {
     this.status.connected = false;
     this.status.errorMessage = message;
     this.port = null;
+    this.socket = null;
     this.scheduleRetry();
   }
 
@@ -237,7 +328,7 @@ class ServerScaleReader {
     if (this.retryTimer || this.scanning) return;
     this.retryTimer = setTimeout(() => {
       this.retryTimer = null;
-      void this.start(this.options);
+      if (this.options) void this.start(this.options);
     }, 5000);
   }
 }

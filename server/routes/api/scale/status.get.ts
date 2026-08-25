@@ -7,6 +7,7 @@ export default defineHandler(async () => {
   const runtimeConfig = useRuntimeConfig();
   const configuredBaudRate = Number(runtimeConfig.scaleSerialBaudRate);
   const config = await getScaleConfig({
+    type: "serial",
     path: typeof runtimeConfig.scaleSerialPort === "string" ? runtimeConfig.scaleSerialPort : "",
     baudRate: Number.isFinite(configuredBaudRate) && configuredBaudRate > 0 ? configuredBaudRate : 2400,
   });
