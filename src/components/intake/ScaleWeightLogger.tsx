@@ -19,6 +19,7 @@ import {
   CheckCircle2,
   DollarSign,
   FileCheck,
+  Keyboard,
   Layers,
   LogIn,
   LogOut,
@@ -72,6 +73,7 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
 
   const [selectedMetalId, setSelectedMetalId] = useState(metals[0]?.id ?? '');
   const [deductionPercent, setDeductionPercent] = useState(0);
+  const [manualWeight, setManualWeight] = useState('');
 
   const [payoutMethod, setPayoutMethod] = useState<'Cash' | 'Check'>('Cash');
   const [checkNumber, setCheckNumber] = useState(`CHK-${Math.floor(1000 + Math.random() * 9000)}`);
@@ -155,8 +157,8 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
     return true;
   };
 
-  const handleLogIn = () => {
-    if (!activeTicket || !assertScaleReady()) return;
+  const commitInWeight = (lbs: number) => {
+    if (!activeTicket) return;
     if (activeTicket.scaleGrossInWeight != null) {
       toast.error('This intake already has an IN weight logged');
       return;
@@ -164,22 +166,22 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
     const now = new Date().toISOString();
     const next: Ticket = {
       ...activeTicket,
-      scaleGrossInWeight: currentLbs,
+      scaleGrossInWeight: lbs,
       scaleGrossInAt: now,
       scaleTareOutWeight: undefined,
       scaleTareOutAt: undefined,
-      weightTransactions: recordTransaction(activeTicket, 'SCALE_IN', currentLbs),
+      weightTransactions: recordTransaction(activeTicket, 'SCALE_IN', lbs),
     };
     setActiveTicket(persist(next));
-    toast.success(`IN weight logged: ${fmtLbs(currentLbs)} LBS`, {
-      description: `${activeTicket.customerName} is on the yard. Switch to another transaction anytime — the OUT weight can be logged later.`,
+    toast.success(`IN weight logged: ${fmtLbs(lbs)} LBS`, {
+      description: `${activeTicket.customerName} is on the yard. Pick the metal grade below, then log the OUT weight after the load dumps.`,
     });
   };
 
-  const handleLogOut = () => {
-    if (!activeTicket || !assertScaleReady()) return;
+  const commitOutWeight = (lbs: number) => {
+    if (!activeTicket) return;
     const grossIn = activeTicket.scaleGrossInWeight ?? 0;
-    const net = grossIn - currentLbs;
+    const net = grossIn - lbs;
     if (net <= 0) {
       toast.error('OUT weight must be lower than the IN weight', {
         description: `IN was ${fmtLbs(grossIn)} LBS — make sure the load was dumped before logging OUT.`,
@@ -189,14 +191,48 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
     const now = new Date().toISOString();
     const next: Ticket = {
       ...activeTicket,
-      scaleTareOutWeight: currentLbs,
+      scaleTareOutWeight: lbs,
       scaleTareOutAt: now,
-      weightTransactions: recordTransaction(activeTicket, 'SCALE_OUT', currentLbs),
+      weightTransactions: recordTransaction(activeTicket, 'SCALE_OUT', lbs),
     };
     setActiveTicket(persist(next));
-    toast.success(`OUT weight logged: ${fmtLbs(currentLbs)} LBS`, {
-      description: `Net scrap weight: ${fmtLbs(net)} LBS — assign a metal grade to add it to the ticket.`,
+    toast.success(`OUT weight logged: ${fmtLbs(lbs)} LBS`, {
+      description: `Net scrap weight: ${fmtLbs(net)} LBS — review the grade and add the load to the ticket.`,
     });
+  };
+
+  const handleLogIn = () => {
+    if (!assertScaleReady()) return;
+    commitInWeight(currentLbs);
+  };
+
+  const handleLogOut = () => {
+    if (!assertScaleReady()) return;
+    commitOutWeight(currentLbs);
+  };
+
+  // Manual fallback for when the live scale is offline or mis-reading.
+  const parseManualWeight = (): number | null => {
+    const lbs = Math.round(parseFloat(manualWeight));
+    if (!Number.isFinite(lbs) || lbs <= 0) {
+      toast.error('Enter a weight in pounds greater than zero');
+      return null;
+    }
+    return lbs;
+  };
+
+  const handleManualLogIn = () => {
+    const lbs = parseManualWeight();
+    if (lbs === null) return;
+    commitInWeight(lbs);
+    setManualWeight('');
+  };
+
+  const handleManualLogOut = () => {
+    const lbs = parseManualWeight();
+    if (lbs === null) return;
+    commitOutWeight(lbs);
+    setManualWeight('');
   };
 
   const handleDiscardWeighing = () => {
@@ -404,6 +440,78 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
   };
 
   const compliance = calculateComplianceScore(activeTicket?.complianceCaptures, 'SCRAP_METAL');
+
+  // Grade picker: shown right after the IN weight is logged so the operator
+  // can pick while the load dumps, and again before committing the net.
+  const gradeSelector = (
+    <div className="space-y-2">
+      <Label className="text-xs font-semibold text-slate-400">
+        Metal Grade {weighState === 'AWAITING_OUT' ? '— pick while the load dumps:' : '(1-Tap):'}
+      </Label>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+        {popularMetals.map((m) => (
+          <button
+            key={m.id}
+            type="button"
+            onClick={() => setSelectedMetalId(m.id)}
+            className={`flex min-h-[44px] items-center justify-between rounded-xl border p-2.5 text-left text-xs transition-all active:scale-[0.98] ${
+              selectedMetalId === m.id
+                ? 'border-emerald-500 bg-emerald-950/80 font-bold text-white'
+                : 'border-slate-800/80 bg-slate-950 text-slate-300 hover:border-slate-700'
+            }`}
+          >
+            <span className="truncate">{m.name}</span>
+            <span className="ml-1 shrink-0 font-mono font-bold text-emerald-400">${m.ratePerLb.toFixed(2)}</span>
+          </button>
+        ))}
+      </div>
+      <div>
+        <Label className="text-[11px] text-slate-400">All Metal Grades</Label>
+        <Select value={selectedMetalId} onValueChange={setSelectedMetalId}>
+          <SelectTrigger className="mt-1 h-11 w-full border-slate-800 bg-slate-950 text-xs text-white">
+            <SelectValue placeholder="Choose a material" />
+          </SelectTrigger>
+          <SelectContent className="border-slate-800 bg-slate-900 text-white">
+            {metals.map((m) => (
+              <SelectItem key={m.id} value={m.id} className="text-xs">
+                {m.name} · ${m.ratePerLb.toFixed(2)}/lb
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+    </div>
+  );
+
+  // Typed-weight fallback row for the current step (IN or OUT).
+  const manualEntryRow = (direction: 'IN' | 'OUT') => (
+    <div className={`flex items-end gap-2 rounded-xl border border-dashed p-3 ${scale.connected ? 'border-slate-700 bg-slate-950' : 'border-amber-500/50 bg-amber-950/20'}`}>
+      <div className="min-w-0 flex-1">
+        <Label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+          Manual Fallback — Type {direction} Weight (LBS)
+          {!scale.connected && <span className="ml-1 text-amber-400">· SCALE OFFLINE</span>}
+        </Label>
+        <Input
+          type="number"
+          inputMode="decimal"
+          min={0}
+          value={manualWeight}
+          onChange={(e) => setManualWeight(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') (direction === 'IN' ? handleManualLogIn : handleManualLogOut)();
+          }}
+          placeholder={direction === 'IN' ? 'e.g. 8750' : 'e.g. 6420'}
+          className="mt-1 h-11 border-slate-700 bg-slate-900 font-mono text-base font-bold text-white"
+        />
+      </div>
+      <Button
+        onClick={direction === 'IN' ? handleManualLogIn : handleManualLogOut}
+        className="h-11 shrink-0 gap-1.5 border border-slate-600 bg-slate-800 text-xs font-bold text-slate-100 hover:bg-slate-700"
+      >
+        <Keyboard className="h-4 w-4" /> Log {direction} Manually
+      </Button>
+    </div>
+  );
 
   // ---- Render -----------------------------------------------------------------
   return (
@@ -642,7 +750,7 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
                           : 'border border-violet-500/40 bg-violet-500/15 text-violet-300'
                     }`}
                   >
-                    {weighState === 'AWAITING_IN' ? 'STEP: LOG IN' : weighState === 'AWAITING_OUT' ? 'STEP: LOG OUT' : 'STEP: ASSIGN GRADE'}
+                    {weighState === 'AWAITING_IN' ? 'STEP: LOG IN' : weighState === 'AWAITING_OUT' ? 'STEP: LOG OUT · PICK GRADE' : 'STEP: ASSIGN GRADE'}
                   </Badge>
                 </CardHeader>
 
@@ -719,6 +827,7 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
                         Vehicle drives ON with the load. The IN weight is saved to this intake instantly — switch to another
                         transaction and come back later to log the OUT.
                       </p>
+                      {manualEntryRow('IN')}
                     </div>
                   )}
 
@@ -750,6 +859,8 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
                       <p className="text-center text-[11px] text-slate-400">
                         After the load is dumped, the empty vehicle drives back ON. Net = IN − OUT.
                       </p>
+                      {manualEntryRow('OUT')}
+                      {gradeSelector}
                     </div>
                   )}
 
@@ -773,53 +884,18 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
                         </div>
                       </div>
 
-                      <div className="space-y-2">
-                        <Label className="text-xs font-semibold text-slate-400">Metal Grade (1-Tap):</Label>
-                        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                          {popularMetals.map((m) => (
-                            <button
-                              key={m.id}
-                              type="button"
-                              onClick={() => setSelectedMetalId(m.id)}
-                              className={`flex min-h-[44px] items-center justify-between rounded-xl border p-2.5 text-left text-xs transition-all active:scale-[0.98] ${
-                                selectedMetalId === m.id
-                                  ? 'border-emerald-500 bg-emerald-950/80 font-bold text-white'
-                                  : 'border-slate-800/80 bg-slate-950 text-slate-300 hover:border-slate-700'
-                              }`}
-                            >
-                              <span className="truncate">{m.name}</span>
-                              <span className="ml-1 shrink-0 font-mono font-bold text-emerald-400">${m.ratePerLb.toFixed(2)}</span>
-                            </button>
-                          ))}
-                        </div>
-                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                          <div>
-                            <Label className="text-[11px] text-slate-400">All Metal Grades</Label>
-                            <Select value={selectedMetalId} onValueChange={setSelectedMetalId}>
-                              <SelectTrigger className="mt-1 h-11 border-slate-800 bg-slate-950 text-xs text-white">
-                                <SelectValue placeholder="Choose a material" />
-                              </SelectTrigger>
-                              <SelectContent className="border-slate-800 bg-slate-900 text-white">
-                                {metals.map((m) => (
-                                  <SelectItem key={m.id} value={m.id} className="text-xs">
-                                    {m.name} · ${m.ratePerLb.toFixed(2)}/lb
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-                          <div>
-                            <Label className="text-[11px] text-slate-400">Contamination %</Label>
-                            <Input
-                              type="number"
-                              min={0}
-                              max={100}
-                              value={deductionPercent}
-                              onChange={(e) => setDeductionPercent(Math.min(100, Math.max(0, parseFloat(e.target.value) || 0)))}
-                              className="mt-1 h-11 border-slate-800 bg-slate-950 font-mono text-base text-red-400"
-                            />
-                          </div>
-                        </div>
+                      {gradeSelector}
+
+                      <div>
+                        <Label className="text-[11px] text-slate-400">Contamination %</Label>
+                        <Input
+                          type="number"
+                          min={0}
+                          max={100}
+                          value={deductionPercent}
+                          onChange={(e) => setDeductionPercent(Math.min(100, Math.max(0, parseFloat(e.target.value) || 0)))}
+                          className="mt-1 h-11 border-slate-800 bg-slate-950 font-mono text-base text-red-400"
+                        />
                       </div>
 
                       <div className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-950 px-4 py-2.5 font-mono text-xs">
