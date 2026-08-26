@@ -147,7 +147,7 @@ export default function CamerasPage() {
 
   const handleDeleteCamera = (cam: IpCamera) => {
     if (confirm(`Remove IP Camera "${cam.name}" (${cam.ipAddress})?`)) {
-      storageService.deleteIpCamera(cam.id);
+      storageService.removeIpCamera(cam.id);
       loadData();
       toast.info(`Removed camera ${cam.name}`);
     }

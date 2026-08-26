@@ -92,6 +92,16 @@ function removeItem<T extends { id: string }>(key: string, id: string, existing?
   return list.filter((i) => i.id !== id);
 }
 
+// Drop keys from storage + cache so the next read falls back to defaults,
+// then notify subscribers so mounted components re-render.
+function clearKeys(keys: string[]): void {
+  keys.forEach((key) => {
+    cache.delete(key);
+    sharedStorage.removeItem(key);
+    subscribers.get(key)?.forEach((fn) => fn());
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Default values
 // ---------------------------------------------------------------------------
@@ -147,6 +157,11 @@ export const storageService = {
   getCatCodes: (): CatalyticConverterCode[] => readCached("mahaffeys_cat_codes", []),
   saveCatCodes: (codes: CatalyticConverterCode[]) => patchCached("mahaffeys_cat_codes", codes),
 
+  /** Clears the pricing catalog back to seed defaults (metals, car rates, cat codes). */
+  resetPricingToDefaults: (): void => {
+    clearKeys(["mahaffeys_metals", "mahaffeys_car_rates", "mahaffeys_cat_codes"]);
+  },
+
   // ── Customers ─────────────────────────────────────────────────────────────
   getCustomers: (): Customer[] => readCached("mahaffeys_customers", []),
   saveCustomer: (customer: Customer) => {
@@ -186,6 +201,38 @@ export const storageService = {
       }
     });
     return `${year}-${maxSequence + 1}`;
+  },
+
+  /** Renames a ticket id after validating the new number is unique. */
+  updateTicketId: (oldId: string, newId: string): { success: boolean; message?: string } => {
+    const cleanNewId = newId.trim();
+    if (!cleanNewId) {
+      return { success: false, message: "Receipt / Ticket number cannot be empty" };
+    }
+    const tickets = storageService.getTickets();
+    if (cleanNewId !== oldId && tickets.some((t) => t.id === cleanNewId)) {
+      return { success: false, message: `Receipt number "${cleanNewId}" is already used by another ticket` };
+    }
+    const ticketIndex = tickets.findIndex((t) => t.id === oldId);
+    if (ticketIndex === -1) {
+      return { success: false, message: "Original ticket not found" };
+    }
+    tickets[ticketIndex] = { ...tickets[ticketIndex], id: cleanNewId };
+    patchCached("mahaffeys_tickets", tickets);
+
+    // Keep cash drawer ledger references pointing at the renamed ticket.
+    const cashLogs = storageService.getCashDrawerLogs();
+    let updatedCashLogs = false;
+    cashLogs.forEach((log) => {
+      if (log.ticketId === oldId) {
+        log.ticketId = cleanNewId;
+        log.notes = log.notes?.replace(oldId, cleanNewId);
+        updatedCashLogs = true;
+      }
+    });
+    if (updatedCashLogs) patchCached("mahaffeys_cash_drawer", cashLogs);
+
+    return { success: true };
   },
 
   // ── Pull-Apart / Yard Vehicles ────────────────────────────────────────────
@@ -233,11 +280,44 @@ export const storageService = {
     patchCached("mahaffeys_cash_drawer", upsertItem("mahaffeys_cash_drawer", log, existing));
   },
 
+  /** Appends a ledger entry, deriving balanceAfter from the most recent log. */
+  addCashDrawerEntry: (entry: Omit<CashDrawerLog, "id" | "timestamp" | "balanceAfter">): CashDrawerLog => {
+    const logs = storageService.getCashDrawerLogs();
+    const latest = [...logs].sort((a, b) => b.timestamp.localeCompare(a.timestamp))[0];
+    const currentBalance = latest ? latest.balanceAfter : 0;
+    const log: CashDrawerLog = {
+      id: `cd-${Date.now()}`,
+      timestamp: new Date().toISOString(),
+      balanceAfter: Math.round((currentBalance + entry.amount) * 100) / 100,
+      ...entry,
+    };
+    storageService.saveCashDrawerLog(log);
+    return log;
+  },
+
   // ── NMVTIS / Compliance ───────────────────────────────────────────────────
   getNMVTISLogs: (): NMVTISReportLog[] => readCached("mahaffeys_nmvtis_logs", []),
   saveNMVTISLog: (log: NMVTISReportLog) => {
     const existing = storageService.getNMVTISLogs();
     patchCached("mahaffeys_nmvtis_logs", upsertItem("mahaffeys_nmvtis_logs", log, existing));
+  },
+
+  /** Stamps tickets (and their car records) as reported in an NMVTIS batch. */
+  markTicketsAsNMVTISReported: (ticketIds: string[], batchId: string): void => {
+    const now = new Date().toISOString();
+    const reported = { nmvtisReported: true, nmvtisReportedAt: now, nmvtisBatchId: batchId };
+    const tickets = storageService.getTickets().map((t) =>
+      ticketIds.includes(t.id)
+        ? {
+            ...t,
+            complianceCaptures: { ...t.complianceCaptures, ...reported },
+            carRecord: t.carRecord
+              ? { ...t.carRecord, complianceCaptures: { ...t.carRecord.complianceCaptures, ...reported } }
+              : t.carRecord,
+          }
+        : t
+    );
+    patchCached("mahaffeys_tickets", tickets);
   },
 
   getIpCameras: (): IpCamera[] => readCached("mahaffeys_ip_cameras", []),
@@ -302,6 +382,40 @@ export const storageService = {
   // ── Settings ──────────────────────────────────────────────────────────────
   getSettings: (): YardSettings => readCached("mahaffeys_settings", DEFAULT_SETTINGS),
   saveSettings: (settings: YardSettings) => patchCached("mahaffeys_settings", settings),
+
+  /** Factory reset: clears every yard data key back to seed defaults. */
+  resetToDefaults: (): void => {
+    clearKeys([
+      "mahaffeys_metals",
+      "mahaffeys_car_rates",
+      "mahaffeys_cat_codes",
+      "mahaffeys_customers",
+      "mahaffeys_tickets",
+      "mahaffeys_pull_yard_vehicles",
+      "mahaffeys_pull_parts",
+      "mahaffeys_core_returns",
+      "mahaffeys_admission_passes",
+      "mahaffeys_container_drops",
+      "mahaffeys_yard_bays",
+      "mahaffeys_cash_drawer",
+      "mahaffeys_nmvtis_logs",
+      "mahaffeys_ip_cameras",
+      "mahaffeys_shipments",
+      "mahaffeys_mills",
+      "mahaffeys_timeclock",
+      "mahaffeys_checklists",
+      "mahaffeys_tasks",
+      "mahaffeys_equipment",
+      "mahaffeys_maintenance_logs",
+      "mahaffeys_rate_history",
+      "mahaffeys_removed_inventory_vehicles",
+      "mahaffeys_operations_goals",
+      "mahaffeys_operations_alert_rules",
+      "mahaffeys_operations_alerts",
+      "mahaffeys_operations_summaries",
+      "mahaffeys_settings",
+    ]);
+  },
 
   // ── Operations ────────────────────────────────────────────────────────────
   getOperationsGoals: (): ShiftGoals => readCached("mahaffeys_operations_goals", DEFAULT_GOALS),

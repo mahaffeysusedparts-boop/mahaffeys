@@ -98,7 +98,7 @@ export default function PricingPage() {
     metals.forEach((metal) => {
       const oldRate = previous.find((item) => item.id === metal.id)?.ratePerLb;
       if (oldRate !== metal.ratePerLb) {
-        storageService.addRateHistory({
+        storageService.saveRateHistory({
           id: `rate-${Date.now()}-${metal.id}`,
           metalGradeId: metal.id,
           metalName: metal.name,
@@ -259,7 +259,7 @@ export default function PricingPage() {
       avgMarketValue: newVal,
       notes: "Added via Converter Estimator Tool",
     };
-    storageService.saveCatCode(newEntry);
+    storageService.saveCatCodes([newEntry, ...storageService.getCatCodes()]);
     setCatCodes(storageService.getCatCodes());
     setAddCatModalOpen(false);
     toast.success(`Added OEM Catalytic Converter Code: ${newEntry.code}`);

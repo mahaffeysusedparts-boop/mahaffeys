@@ -298,7 +298,7 @@ export default function PullAPartPage() {
 
   const handleConfirmRemoveVehicle = () => {
     if (!deletingVehicle) return;
-    storageService.deletePullYardVehicle(deletingVehicle.id);
+    storageService.removePullYardVehicle(deletingVehicle.id);
     loadData();
     toast.success(`Removed ${deletingVehicle.year} ${deletingVehicle.make} ${deletingVehicle.model} from database`);
     setDeletingVehicle(null);
