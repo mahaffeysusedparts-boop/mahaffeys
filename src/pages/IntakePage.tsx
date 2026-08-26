@@ -4,10 +4,9 @@ import { Navbar } from '@/components/layout/Navbar';
 import { IntakeModeSelector } from '@/components/intake/IntakeModeSelector';
 import { CarIntakeForm } from '@/components/intake/CarIntakeForm';
 import { ScrapYardIntakeForm } from '@/components/intake/ScrapYardIntakeForm';
-import { MobileScrapTicket } from '@/components/intake/MobileScrapTicket';
 import { ReceiptModal } from '@/components/receipts/ReceiptModal';
 import { Button } from '@/components/ui/button';
-import { Car, Scale, ArrowLeft, Smartphone } from 'lucide-react';
+import { Car, Scale, ArrowLeft } from 'lucide-react';
 import { PhotoIntakeCard } from '@/components/photo-intake/PhotoIntakeCard';
 
 export default function IntakePage() {

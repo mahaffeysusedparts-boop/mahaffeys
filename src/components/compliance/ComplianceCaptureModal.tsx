@@ -17,30 +17,18 @@ import {
   Car,
   Package,
   CheckCircle2,
-  AlertCircle,
-  Scan,
   Upload,
   ShieldCheck,
   UserCheck,
   Trash2,
   Video,
-  Sparkles,
-  Loader2,
-  Wand2,
   Radio,
+  Loader2,
+  FileText,
+  Hand,
 } from "lucide-react";
 import { ComplianceCaptures, IpCamera } from "@/types/scrap";
 import { storageService } from "@/services/storageService";
-import {
-  DLScanResult,
-  calculateComplianceScore,
-} from "@/utils/complianceUtils";
-import {
-  analyzeDriverLicenseImage,
-  analyzeLicensePlateImage,
-  AILicenseAnalysisResult,
-  AILicensePlateResult,
-} from "@/services/aiVisionService";
 import { optimizeImageDataUrl, uploadDataUrl } from "@/services/mediaService";
 import { toast } from "sonner";
 
@@ -48,7 +36,7 @@ interface ComplianceCaptureModalProps {
   isOpen: boolean;
   onClose: () => void;
   initialCaptures?: ComplianceCaptures;
-  onSaveCaptures: (captures: ComplianceCaptures, scannedProfile?: DLScanResult) => void;
+  onSaveCaptures: (captures: ComplianceCaptures) => void;
   intakeType?: 'CAR_SALVAGE' | 'SCRAP_METAL';
 }
 
@@ -68,10 +56,6 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
   });
 
   const [activeTab, setActiveTab] = useState<string>(isCarSalvage ? "person" : "id");
-  const [scannedProfile, setScannedProfile] = useState<DLScanResult | undefined>();
-  const [aiAnalysis, setAiAnalysis] = useState<AILicenseAnalysisResult | null>(null);
-  const [aiPlateResult, setAiPlateResult] = useState<AILicensePlateResult | null>(null);
-  const [isAiAnalyzing, setIsAiAnalyzing] = useState(false);
   const [isSavingUploads, setIsSavingUploads] = useState(false);
   const [useLiveCamera, setUseLiveCamera] = useState(false);
 
@@ -86,7 +70,17 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [currentUploadTarget, setCurrentUploadTarget] = useState<keyof ComplianceCaptures | null>(null);
 
-  const complianceStats = calculateComplianceScore(captures, intakeType);
+  // Calculate compliance stats manually (no OCR)
+  const getComplianceScore = (): number => {
+    const requiredCaptures = isCarSalvage
+      ? ['personPhotoUrl', 'vehiclePhotoUrl', 'licensePlatePhotoUrl', 'loadPhotoUrl']
+      : ['idPhotoUrl', 'personPhotoUrl', 'vehiclePhotoUrl', 'licensePlatePhotoUrl', 'loadPhotoUrl'];
+    
+    const captured = requiredCaptures.filter(key => captures[key as keyof ComplianceCaptures]).length;
+    return Math.round((captured / requiredCaptures.length) * 100);
+  };
+
+  const complianceStats = { score: getComplianceScore() };
 
   useEffect(() => {
     if (isOpen) {
@@ -117,51 +111,6 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
     setSelectedIpCam(null);
   };
 
-  const runAiAnalysis = async (targetKey: keyof ComplianceCaptures, imageDataUrl: string) => {
-    setIsAiAnalyzing(true);
-    try {
-      if (targetKey === 'idPhotoUrl') {
-        toast.info("AI Vision analyzing Driver License text & fields...", { icon: "✨" });
-        const result = await analyzeDriverLicenseImage(imageDataUrl);
-        setAiAnalysis(result);
-        setScannedProfile({
-          fullName: result.fullName,
-          idNumber: result.idNumber,
-          idState: result.idState,
-          idType: result.idType,
-          address: result.address,
-          dob: result.dob,
-          expDate: result.expDate,
-        });
-        toast.success(`AI extracted ${result.fieldsExtractedCount} fields from Driver License!`, {
-          description: `Name: ${result.fullName} | ID: ${result.idNumber}`,
-        });
-      } else if (targetKey === 'licensePlatePhotoUrl') {
-        toast.info("AI Vision reading license plate tag...", { icon: "✨" });
-        const plateRes = await analyzeLicensePlateImage(imageDataUrl);
-        setAiPlateResult(plateRes);
-        if (scannedProfile) {
-          setScannedProfile({ ...scannedProfile, vehicleLicensePlate: plateRes.plateNumber, vehicleState: plateRes.state });
-        } else {
-          setScannedProfile({
-            fullName: "",
-            idNumber: "",
-            idState: "GA",
-            idType: "Driver License",
-            address: "",
-            vehicleLicensePlate: plateRes.plateNumber,
-            vehicleState: plateRes.state,
-          });
-        }
-        toast.success(`AI detected License Plate: ${plateRes.plateNumber} (${plateRes.state})`);
-      }
-    } catch (error) {
-      console.warn("AI analysis warning:", error);
-    } finally {
-      setIsAiAnalyzing(false);
-    }
-  };
-
   // Capture snapshot directly from an IP Camera stream
   const handleCaptureFromIpCamera = async (cam: IpCamera, targetKey: keyof ComplianceCaptures) => {
     const snapUrl = cam.snapshotUrl || cam.streamUrl;
@@ -182,7 +131,6 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
           [targetKey]: dataUrl,
         }));
         toast.success(`Captured snapshot from IP Camera "${cam.name}"!`);
-        await runAiAnalysis(targetKey, dataUrl);
       }
     };
     img.onerror = async () => {
@@ -203,7 +151,6 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
         [targetKey]: fallbackImage,
       }));
       toast.success(`Captured snapshot from IP Camera "${cam.name}"!`);
-      await runAiAnalysis(targetKey, fallbackImage);
     };
     img.src = `${snapUrl}?t=${Date.now()}`;
   };
@@ -247,7 +194,7 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
         }));
 
         stopCameraStream();
-        await runAiAnalysis(currentUploadTarget, dataUrl);
+        toast.success("Photo captured successfully!");
       }
     }
   };
@@ -269,14 +216,13 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
     if (!file || !target) return;
 
     try {
-      // Device camera files are routinely 8-30 MB; compress before storing in
-      // state so OCR runs faster and the bulk save upload cannot hit HTTP 413.
+      // Compress image before storing
       const optimizedImage = await optimizeImageDataUrl(file);
       setCaptures((prev) => ({
         ...prev,
         [target]: optimizedImage,
       }));
-      await runAiAnalysis(target, optimizedImage);
+      toast.success("Photo uploaded successfully!");
     } catch (error) {
       toast.error("Could not process this image", {
         description: error instanceof Error ? error.message : "Choose a different image and try again.",
@@ -290,8 +236,6 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
       delete updated[key];
       return updated;
     });
-    if (key === 'idPhotoUrl') setAiAnalysis(null);
-    if (key === 'licensePlatePhotoUrl') setAiPlateResult(null);
   };
 
   const handleSave = async () => {
@@ -306,7 +250,7 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
             : value,
         ]),
       )) as ComplianceCaptures;
-      onSaveCaptures(uploadedCaptures, scannedProfile);
+      onSaveCaptures(uploadedCaptures);
       onClose();
     } catch (error) {
       toast.error("Could not save compliance images", {
@@ -349,20 +293,17 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
               <div>
                 <DialogTitle className="text-lg sm:text-xl font-bold tracking-tight text-white flex items-center gap-2">
                   Photo Compliance Studio
-                  <Sparkles className="w-4 h-4 text-amber-400" />
+                  <Badge className="bg-slate-700 text-slate-300 border-slate-600 text-[10px] font-mono ml-1">
+                    MANUAL ENTRY
+                  </Badge>
                 </DialogTitle>
                 <DialogDescription className="text-slate-400 text-xs mt-0.5">
-                  AI OCR auto-fills seller identification, address, and vehicle tags. Signatures are completed on the printed voucher.
+                  Capture 5-point compliance photos manually. Signatures are completed on the printed voucher.
                 </DialogDescription>
               </div>
             </div>
 
             <div className="flex items-center gap-2">
-              {isAiAnalyzing && (
-                <Badge className="bg-purple-950 text-purple-300 border-purple-500/50 animate-pulse text-xs gap-1.5">
-                  <Loader2 className="w-3.5 h-3.5 animate-spin text-purple-400" /> AI OCR Scanning...
-                </Badge>
-              )}
               <Badge
                 variant="outline"
                 className={`px-3 py-1.5 text-xs font-semibold rounded-full border ${
@@ -374,9 +315,9 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
                 {complianceStats.score === 100 ? (
                   <CheckCircle2 className="w-3.5 h-3.5 mr-1.5 text-emerald-400 inline" />
                 ) : (
-                  <AlertCircle className="w-3.5 h-3.5 mr-1.5 text-amber-400 inline" />
+                  <Camera className="w-3.5 h-3.5 mr-1.5 text-amber-400 inline" />
                 )}
-                {complianceStats.score}% Compliant
+                {complianceStats.score}% Captured
               </Badge>
             </div>
           </div>
@@ -400,7 +341,7 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
               onClick={handleCaptureVideoFrame}
               className="w-full h-12 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-sm gap-2 shadow-lg shadow-emerald-950"
             >
-              <Camera className="w-5 h-5" /> Snap Photo & Run AI Vision
+              <Camera className="w-5 h-5" /> Snap Photo
             </Button>
           </div>
         )}
@@ -411,7 +352,7 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
             ...(!isCarSalvage ? [{ id: 'idPhotoUrl', title: 'DL / State ID', icon: CreditCard, val: captures.idPhotoUrl, tab: 'id' }] : []),
             { id: 'personPhotoUrl', title: 'Seller Face', icon: UserCheck, val: captures.personPhotoUrl, tab: 'person' },
             { id: 'vehiclePhotoUrl', title: 'Vehicle 45°', icon: Car, val: captures.vehiclePhotoUrl, tab: 'vehicle' },
-            { id: 'licensePlatePhotoUrl', title: 'License Plate', icon: Scan, val: captures.licensePlatePhotoUrl, tab: 'plate' },
+            { id: 'licensePlatePhotoUrl', title: 'License Plate', icon: FileText, val: captures.licensePlatePhotoUrl, tab: 'plate' },
             { id: 'loadPhotoUrl', title: 'Cargo / Load', icon: Package, val: captures.loadPhotoUrl, tab: 'load' },
           ].map((item) => {
             const Icon = item.icon;
@@ -447,52 +388,27 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
           })}
         </div>
 
-        {/* AI Extracted Data Card Banner */}
-        {(aiAnalysis || aiPlateResult) && (
-          <Card className="bg-gradient-to-r from-purple-950/70 via-slate-900 to-slate-900 border-2 border-purple-500/50 text-white shadow-xl">
-            <CardHeader className="py-2.5 px-4 bg-slate-950/60 border-b border-purple-500/30 flex flex-row items-center justify-between">
-              <CardTitle className="text-xs font-extrabold text-purple-300 flex items-center gap-2 uppercase tracking-wider font-mono">
-                <Wand2 className="w-4 h-4 text-purple-400" /> AI OCR Extracted Document Fields
-              </CardTitle>
-              <Badge className="bg-purple-900/80 text-purple-200 border-purple-500/40 text-[10px] font-mono">
-                CONFIDENCE: {aiAnalysis?.confidence || aiPlateResult?.confidence || 92}%
-              </Badge>
-            </CardHeader>
-            <CardContent className="p-3.5 text-xs font-mono grid grid-cols-2 sm:grid-cols-4 gap-3">
-              {aiAnalysis?.fullName && (
-                <div>
-                  <span className="text-slate-400 block text-[10px]">Seller Name</span>
-                  <span className="text-white font-bold">{aiAnalysis.fullName}</span>
-                </div>
-              )}
-              {aiAnalysis?.idNumber && (
-                <div>
-                  <span className="text-slate-400 block text-[10px]">Driver License #</span>
-                  <span className="text-amber-300 font-bold">{aiAnalysis.idNumber} ({aiAnalysis.idState})</span>
-                </div>
-              )}
-              {aiAnalysis?.address && (
-                <div className="col-span-2">
-                  <span className="text-slate-400 block text-[10px]">Address</span>
-                  <span className="text-slate-200 truncate block">{aiAnalysis.address}</span>
-                </div>
-              )}
-              {aiPlateResult?.plateNumber && (
-                <div>
-                  <span className="text-slate-400 block text-[10px]">License Plate Tag</span>
-                  <span className="text-sky-300 font-bold">{aiPlateResult.plateNumber} ({aiPlateResult.state})</span>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        )}
+        {/* Manual Entry Info Banner */}
+        <Card className="bg-gradient-to-r from-blue-950/70 via-slate-900 to-slate-900 border-2 border-blue-500/50 text-white shadow-xl">
+          <CardHeader className="py-2.5 px-4 bg-slate-950/60 border-b border-blue-500/30 flex flex-row items-center justify-between">
+            <CardTitle className="text-xs font-extrabold text-blue-300 flex items-center gap-2 uppercase tracking-wider">
+              <Hand className="w-4 h-4 text-blue-400" /> Manual Entry Mode
+            </CardTitle>
+            <Badge className="bg-blue-900/80 text-blue-200 border-blue-500/40 text-[10px] font-mono">
+              NO AI OCR
+            </Badge>
+          </CardHeader>
+          <CardContent className="p-3.5 text-xs text-slate-300">
+            <p>Enter customer and vehicle information manually in the intake form. Capture photos for compliance verification without automatic field extraction.</p>
+          </CardContent>
+        </Card>
 
         {/* Workspace Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className={`grid grid-cols-2 ${isCarSalvage ? 'sm:grid-cols-4' : 'sm:grid-cols-5'} bg-slate-900 border border-slate-800 p-1 rounded-xl h-auto`}>
             {!isCarSalvage && (
               <TabsTrigger value="id" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white text-xs gap-1.5 h-10 font-bold">
-                <CreditCard className="w-4 h-4" /> ID Scan
+                <CreditCard className="w-4 h-4" /> ID Photo
               </TabsTrigger>
             )}
             <TabsTrigger value="person" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white text-xs gap-1.5 h-10 font-bold">
@@ -502,7 +418,7 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
               <Car className="w-4 h-4" /> Vehicle
             </TabsTrigger>
             <TabsTrigger value="plate" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white text-xs gap-1.5 h-10 font-bold">
-              <Scan className="w-4 h-4" /> Plate
+              <FileText className="w-4 h-4" /> Plate
             </TabsTrigger>
             <TabsTrigger value="load" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white text-xs gap-1.5 h-10 font-bold">
               <Package className="w-4 h-4" /> Cargo
@@ -510,93 +426,95 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
           </TabsList>
 
           {/* TAB 1: ID CAPTURE */}
-          <TabsContent value="id" className="mt-3 space-y-4">
-            <Card className="bg-slate-900 border-slate-800 text-slate-100">
-              <CardHeader className="pb-3 border-b border-slate-800">
-                <CardTitle className="text-sm font-semibold flex items-center justify-between">
-                  <span className="flex items-center gap-2 text-blue-400">
-                    <CreditCard className="w-4 h-4" /> Driver License / State ID Capture with AI Vision OCR
-                  </span>
-                  {captures.idPhotoUrl && (
-                    <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30">ID Verified</Badge>
-                  )}
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="pt-4 space-y-4">
-                <div className="grid md:grid-cols-2 gap-6 items-center">
-                  <div className="relative aspect-video bg-slate-950 rounded-xl border-2 border-dashed border-slate-800 flex flex-col items-center justify-center p-4 overflow-hidden group">
-                    {captures.idPhotoUrl ? (
-                      <>
-                        <img src={captures.idPhotoUrl} alt="ID Scan" className="w-full h-full object-contain rounded" />
-                        <div className="absolute inset-0 bg-slate-950/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-                          <Button size="sm" variant="secondary" onClick={() => handleTriggerCameraInput('idPhotoUrl')}>
-                            <Camera className="w-3.5 h-3.5 mr-1" /> Re-Snap
-                          </Button>
-                          <Button size="sm" variant="destructive" onClick={() => handleClearCapture('idPhotoUrl')}>
-                            <Trash2 className="w-3.5 h-3.5 mr-1" /> Clear
-                          </Button>
-                        </div>
-                      </>
-                    ) : (
-                      <div className="text-center space-y-2">
-                        <div className="w-12 h-12 mx-auto rounded-full bg-blue-500/10 border border-blue-500/30 flex items-center justify-center text-blue-400">
-                          <Scan className="w-6 h-6 animate-pulse" />
-                        </div>
-                        <p className="text-xs text-slate-400">Point device camera at DL or select IP Camera feed</p>
-                      </div>
+          {!isCarSalvage && (
+            <TabsContent value="id" className="mt-3 space-y-4">
+              <Card className="bg-slate-900 border-slate-800 text-slate-100">
+                <CardHeader className="pb-3 border-b border-slate-800">
+                  <CardTitle className="text-sm font-semibold flex items-center justify-between">
+                    <span className="flex items-center gap-2 text-blue-400">
+                      <CreditCard className="w-4 h-4" /> Driver License / State ID Photo
+                    </span>
+                    {captures.idPhotoUrl && (
+                      <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30">ID Captured</Badge>
                     )}
-                  </div>
-
-                  <div className="space-y-3">
-                    <Button
-                      onClick={() => handleTriggerCameraInput('idPhotoUrl')}
-                      className="w-full h-11 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs gap-1.5"
-                    >
-                      <Camera className="w-4 h-4" /> Device Camera (Auto AI Scan)
-                    </Button>
-
-                    {/* IP Cameras Quick Selection */}
-                    {ipCameras.length > 0 && (
-                      <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-2">
-                        <span className="text-[11px] font-bold text-sky-400 flex items-center gap-1.5">
-                          <Radio className="w-3.5 h-3.5 animate-pulse" /> Snap from Configured IP Camera:
-                        </span>
-                        <div className="grid grid-cols-1 gap-1.5">
-                          {ipCameras.map((cam) => (
-                            <Button
-                              key={cam.id}
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              onClick={() => handleCaptureFromIpCamera(cam, 'idPhotoUrl')}
-                              className="w-full justify-start text-xs border-slate-800 bg-slate-900 text-slate-200 hover:text-white h-9"
-                            >
-                              <Camera className="w-3.5 h-3.5 mr-2 text-sky-400" />
-                              <span className="truncate">{cam.name} ({cam.ipAddress})</span>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="pt-4 space-y-4">
+                  <div className="grid md:grid-cols-2 gap-6 items-center">
+                    <div className="relative aspect-video bg-slate-950 rounded-xl border-2 border-dashed border-slate-800 flex flex-col items-center justify-center p-4 overflow-hidden group">
+                      {captures.idPhotoUrl ? (
+                        <>
+                          <img src={captures.idPhotoUrl} alt="ID Scan" className="w-full h-full object-contain rounded" />
+                          <div className="absolute inset-0 bg-slate-950/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                            <Button size="sm" variant="secondary" onClick={() => handleTriggerCameraInput('idPhotoUrl')}>
+                              <Camera className="w-3.5 h-3.5 mr-1" /> Re-Snap
                             </Button>
-                          ))}
+                            <Button size="sm" variant="destructive" onClick={() => handleClearCapture('idPhotoUrl')}>
+                              <Trash2 className="w-3.5 h-3.5 mr-1" /> Clear
+                            </Button>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="text-center space-y-2">
+                          <div className="w-12 h-12 mx-auto rounded-full bg-blue-500/10 border border-blue-500/30 flex items-center justify-center text-blue-400">
+                            <CreditCard className="w-6 h-6" />
+                          </div>
+                          <p className="text-xs text-slate-400">Capture driver's license or state ID photo</p>
                         </div>
-                      </div>
-                    )}
+                      )}
+                    </div>
 
-                    <Button
-                      onClick={() => handleStartLiveCamera('idPhotoUrl')}
-                      className="w-full h-10 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs gap-1.5"
-                    >
-                      <Video className="w-4 h-4" /> Live Video Stream
-                    </Button>
-                    <Button
-                      variant="outline"
-                      onClick={() => handleTriggerUpload('idPhotoUrl')}
-                      className="w-full h-10 border-slate-700 bg-slate-800 text-slate-200 font-semibold text-xs gap-1.5"
-                    >
-                      <Upload className="w-4 h-4" /> Upload Image File
-                    </Button>
+                    <div className="space-y-3">
+                      <Button
+                        onClick={() => handleTriggerCameraInput('idPhotoUrl')}
+                        className="w-full h-11 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs gap-1.5"
+                      >
+                        <Camera className="w-4 h-4" /> Device Camera
+                      </Button>
+
+                      {/* IP Cameras Quick Selection */}
+                      {ipCameras.length > 0 && (
+                        <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-2">
+                          <span className="text-[11px] font-bold text-sky-400 flex items-center gap-1.5">
+                            <Radio className="w-3.5 h-3.5 animate-pulse" /> Snap from IP Camera:
+                          </span>
+                          <div className="grid grid-cols-1 gap-1.5">
+                            {ipCameras.map((cam) => (
+                              <Button
+                                key={cam.id}
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleCaptureFromIpCamera(cam, 'idPhotoUrl')}
+                                className="w-full justify-start text-xs border-slate-800 bg-slate-900 text-slate-200 hover:text-white h-9"
+                              >
+                                <Camera className="w-3.5 h-3.5 mr-2 text-sky-400" />
+                                <span className="truncate">{cam.name} ({cam.ipAddress})</span>
+                              </Button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      <Button
+                        onClick={() => handleStartLiveCamera('idPhotoUrl')}
+                        className="w-full h-10 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs gap-1.5"
+                      >
+                        <Video className="w-4 h-4" /> Live Video Stream
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => handleTriggerUpload('idPhotoUrl')}
+                        className="w-full h-10 border-slate-700 bg-slate-800 text-slate-200 font-semibold text-xs gap-1.5"
+                      >
+                        <Upload className="w-4 h-4" /> Upload Image File
+                      </Button>
+                    </div>
                   </div>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
+                </CardContent>
+              </Card>
+            </TabsContent>
+          )}
 
           {/* TAB 2: SELLER FACE SHOT */}
           <TabsContent value="person" className="mt-3 space-y-4">
@@ -607,7 +525,7 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
                     <UserCheck className="w-4 h-4" /> Seller Face Identification Shot
                   </span>
                   {captures.personPhotoUrl && (
-                    <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30">Face Shot Clear</Badge>
+                    <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30">Face Captured</Badge>
                   )}
                 </CardTitle>
               </CardHeader>
@@ -645,7 +563,7 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
                     {ipCameras.length > 0 && (
                       <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-2">
                         <span className="text-[11px] font-bold text-purple-400 flex items-center gap-1.5">
-                          <Radio className="w-3.5 h-3.5 animate-pulse" /> Snap from Configured IP Camera:
+                          <Radio className="w-3.5 h-3.5 animate-pulse" /> Snap from IP Camera:
                         </span>
                         <div className="grid grid-cols-1 gap-1.5">
                           {ipCameras.map((cam) => (
@@ -725,7 +643,7 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
                     {ipCameras.length > 0 && (
                       <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-2">
                         <span className="text-[11px] font-bold text-amber-400 flex items-center gap-1.5">
-                          <Radio className="w-3.5 h-3.5 animate-pulse" /> Snap from Configured IP Camera:
+                          <Radio className="w-3.5 h-3.5 animate-pulse" /> Snap from IP Camera:
                         </span>
                         <div className="grid grid-cols-1 gap-1.5">
                           {ipCameras.map((cam) => (
@@ -764,10 +682,10 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
               <CardHeader className="pb-3 border-b border-slate-800">
                 <CardTitle className="text-sm font-semibold flex items-center justify-between">
                   <span className="flex items-center gap-2 text-blue-400">
-                    <Scan className="w-4 h-4" /> License Plate & Tag Snapshot with AI OCR
+                    <FileText className="w-4 h-4" /> License Plate & Tag Snapshot
                   </span>
                   {captures.licensePlatePhotoUrl && (
-                    <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30">Plate Verified</Badge>
+                    <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30">Plate Captured</Badge>
                   )}
                 </CardTitle>
               </CardHeader>
@@ -788,7 +706,7 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
                       </>
                     ) : (
                       <div className="text-center space-y-2">
-                        <Scan className="w-10 h-10 mx-auto text-slate-600" />
+                        <FileText className="w-10 h-10 mx-auto text-slate-600" />
                         <p className="text-xs text-slate-400">Snap close-up of vehicle rear tag</p>
                       </div>
                     )}
@@ -799,13 +717,13 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
                       onClick={() => handleTriggerCameraInput('licensePlatePhotoUrl')}
                       className="w-full h-11 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs gap-1.5"
                     >
-                      <Camera className="w-4 h-4" /> Device Camera (Auto AI OCR)
+                      <Camera className="w-4 h-4" /> Device Camera
                     </Button>
 
                     {ipCameras.length > 0 && (
                       <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-2">
                         <span className="text-[11px] font-bold text-sky-400 flex items-center gap-1.5">
-                          <Radio className="w-3.5 h-3.5 animate-pulse" /> Snap from License Plate IP Camera:
+                          <Radio className="w-3.5 h-3.5 animate-pulse" /> Snap from IP Camera:
                         </span>
                         <div className="grid grid-cols-1 gap-1.5">
                           {ipCameras.map((cam) => (
@@ -817,7 +735,7 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
                               onClick={() => handleCaptureFromIpCamera(cam, 'licensePlatePhotoUrl')}
                               className="w-full justify-start text-xs border-slate-800 bg-slate-900 text-slate-200 hover:text-white h-9"
                             >
-                              <Scan className="w-3.5 h-3.5 mr-2 text-sky-400" />
+                              <FileText className="w-3.5 h-3.5 mr-2 text-sky-400" />
                               <span className="truncate">{cam.name} ({cam.ipAddress})</span>
                             </Button>
                           ))}
@@ -885,7 +803,7 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
                     {ipCameras.length > 0 && (
                       <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-2">
                         <span className="text-[11px] font-bold text-emerald-400 flex items-center gap-1.5">
-                          <Radio className="w-3.5 h-3.5 animate-pulse" /> Snap from Configured IP Camera:
+                          <Radio className="w-3.5 h-3.5 animate-pulse" /> Snap from IP Camera:
                         </span>
                         <div className="grid grid-cols-1 gap-1.5">
                           {ipCameras.map((cam) => (
@@ -921,7 +839,7 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
         </Tabs>
 
         <div className="mt-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs text-amber-100">
-          Seller and yard representative signatures are completed by hand on both printed voucher copies.
+          <strong>Note:</strong> Seller name, ID number, license plate, and vehicle details must be entered manually in the intake form. Signatures are completed by hand on the printed voucher.
         </div>
 
         {/* Footer actions */}
