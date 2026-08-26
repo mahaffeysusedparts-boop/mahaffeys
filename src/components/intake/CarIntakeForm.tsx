@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { CarIntakeRecord, Ticket } from '@/types/scrap';
 import { storageService } from '@/services/storageService';
-import { analyzeLicensePlateImage } from '@/services/aiVisionService';
 import { uploadDataUrl } from '@/services/mediaService';
 import { PrintStickerModal } from '@/components/vehicle/PrintStickerModal';
 import { VehicleStickerData } from '@/components/vehicle/VehicleSticker';
@@ -30,7 +29,6 @@ import {
   FileCheck,
   Hash,
   RefreshCw,
-
   User,
   Ban,
   Printer,
@@ -134,33 +132,23 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
   };
 
   // Handle local image file upload for vehicle photo
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    try {
-      const dataUrl = await compressVehiclePhoto(file);
-      const url = await uploadDataUrl(dataUrl, file.name);
-      setPhotoUrl(url);
-      toast.success('Vehicle photo saved to the server');
+    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+  
       try {
-        const plateRes = await analyzeLicensePlateImage(dataUrl);
-        if (plateRes.plateNumber && !plateRes.plateNumber.startsWith("TAG-")) {
-          setLicensePlate(plateRes.plateNumber.toUpperCase().replace(/[^A-Z0-9]/g, ''));
-          toast.info(`AI Vision detected Tag: ${plateRes.plateNumber}`);
-        }
-      } catch (err) {
-        console.warn("Plate OCR error:", err);
+        const dataUrl = await compressVehiclePhoto(file);
+        const url = await uploadDataUrl(dataUrl, file.name);
+        setPhotoUrl(url);
+        toast.success('Vehicle photo saved to the server');
+      } catch (error) {
+        toast.error('Could not save vehicle photo', {
+          description: error instanceof Error ? error.message : 'Choose a different image and try again.',
+        });
+      } finally {
+        e.target.value = '';
       }
-
-    } catch (error) {
-      toast.error('Could not save vehicle photo', {
-        description: error instanceof Error ? error.message : 'Choose a different image and try again.',
-      });
-    } finally {
-      e.target.value = '';
-    }
-  };
+    };
 
   const handleSkipVin = () => {
     const noVinTag = `NO-VIN-${Math.floor(1000 + Math.random() * 9000)}`;
