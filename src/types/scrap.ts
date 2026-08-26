@@ -350,6 +350,16 @@ export interface Ticket {
   carRecord?: CarIntakeRecord;
   complianceCaptures?: ComplianceCaptures;
 
+  // Two-part scrap intake: live vehicle weighing state persisted on the ticket.
+  // scaleGrossInWeight is set when the operator logs the IN weight; the intake
+  // then waits (possibly across other transactions) until the OUT weight is
+  // logged and the resulting net is committed as a scrap line.
+  scaleGrossInWeight?: number;
+  scaleGrossInAt?: string;
+  scaleTareOutWeight?: number;
+  scaleTareOutAt?: string;
+  weightTransactions?: WeightTransaction[];
+
   grossTotal: number;
   totalDeductions: number;
   finalPayout: number;
@@ -357,6 +367,14 @@ export interface Ticket {
   checkNumber?: string;
   notes?: string;
   operatorName: string;
+}
+
+export interface WeightTransaction {
+  id: string;
+  type: 'SCALE_IN' | 'SCALE_OUT';
+  weightLbs: number;
+  recordedAt: string;
+  operatorName?: string;
 }
 
 export interface NMVTISReportLog {

@@ -167,6 +167,27 @@ export const storageService = {
     patchCached("mahaffeys_tickets", removeItem("mahaffeys_tickets", id, storageService.getTickets()));
   },
 
+  /**
+   * Sequential scrap-only receipt numbers: 2026-30, 2026-31, 2026-32, ...
+   * Only scrap metal tickets are counted, so numbering stays reserved for
+   * scrap receipts regardless of what other intake types create.
+   */
+  generateScrapReceiptNumber: (): string => {
+    const year = new Date().getFullYear();
+    let maxSequence = 29; // sequence starts at 30
+    storageService.getTickets().forEach((ticket) => {
+      if (ticket.ticketType !== "SCRAP_METAL") return;
+      const match = ticket.id.match(/^(\d{4})-(\d+)$/);
+      if (match && match[1] === String(year)) {
+        const sequence = parseInt(match[2], 10);
+        if (Number.isFinite(sequence) && sequence > maxSequence) {
+          maxSequence = sequence;
+        }
+      }
+    });
+    return `${year}-${maxSequence + 1}`;
+  },
+
   // ── Pull-Apart / Yard Vehicles ────────────────────────────────────────────
   getPullYardVehicles: (): PullYardVehicle[] => readCached("mahaffeys_pull_yard_vehicles", []),
   savePullYardVehicle: (vehicle: PullYardVehicle) => {

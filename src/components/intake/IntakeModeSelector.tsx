@@ -126,7 +126,7 @@ export const IntakeModeSelector: React.FC<IntakeModeSelectorProps> = ({ onSelect
                 <Sparkles className="w-4 h-4 text-emerald-400 opacity-0 group-hover:opacity-100 transition-opacity" />
               </h2>
               <p className="text-slate-400 text-sm mt-2 leading-relaxed">
-                Standard metal recycling intake station with live scale weight holding for ferrous and non-ferrous commodities.
+                Two-part intake: collect seller details &amp; compliance photos first, save, then weigh IN/OUT at the live scale with free transaction switching.
               </p>
             </div>
 
@@ -138,7 +138,7 @@ export const IntakeModeSelector: React.FC<IntakeModeSelectorProps> = ({ onSelect
               </li>
               <li className="flex items-center gap-2">
                 <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                <span>Vehicle Drive-On / Drive-Off Double Weighing (Gross vs Tare)</span>
+                <span>Two-Part Flow: Log IN Weight, Switch Transactions, Log OUT Later</span>
               </li>
               <li className="flex items-center gap-2">
                 <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
