@@ -71,19 +71,6 @@ export default function IntakePage() {
               >
                 <Scale className="w-3.5 h-3.5 mr-1.5" /> Scrap Yard Intake
               </Button>
-
-              <Button
-                variant={activeMode === 'MOBILE_SCRAP' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setActiveMode('MOBILE_SCRAP')}
-                className={`shrink-0 text-xs font-semibold ${
-                  activeMode === 'MOBILE_SCRAP'
-                    ? 'bg-blue-600 text-white hover:bg-blue-500'
-                    : 'border-slate-700 bg-slate-800 text-slate-300'
-                }`}
-              >
-                <Smartphone className="mr-1.5 h-3.5 w-3.5" /> Mobile Fast Intake
-              </Button>
             </div>
           </div>
         )}
@@ -103,14 +90,6 @@ export default function IntakePage() {
         {/* View 3: Standard Scrap Yard Metal Intake Form */}
         {activeMode === 'SCRAP_METAL' && (
           <ScrapYardIntakeForm
-            onBack={handleResetIntake}
-            onTicketCreated={handleTicketCreated}
-          />
-        )}
-
-        {/* View 4: Mobile-first single-page scrap intake */}
-        {activeMode === 'MOBILE_SCRAP' && (
-          <MobileScrapTicket
             onBack={handleResetIntake}
             onTicketCreated={handleTicketCreated}
           />
