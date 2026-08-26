@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { YardSettings } from '@/types/scrap';
 import { storageService } from '@/services/storageService';
 import { authService } from '@/services/authService';
+import { apiRequest } from '@/services/apiClient';
 import { ConnectionStatus, sharedStorage } from '@/services/sharedStorage';
 import { Navbar } from '@/components/layout/Navbar';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -32,10 +33,61 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 
+// Finds every /api/uploads/<uuid> reference so the backup can carry the photo
+// bytes themselves — otherwise the target server 404s on every snapshot URL.
+const UPLOAD_URL_PATTERN = /\/api\/uploads\/([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})/gi;
+
+interface BackupMediaEntry {
+  id: string;
+  fileName: string;
+  contentType: string;
+  contentBase64: string;
+}
+
+function collectUploadIds(value: unknown, ids: Set<string>) {
+  if (typeof value === 'string') {
+    for (const match of value.matchAll(UPLOAD_URL_PATTERN)) ids.add(match[1]);
+  } else if (Array.isArray(value)) {
+    value.forEach((item) => collectUploadIds(item, ids));
+  } else if (value && typeof value === 'object') {
+    Object.values(value).forEach((item) => collectUploadIds(item, ids));
+  }
+}
+
+const blobToBase64 = (blob: Blob): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Could not read an image for the backup'));
+    reader.onload = () => resolve((reader.result as string).split(',')[1] || '');
+    reader.readAsDataURL(blob);
+  });
+
+async function fetchBackupMedia(data: unknown): Promise<{ media: BackupMediaEntry[]; failed: number }> {
+  const ids = new Set<string>();
+  collectUploadIds(data, ids);
+  const media: BackupMediaEntry[] = [];
+  let failed = 0;
+  for (const id of ids) {
+    try {
+      const response = await fetch(`/api/uploads/${id}`, { credentials: 'include' });
+      if (!response.ok) throw new Error(`Upload ${id} returned ${response.status}`);
+      const blob = await response.blob();
+      const contentBase64 = await blobToBase64(blob);
+      if (!contentBase64) throw new Error(`Upload ${id} is empty`);
+      const extension = blob.type.split('/')[1]?.replace('jpeg', 'jpg') || 'jpg';
+      media.push({ id, fileName: `backup-${id}.${extension}`, contentType: blob.type, contentBase64 });
+    } catch {
+      failed += 1;
+    }
+  }
+  return { media, failed };
+}
+
 export default function SettingsPage() {
   const [settings, setSettings] = useState<YardSettings>(storageService.getSettings());
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>(sharedStorage.getStatus());
   const [copiedField, setCopiedField] = useState<string | null>(null);
+  const [isExportingBackup, setIsExportingBackup] = useState(false);
   const importFileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => sharedStorage.subscribe(setConnectionStatus), []);
@@ -79,32 +131,46 @@ export default function SettingsPage() {
     }
 }`;
 
-  const handleExportBackup = () => {
-    const data = {
-      metals: storageService.getMetals(),
-      carRates: storageService.getCarRates(),
-      customers: storageService.getCustomers(),
-      tickets: storageService.getTickets(),
-      settings: storageService.getSettings(),
-      users: authService.getUsers(),
-      catCodes: storageService.getCatCodes(),
-      containerDrops: storageService.getContainerDrops(),
-      cashDrawer: storageService.getCashDrawerLogs(),
-      yardBays: storageService.getYardBays(),
-      pullParts: storageService.getPullParts(),
-      pullVehicles: storageService.getPullYardVehicles(),
-      coreReturns: storageService.getCoreReturns(),
-      admissionPasses: storageService.getAdmissionPasses(),
-    };
+  const handleExportBackup = async () => {
+    setIsExportingBackup(true);
+    try {
+      const data = {
+        metals: storageService.getMetals(),
+        carRates: storageService.getCarRates(),
+        customers: storageService.getCustomers(),
+        tickets: storageService.getTickets(),
+        settings: storageService.getSettings(),
+        users: authService.getUsers(),
+        catCodes: storageService.getCatCodes(),
+        containerDrops: storageService.getContainerDrops(),
+        cashDrawer: storageService.getCashDrawerLogs(),
+        yardBays: storageService.getYardBays(),
+        pullParts: storageService.getPullParts(),
+        pullVehicles: storageService.getPullYardVehicles(),
+        coreReturns: storageService.getCoreReturns(),
+        admissionPasses: storageService.getAdmissionPasses(),
+      };
 
-    const json = JSON.stringify(data, null, 2);
-    const blob = new Blob([json], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `Mahaffeys_LocalBackup_${new Date().toISOString().slice(0, 10)}.json`;
-    link.click();
-    toast.success('Local network database backup file downloaded');
+      // Embed every referenced snapshot so photos survive copying this file
+      // to another server. Without this the URLs 404 ("Upload not found").
+      const { media, failed } = await fetchBackupMedia(data);
+
+      const json = JSON.stringify({ ...data, media }, null, 2);
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `Mahaffeys_LocalBackup_${new Date().toISOString().slice(0, 10)}.json`;
+      link.click();
+      URL.revokeObjectURL(url);
+      toast.success(`Backup downloaded with ${media.length} photo${media.length === 1 ? '' : 's'} embedded`, {
+        description: failed > 0 ? `${failed} photo(s) could not be read and were skipped.` : undefined,
+      });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to build the backup file');
+    } finally {
+      setIsExportingBackup(false);
+    }
   };
 
   const handleImportBackup = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -115,6 +181,17 @@ export default function SettingsPage() {
     reader.onload = async (evt) => {
       try {
         const data = JSON.parse(evt.target?.result as string);
+
+        // Restore the embedded snapshots first so ticket/customer photo URLs
+        // resolve before the records referencing them land in the database.
+        if (Array.isArray(data.media) && data.media.length > 0) {
+          const result = await apiRequest<{ restored: number }>('/api/uploads/import', {
+            method: 'POST',
+            body: JSON.stringify({ media: data.media }),
+          });
+          toast.success(`Restored ${result.restored} photo${result.restored === 1 ? '' : 's'} to the server`);
+        }
+
         const state = {
           mahaffeys_metals: data.metals,
           mahaffeys_car_rates: data.carRates,
@@ -523,10 +600,12 @@ export default function SettingsPage() {
             <div className="flex flex-wrap items-center gap-2 shrink-0">
               <Button
                 onClick={handleExportBackup}
+                disabled={isExportingBackup}
                 variant="outline"
                 className="bg-slate-800 border-slate-700 hover:bg-slate-700 text-emerald-400 text-xs font-semibold"
               >
-                <Download className="w-3.5 h-3.5 mr-1.5" /> Download JSON Backup
+                <Download className="w-3.5 h-3.5 mr-1.5" />
+                {isExportingBackup ? 'Embedding Photos…' : 'Download JSON Backup'}
               </Button>
 
               <Button
