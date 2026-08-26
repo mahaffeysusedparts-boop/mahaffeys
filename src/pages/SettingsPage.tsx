@@ -30,6 +30,8 @@ import {
   Check,
   Terminal,
   ShieldCheck,
+  SearchCheck,
+  ImageOff,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -62,6 +64,14 @@ const blobToBase64 = (blob: Blob): Promise<string> =>
     reader.readAsDataURL(blob);
   });
 
+interface PhotoAuditResult {
+  connectedHost: string;
+  connectedDatabase: string;
+  referencedCount: number;
+  missingCount: number;
+  mediaInDatabase: number;
+}
+
 async function fetchBackupMedia(data: unknown): Promise<{ media: BackupMediaEntry[]; failed: number }> {
   const ids = new Set<string>();
   collectUploadIds(data, ids);
@@ -88,6 +98,8 @@ export default function SettingsPage() {
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>(sharedStorage.getStatus());
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [isExportingBackup, setIsExportingBackup] = useState(false);
+  const [isAuditingPhotos, setIsAuditingPhotos] = useState(false);
+  const [photoAudit, setPhotoAudit] = useState<PhotoAuditResult | null>(null);
   const importFileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => sharedStorage.subscribe(setConnectionStatus), []);
@@ -222,6 +234,25 @@ export default function SettingsPage() {
       storageService.resetToDefaults();
       setSettings(storageService.getSettings());
       toast.info('Yard data reset to factory defaults');
+    }
+  };
+
+  const runPhotoAudit = async () => {
+    setIsAuditingPhotos(true);
+    try {
+      const result = await apiRequest<PhotoAuditResult>('/api/admin/media-audit');
+      setPhotoAudit(result);
+      if (result.referencedCount === 0) {
+        toast.info('No photo references found in the shared records yet');
+      } else if (result.missingCount === 0) {
+        toast.success(`All ${result.referencedCount} referenced photo(s) are present in this database`);
+      } else {
+        toast.warning(`${result.missingCount} of ${result.referencedCount} referenced photo(s) are missing from this database`);
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Photo audit failed');
+    } finally {
+      setIsAuditingPhotos(false);
     }
   };
 
@@ -617,6 +648,16 @@ export default function SettingsPage() {
               </Button>
 
               <Button
+                onClick={runPhotoAudit}
+                disabled={isAuditingPhotos}
+                variant="outline"
+                className="bg-slate-800 border-slate-700 hover:bg-slate-700 text-amber-400 text-xs font-semibold"
+              >
+                <SearchCheck className="w-3.5 h-3.5 mr-1.5" />
+                {isAuditingPhotos ? 'Auditing…' : 'Audit Photos'}
+              </Button>
+
+              <Button
                 onClick={handleResetData}
                 variant="outline"
                 className="bg-slate-800 border-slate-700 hover:bg-red-900/50 text-red-400 text-xs"
@@ -626,6 +667,47 @@ export default function SettingsPage() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Photo audit results */}
+        {photoAudit && (
+          <Card className={`text-white shadow-lg border ${photoAudit.missingCount > 0 ? 'border-amber-500/40 bg-slate-900' : 'border-emerald-500/40 bg-slate-900'}`}>
+            <CardHeader className="py-3 px-4 bg-slate-950/60 border-b border-slate-800">
+              <CardTitle className="text-sm font-bold tracking-wide uppercase text-slate-300 flex items-center gap-2">
+                <ImageOff className={`w-4 h-4 ${photoAudit.missingCount > 0 ? 'text-amber-400' : 'text-emerald-400'}`} />
+                Photo Snapshot Audit
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-4 space-y-2 text-xs font-mono">
+              <div className="flex justify-between">
+                <span className="text-slate-400">Server connected to:</span>
+                <span className="font-bold text-white">{photoAudit.connectedHost} / {photoAudit.connectedDatabase}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">Photos stored in this database:</span>
+                <span className="font-bold text-white">{photoAudit.mediaInDatabase.toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">Photos referenced by records:</span>
+                <span className="font-bold text-white">{photoAudit.referencedCount.toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">Referenced photos missing here:</span>
+                <span className={`font-bold ${photoAudit.missingCount > 0 ? 'text-amber-400' : 'text-emerald-400'}`}>
+                  {photoAudit.missingCount.toLocaleString()}
+                </span>
+              </div>
+              {photoAudit.missingCount > 0 && (
+                <p className="pt-2 border-t border-slate-800 font-sans leading-relaxed text-slate-400">
+                  Yard records sync between databases, but photo bytes only exist in the
+                  <strong className="text-slate-200"> media_uploads table of the database shown above</strong>.
+                  Missing photos here means they were captured while the server was connected to a different
+                  database (or this one was reset). If another deployment still has them, download a JSON backup
+                  from that deployment — backups now embed photos — and import it here to restore them.
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
       </main>
     </div>
