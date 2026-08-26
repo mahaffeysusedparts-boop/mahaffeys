@@ -1,16 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { Customer, MetalGrade, ScrapTicketLine, Ticket, WeightUnit, ComplianceCaptures } from '@/types/scrap';
 import { storageService } from '@/services/storageService';
-import { analyzeDriverLicenseImage } from '@/services/aiVisionService';
 import { optimizeImageDataUrl, uploadDataUrl } from '@/services/mediaService';
 import { EntranceLprMonitor } from './EntranceLprMonitor';
 import { LiveScaleGauge } from '../scale/LiveScaleGauge';
 import { ComplianceCaptureModal } from '../compliance/ComplianceCaptureModal';
-import {
-
-  calculateComplianceScore,
-  DLScanResult,
-} from '@/utils/complianceUtils';
+import { calculateComplianceScore } from '@/utils/complianceUtils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -36,8 +31,6 @@ import {
   Truck,
   CheckCircle2,
   Camera,
-  CreditCard,
-  Scan,
   Package,
   ShieldCheck,
   UserCheck,
@@ -53,6 +46,7 @@ import {
   RefreshCw,
   Hash,
   Phone,
+  ScaleWeight,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -84,13 +78,12 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
   const [pendingSearch, setPendingSearch] = useState('');
   const [isPendingModalOpen, setIsPendingModalOpen] = useState(false);
 
-  // Customer Credentials
+  // Customer Credentials (Manual Entry Only - No OCR)
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>('');
   const [customerName, setCustomerName] = useState<string>('');
   const [customerPhone, setCustomerPhone] = useState<string>('');
   const [customerIdNumber, setCustomerIdNumber] = useState<string>('');
   const [vehicleLicensePlate, setVehicleLicensePlate] = useState<string>('');
-  const [isDlScanned, setIsDlScanned] = useState<boolean>(false);
 
   // Compliance Captures
   const [complianceCaptures, setComplianceCaptures] = useState<ComplianceCaptures>({
@@ -107,13 +100,15 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
 
   // Scale & Item Entry
   const [selectedMetalId, setSelectedMetalId] = useState<string>(metals[0]?.id || '');
-  const [grossWeight, setGrossWeight] = useState<number>(120);
+  const [grossWeight, setGrossWeight] = useState<number>(0);
   const [tareWeight, setTareWeight] = useState<number>(0);
   const [deductionPercent, setDeductionPercent] = useState<number>(0);
 
   const [weighingMode, setWeighingMode] = useState<'SINGLE_ITEM' | 'VEHICLE_DOUBLE'>('SINGLE_ITEM');
   const [vehicleGrossIn, setVehicleGrossIn] = useState<number>(0);
   const [vehicleTareOut, setVehicleTareOut] = useState<number>(0);
+  const [isGrossInCaptured, setIsGrossInCaptured] = useState(false);
+  const [isTareOutCaptured, setIsTareOutCaptured] = useState(false);
 
   // Payout Method State
   const [payoutMethod, setPayoutMethod] = useState<'Cash' | 'Check'>('Cash');
@@ -155,73 +150,12 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
           idPhotoUrl: cust.idPhotoUrl || prev.idPhotoUrl,
         }));
       }
-      setIsDlScanned(true);
     }
   };
 
-  const applyDlScanResult = (profile: DLScanResult, photoDataUrl?: string) => {
-    if (profile.fullName) setCustomerName(profile.fullName);
-    if (profile.idNumber) setCustomerIdNumber(profile.idNumber);
-    if (profile.vehicleLicensePlate) setVehicleLicensePlate(profile.vehicleLicensePlate);
-    setIsDlScanned(true);
-
-    const matchedCustomer = customers.find(
-      (c) =>
-        (c.idNumber && profile.idNumber && c.idNumber.toLowerCase() === profile.idNumber.toLowerCase()) ||
-        (profile.fullName && c.fullName.toLowerCase().includes(profile.fullName.toLowerCase()))
-    );
-
-    if (matchedCustomer) {
-      setSelectedCustomerId(matchedCustomer.id);
-      if (matchedCustomer.phone) setCustomerPhone(matchedCustomer.phone);
-    }
-
-    if (photoDataUrl) {
-      setComplianceCaptures((prev) => ({
-        ...prev,
-        idPhotoUrl: photoDataUrl,
-      }));
-    }
-
-    toast.success(`Driver License Photo Processed!`, {
-      description: profile.fullName ? `Name: ${profile.fullName} | ID: ${profile.idNumber}` : 'ID image saved to compliance records',
-    });
-  };
-
-  const handleApplyComplianceCaptures = (captures: ComplianceCaptures, scannedProfile?: DLScanResult) => {
+  const handleApplyComplianceCaptures = (captures: ComplianceCaptures) => {
     setComplianceCaptures(captures);
-    if (scannedProfile && scannedProfile.fullName) {
-      applyDlScanResult(scannedProfile, captures.idPhotoUrl);
-    }
-  };
-
-  const handleDlPictureUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    if (!file) return;
-
-    try {
-      toast.info('Reading driver license…');
-      const optimizedImage = await optimizeImageDataUrl(file);
-      const [profile, url] = await Promise.all([
-        analyzeDriverLicenseImage(optimizedImage),
-        uploadDataUrl(optimizedImage, file.name),
-      ]);
-      applyDlScanResult(profile, url);
-      if (profile.fullName || profile.idNumber) {
-        toast.success(`Driver License processed!`, {
-          description: `Name: ${profile.fullName || 'needs review'} | ID: ${profile.idNumber || 'needs review'}`,
-        });
-      } else {
-        toast.warning('ID photo saved, but the text could not be read', {
-          description: 'Retake in bright, even light with all four card corners visible, or type the details manually.',
-        });
-      }
-    } catch (error) {
-      toast.error('Could not process the ID image', {
-        description: error instanceof Error ? error.message : 'Try the upload again.',
-      });
-    }
+    toast.success('Compliance photos captured');
   };
 
   const hasCurrentWork = () => Boolean(
@@ -294,7 +228,6 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
     setCustomerPhone(pending.customerPhone || '');
     setCustomerIdNumber(pending.customerIdNumber || '');
     setVehicleLicensePlate(pending.vehicleLicensePlate || '');
-    setIsDlScanned(Boolean(pending.customerIdNumber || pending.complianceCaptures?.idPhotoUrl));
     setComplianceCaptures(pending.complianceCaptures || {});
     setLines(pending.scrapLines || []);
     setNotes(pending.notes || '');
@@ -337,7 +270,6 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
     setCustomerPhone('');
     setCustomerIdNumber('');
     setVehicleLicensePlate('');
-    setIsDlScanned(false);
     setLines([]);
     setNotes('');
     setComplianceCaptures({
@@ -347,34 +279,71 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
       licensePlatePhotoUrl: undefined,
       loadPhotoUrl: undefined,
     });
+    setVehicleGrossIn(0);
+    setVehicleTareOut(0);
+    setIsGrossInCaptured(false);
+    setIsTareOutCaptured(false);
     setCurrentStep(1);
   };
 
   const selectedMetal = metals.find((m) => m.id === selectedMetalId) || metals[0];
 
-  const handleHoldWeightFromScale = (weight: number, unit: WeightUnit) => {
+  // Handle "Log Gross In" button click - captures current scale weight as vehicle gross
+  const handleLogGrossIn = (weight: number, unit: WeightUnit) => {
     const lbs = unit === 'KG' ? Math.round(weight * 2.20462) : Math.round(weight);
-    
-    if (weighingMode === 'VEHICLE_DOUBLE') {
-      if (vehicleGrossIn === 0) {
-        setVehicleGrossIn(lbs);
-        toast.success(`Vehicle Gross In recorded: ${lbs.toLocaleString()} LBS`);
-      } else {
-        setVehicleTareOut(lbs);
-        const net = Math.max(0, vehicleGrossIn - lbs);
-        setGrossWeight(net);
-        toast.success(`Vehicle Tare Out recorded: ${lbs.toLocaleString()} LBS. Net scrap weight: ${net.toLocaleString()} LBS`);
-      }
-    } else {
-      setGrossWeight(lbs);
-      toast.success(`Scale weight captured: ${lbs.toLocaleString()} LBS`);
+    if (lbs <= 0) {
+      toast.error('Cannot log weight - scale reading is zero or negative');
+      return;
     }
+    setVehicleGrossIn(lbs);
+    setIsGrossInCaptured(true);
+    toast.success(`Gross In recorded: ${lbs.toLocaleString()} LBS`, {
+      description: 'Now capture Tare Out when vehicle drives off scale.',
+    });
   };
 
+  // Handle "Log Tare Out" button click - captures current scale weight as vehicle tare
+  const handleLogTareOut = (weight: number, unit: WeightUnit) => {
+    const lbs = unit === 'KG' ? Math.round(weight * 2.20462) : Math.round(weight);
+    if (lbs <= 0) {
+      toast.error('Cannot log weight - scale reading is zero or negative');
+      return;
+    }
+    if (vehicleGrossIn === 0) {
+      toast.error('Log Gross In first before capturing Tare Out');
+      return;
+    }
+    setVehicleTareOut(lbs);
+    setIsTareOutCaptured(true);
+    const net = Math.max(0, vehicleGrossIn - lbs);
+    setGrossWeight(net);
+    toast.success(`Tare Out recorded: ${lbs.toLocaleString()} LBS`, {
+      description: `Net scrap weight: ${net.toLocaleString()} LBS`,
+    });
+  };
+
+  // Handle generic weight capture (for single item mode)
+  const handleHoldWeightFromScale = (weight: number, unit: WeightUnit) => {
+    const lbs = unit === 'KG' ? Math.round(weight * 2.20462) : Math.round(weight);
+    setGrossWeight(lbs);
+    toast.success(`Scale weight captured: ${lbs.toLocaleString()} LBS`);
+  };
+
+  // Handle adding a line item
   const handleAddLine = () => {
     if (!selectedMetal) return;
 
-    const net = Math.max(0, grossWeight - tareWeight);
+    let net: number;
+    if (weighingMode === 'VEHICLE_DOUBLE') {
+      if (!isGrossInCaptured || !isTareOutCaptured) {
+        toast.error('Log both Gross In and Tare Out before adding a line');
+        return;
+      }
+      net = Math.max(0, vehicleGrossIn - vehicleTareOut);
+    } else {
+      net = Math.max(0, grossWeight - tareWeight);
+    }
+
     const deductionLbs = Math.round((net * (deductionPercent / 100)) * 10) / 10;
     const billableWeight = Math.max(0, net - deductionLbs);
     const lineTotal = Math.round(billableWeight * selectedMetal.ratePerLb * 100) / 100;
@@ -386,8 +355,8 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
       metalGradeId: selectedMetal.id,
       metalName: selectedMetal.name,
       metalCategory: selectedMetal.category,
-      grossWeight,
-      tareWeight,
+      grossWeight: weighingMode === 'VEHICLE_DOUBLE' ? vehicleGrossIn : grossWeight,
+      tareWeight: weighingMode === 'VEHICLE_DOUBLE' ? vehicleTareOut : tareWeight,
       netWeight: net,
       deductionPercent,
       deductionLbs,
@@ -399,15 +368,27 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
     setLines([...lines, newLine]);
     toast.success(`Load ${newLine.loadNumber}: ${newLine.billableWeight} LBS of ${newLine.metalName} added`);
 
+    // Reset for next line
     setGrossWeight(0);
     setTareWeight(0);
     setDeductionPercent(0);
     setVehicleGrossIn(0);
     setVehicleTareOut(0);
+    setIsGrossInCaptured(false);
+    setIsTareOutCaptured(false);
   };
 
   const handleRemoveLine = (id: string) => {
     setLines(lines.filter((l) => l.id !== id).map((l, index) => ({ ...l, loadNumber: index + 1 })));
+  };
+
+  const handleResetVehicleWeights = () => {
+    setVehicleGrossIn(0);
+    setVehicleTareOut(0);
+    setIsGrossInCaptured(false);
+    setIsTareOutCaptured(false);
+    setGrossWeight(0);
+    toast.info('Vehicle weight entries cleared');
   };
 
   const totalBillableWeight = lines.reduce((acc, l) => acc + l.billableWeight, 0);
@@ -509,6 +490,8 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
     );
   });
 
+  const netScrapWeight = Math.max(0, vehicleGrossIn - vehicleTareOut);
+
   return (
     <div className="max-w-6xl mx-auto space-y-6 pb-24 sm:pb-12 font-sans">
       
@@ -534,7 +517,7 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
             </div>
             <p className="text-xs text-slate-400">
               {currentStep === 1
-                ? 'Part 1: Record seller details, phone #, ID & compliance captures'
+                ? 'Part 1: Record seller details and compliance captures'
                 : 'Part 2: Scale weight entry & final voucher processing'}
             </p>
           </div>
@@ -727,7 +710,7 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
             
             <div className="lg:col-span-2 space-y-6">
 
-              {/* 1. CUSTOMER / SELLER PROFILE CARD */}
+              {/* 1. CUSTOMER / SELLER PROFILE CARD - MANUAL ENTRY ONLY */}
               <Card className="bg-slate-900 border-slate-800 text-white shadow-xl relative overflow-hidden">
                 <CardHeader className="py-3.5 px-4 bg-slate-950/80 border-b border-slate-800 flex flex-row items-center justify-between gap-2 flex-wrap">
                   <div className="flex items-center gap-2">
@@ -735,58 +718,20 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
                     <CardTitle className="text-sm font-bold tracking-wide uppercase text-slate-300">
                       Customer / Seller Profile
                     </CardTitle>
-                    {isDlScanned && (
-                      <Badge className="bg-emerald-950 text-emerald-300 border-emerald-500/40 text-[10px] font-mono gap-1">
-                        <Check className="w-3 h-3 text-emerald-400" /> DL AUTOFILLED
-                      </Badge>
-                    )}
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <label className="cursor-pointer inline-flex items-center gap-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-extrabold text-xs px-3.5 py-2 rounded-lg transition-colors shadow-lg shadow-blue-950">
-                      <CreditCard className="w-4 h-4 text-amber-300" /> Capture / Upload Driver License
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={handleDlPictureUpload}
-                        className="hidden"
-                      />
-                    </label>
+                    <Badge className="bg-blue-950 text-blue-300 border-blue-500/40 text-[10px] font-mono">
+                      MANUAL ENTRY
+                    </Badge>
                   </div>
                 </CardHeader>
 
                 <CardContent className="p-4 space-y-4">
                   
-                  {isDlScanned ? (
-                    <div className="p-3 bg-emerald-950/40 border border-emerald-500/40 rounded-xl flex items-center justify-between text-xs text-emerald-300">
-                      <div className="flex items-center gap-2">
-                        <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
-                        <span>Driver's License captured! Seller details populated.</span>
-                      </div>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => {
-                          setCustomerName('');
-                          setCustomerPhone('');
-                          setCustomerIdNumber('');
-                          setVehicleLicensePlate('');
-                          setSelectedCustomerId('');
-                          setIsDlScanned(false);
-                        }}
-                        className="h-6 text-[10px] text-slate-400 hover:text-white"
-                      >
-                        Clear
-                      </Button>
+                  <div className="p-3 bg-blue-950/40 border border-blue-500/40 rounded-xl flex items-center justify-between text-xs text-blue-300">
+                    <div className="flex items-center gap-2">
+                      <ShieldCheck className="w-4 h-4 text-blue-400 shrink-0" />
+                      <span>Enter seller details manually. Compliance photos will be captured in the Photo Studio below.</span>
                     </div>
-                  ) : (
-                    <div className="p-3 bg-slate-950 border border-dashed border-slate-800 rounded-xl flex items-center justify-between text-xs text-slate-400">
-                      <div className="flex items-center gap-2">
-                        <Scan className="w-4 h-4 text-blue-400 shrink-0 animate-pulse" />
-                        <span>Tap <strong>"Capture / Upload Driver License"</strong> above to scan seller ID with device camera.</span>
-                      </div>
-                    </div>
-                  )}
+                  </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
@@ -808,15 +753,12 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
                     <div>
                       <Label className="text-xs text-slate-300 flex items-center justify-between">
                         <span>Seller Name *</span>
-                        {isDlScanned && <span className="text-[10px] text-emerald-400 font-mono">AUTOFILLED</span>}
                       </Label>
                       <Input
                         value={customerName}
                         onChange={(e) => setCustomerName(e.target.value)}
                         placeholder="e.g. Marcus Vance"
-                        className={`bg-slate-950 border-slate-800 text-white font-bold text-xs mt-1 h-11 ${
-                          isDlScanned ? 'ring-1 ring-emerald-500/50 bg-emerald-950/20' : ''
-                        }`}
+                        className="bg-slate-950 border-slate-800 text-white font-bold text-xs mt-1 h-11"
                       />
                     </div>
                   </div>
@@ -837,43 +779,37 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
                     <div>
                       <Label className="text-xs text-slate-300 flex items-center justify-between">
                         <span>Driver License / ID #</span>
-                        {isDlScanned && <span className="text-[10px] text-emerald-400 font-mono">AUTOFILLED</span>}
                       </Label>
                       <Input
                         value={customerIdNumber}
                         onChange={(e) => setCustomerIdNumber(e.target.value)}
                         placeholder="e.g. DL-4481029-GA"
-                        className={`bg-slate-950 border-slate-800 text-amber-300 font-mono text-xs mt-1 h-11 ${
-                          isDlScanned ? 'ring-1 ring-emerald-500/50 bg-emerald-950/20' : ''
-                        }`}
+                        className="bg-slate-950 border-slate-800 text-amber-300 font-mono text-xs mt-1 h-11"
                       />
                     </div>
 
                     <div>
                       <Label className="text-xs text-slate-300 flex items-center justify-between">
                         <span>Vehicle License Plate Tag</span>
-                        {isDlScanned && vehicleLicensePlate && <span className="text-[10px] text-emerald-400 font-mono">AUTOFILLED</span>}
                       </Label>
                       <Input
                         value={vehicleLicensePlate}
                         onChange={(e) => setVehicleLicensePlate(e.target.value)}
                         placeholder="e.g. TOW-912 (GA)"
-                        className={`bg-slate-950 border-slate-800 text-slate-200 font-mono uppercase text-xs mt-1 h-11 ${
-                          isDlScanned && vehicleLicensePlate ? 'ring-1 ring-emerald-500/50 bg-emerald-950/20' : ''
-                        }`}
+                        className="bg-slate-950 border-slate-800 text-slate-200 font-mono uppercase text-xs mt-1 h-11"
                       />
                     </div>
                   </div>
                 </CardContent>
               </Card>
 
-              {/* 2. LEGAL COMPLIANCE & PHOTO CAPTURE STUDIO */}
+              {/* 2. LEGAL COMPLIANCE & PHOTO CAPTURE STUDIO - MANUAL PHOTO ONLY */}
               <Card className="bg-slate-900 border-blue-500/40 text-white shadow-xl overflow-hidden">
                 <CardHeader className="py-3 px-4 bg-gradient-to-r from-blue-950/80 to-slate-950 border-b border-blue-500/30 flex flex-row items-center justify-between">
                   <div className="flex items-center gap-2">
                     <ShieldCheck className="w-5 h-5 text-blue-400" />
                     <CardTitle className="text-sm font-bold tracking-wide uppercase text-white">
-                      State Legal Compliance & Camera Studio
+                      State Legal Compliance & Photo Studio
                     </CardTitle>
                   </div>
 
@@ -884,17 +820,17 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
                         : "bg-amber-950 text-amber-400 border-amber-500/40"
                     }`}
                   >
-                    {complianceStats.score}% Studio Audit Verified
+                    {complianceStats.score}% Photos Captured
                   </Badge>
                 </CardHeader>
 
                 <CardContent className="p-4 space-y-4">
                   <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
                     {[
-                      { title: "DL Scan", icon: CreditCard, val: complianceCaptures.idPhotoUrl },
+                      { title: "ID Photo", icon: UserCheck, val: complianceCaptures.idPhotoUrl },
                       { title: "Seller Face", icon: UserCheck, val: complianceCaptures.personPhotoUrl },
                       { title: "Vehicle 45°", icon: Truck, val: complianceCaptures.vehiclePhotoUrl },
-                      { title: "License Plate", icon: Scan, val: complianceCaptures.licensePlatePhotoUrl },
+                      { title: "License Plate", icon: ShieldCheck, val: complianceCaptures.licensePlatePhotoUrl },
                       { title: "Cargo Load", icon: Package, val: complianceCaptures.loadPhotoUrl },
                     ].map((item, idx) => {
                       const Icon = item.icon;
@@ -924,13 +860,13 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
 
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 border-t border-slate-800">
                     <p className="text-xs text-slate-400">
-                      5-point photo verification and ID scan suite. Both parties sign the printed voucher.
+                      5-point photo verification for state compliance. Both parties sign the printed voucher.
                     </p>
                     <Button
                       onClick={() => setIsComplianceModalOpen(true)}
                       className="bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs gap-2 min-h-[44px]"
                     >
-                      <Camera className="w-4 h-4" /> Launch Photo Compliance Studio
+                      <Camera className="w-4 h-4" /> Launch Photo Studio
                     </Button>
                   </div>
                 </CardContent>
@@ -963,11 +899,11 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
                     </div>
                     <div className="flex justify-between">
                       <span className="text-slate-400">License / ID #:</span>
-                      <span className="text-amber-300 font-mono font-bold">{customerIdNumber || 'Pending DL Photo'}</span>
+                      <span className="text-amber-300 font-mono font-bold">{customerIdNumber || 'Not Entered'}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-slate-400">Compliance Audit:</span>
-                      <span className="text-emerald-400 font-bold">{complianceStats.score}% Studio Audit</span>
+                      <span className="text-slate-400">Compliance Photos:</span>
+                      <span className="text-emerald-400 font-bold">{complianceStats.score}% Captured</span>
                     </div>
                   </div>
 
@@ -1011,8 +947,8 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
               <div>
                 <span className="font-bold text-white">{customerName}</span>
                 {customerPhone && <span className="text-emerald-400 ml-2 font-mono">({customerPhone})</span>}
-                <span className="text-slate-400 ml-2 font-mono">ID: {customerIdNumber || 'DL On File'}</span>
-                <span className="text-emerald-400 ml-2">| Tag: {vehicleLicensePlate || 'Verified'}</span>
+                <span className="text-slate-400 ml-2 font-mono">ID: {customerIdNumber || 'Not Entered'}</span>
+                <span className="text-emerald-400 ml-2">| Tag: {vehicleLicensePlate || 'Not Entered'}</span>
                 <Badge className="ml-2 bg-amber-500/20 text-amber-300 border-amber-500/30 font-mono text-[10px]">
                   Receipt #{customReceiptNumber}
                 </Badge>
@@ -1043,7 +979,7 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
                   <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800 text-xs">
                     <button
                       type="button"
-                      onClick={() => setWeighingMode('SINGLE_ITEM')}
+                      onClick={() => { setWeighingMode('SINGLE_ITEM'); handleResetVehicleWeights(); }}
                       className={`px-3 py-1.5 rounded text-xs font-bold transition-colors min-h-[36px] ${
                         weighingMode === 'SINGLE_ITEM' ? 'bg-emerald-600 text-white' : 'text-slate-400 hover:text-white'
                       }`}
@@ -1086,102 +1022,199 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
                     </div>
                   </div>
 
+                  {/* Vehicle Double Weighing Display */}
                   {weighingMode === 'VEHICLE_DOUBLE' && (
-                    <div className="p-3 bg-slate-950 border border-emerald-500/30 rounded-lg space-y-2 text-xs">
+                    <div className="p-4 bg-slate-950 border border-emerald-500/40 rounded-lg space-y-4">
                       <div className="flex items-center justify-between text-emerald-400 font-bold">
-                        <span>Vehicle Drive-On / Drive-Off Calculation</span>
-                        <span>Gross - Tare = Net</span>
+                        <span className="flex items-center gap-2">
+                          <Truck className="w-4 h-4" />
+                          Vehicle Drive-On / Drive-Off Calculation
+                        </span>
+                        <span className="font-mono">Gross In − Tare Out = Net</span>
                       </div>
-                      <div className="grid grid-cols-3 gap-2">
-                        <div className="bg-slate-900 p-2 rounded border border-slate-800">
-                          <span className="text-[10px] text-slate-400 block">Gross In</span>
-                          <span className="font-mono font-bold text-white text-sm">{vehicleGrossIn} lbs</span>
+                      
+                      {/* Weight Summary Cards */}
+                      <div className="grid grid-cols-3 gap-3">
+                        <div className={`p-3 rounded-lg border text-center ${
+                          isGrossInCaptured 
+                            ? 'bg-emerald-950/60 border-emerald-500/50' 
+                            : 'bg-slate-900 border-slate-800'
+                        }`}>
+                          <span className="text-[10px] text-slate-400 block uppercase tracking-wider">Gross In</span>
+                          <span className={`font-mono font-bold text-lg ${
+                            isGrossInCaptured ? 'text-emerald-400' : 'text-slate-500'
+                          }`}>
+                            {vehicleGrossIn > 0 ? `${vehicleGrossIn.toLocaleString()} lbs` : '---'}
+                          </span>
+                          {isGrossInCaptured && (
+                            <CheckCircle2 className="w-4 h-4 text-emerald-400 mx-auto mt-1" />
+                          )}
                         </div>
-                        <div className="bg-slate-900 p-2 rounded border border-slate-800">
-                          <span className="text-[10px] text-slate-400 block">Tare Out</span>
-                          <span className="font-mono font-bold text-amber-300 text-sm">{vehicleTareOut} lbs</span>
+                        
+                        <div className={`p-3 rounded-lg border text-center ${
+                          isTareOutCaptured 
+                            ? 'bg-amber-950/60 border-amber-500/50' 
+                            : 'bg-slate-900 border-slate-800'
+                        }`}>
+                          <span className="text-[10px] text-slate-400 block uppercase tracking-wider">Tare Out</span>
+                          <span className={`font-mono font-bold text-lg ${
+                            isTareOutCaptured ? 'text-amber-400' : 'text-slate-500'
+                          }`}>
+                            {vehicleTareOut > 0 ? `${vehicleTareOut.toLocaleString()} lbs` : '---'}
+                          </span>
+                          {isTareOutCaptured && (
+                            <CheckCircle2 className="w-4 h-4 text-amber-400 mx-auto mt-1" />
+                          )}
                         </div>
-                        <div className="bg-slate-900 p-2 rounded border border-slate-800">
-                          <span className="text-[10px] text-slate-400 block">Net Scrap</span>
-                          <span className="font-mono font-bold text-emerald-400 text-sm">
-                            {Math.max(0, vehicleGrossIn - vehicleTareOut)} lbs
+                        
+                        <div className="p-3 rounded-lg border border-emerald-500/50 bg-emerald-950/40 text-center">
+                          <span className="text-[10px] text-emerald-400 block uppercase tracking-wider">Net Scrap</span>
+                          <span className="font-mono font-black text-xl text-emerald-400">
+                            {netScrapWeight.toLocaleString()} lbs
                           </span>
                         </div>
                       </div>
+
+                      {/* Weight Logging Buttons */}
+                      <div className="flex gap-2">
+                        <Button
+                          onClick={() => {
+                            // Capture from scale service
+                            const scale = storageService.getScaleStatus?.() || { netWeight: 0, unit: 'LBS' as WeightUnit };
+                            handleLogGrossIn(scale.netWeight || 0, scale.unit || 'LBS');
+                          }}
+                          disabled={isGrossInCaptured}
+                          className={`flex-1 h-12 font-bold text-sm gap-2 ${
+                            isGrossInCaptured
+                              ? 'bg-emerald-900 text-emerald-400 border border-emerald-700 cursor-not-allowed'
+                              : 'bg-emerald-600 hover:bg-emerald-500 text-white'
+                          }`}
+                        >
+                          {isGrossInCaptured ? (
+                            <>
+                              <CheckCircle2 className="w-4 h-4" /> Gross In Captured
+                            </>
+                          ) : (
+                            <>
+                              <ScaleWeight className="w-4 h-4" /> Log Gross In
+                            </>
+                          )}
+                        </Button>
+                        
+                        <Button
+                          onClick={() => {
+                            const scale = storageService.getScaleStatus?.() || { netWeight: 0, unit: 'LBS' as WeightUnit };
+                            handleLogTareOut(scale.netWeight || 0, scale.unit || 'LBS');
+                          }}
+                          disabled={!isGrossInCaptured || isTareOutCaptured}
+                          className={`flex-1 h-12 font-bold text-sm gap-2 ${
+                            isTareOutCaptured
+                              ? 'bg-amber-900 text-amber-400 border border-amber-700 cursor-not-allowed'
+                              : !isGrossInCaptured
+                              ? 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed'
+                              : 'bg-amber-600 hover:bg-amber-500 text-slate-950'
+                          }`}
+                        >
+                          {isTareOutCaptured ? (
+                            <>
+                              <CheckCircle2 className="w-4 h-4" /> Tare Out Captured
+                            </>
+                          ) : (
+                            <>
+                              <ScaleWeight className="w-4 h-4" /> Log Tare Out
+                            </>
+                          )}
+                        </Button>
+                      </div>
+
+                      {isTareOutCaptured && (
+                        <Button
+                          onClick={handleResetVehicleWeights}
+                          variant="outline"
+                          size="sm"
+                          className="w-full border-slate-700 text-slate-400 hover:text-white text-xs"
+                        >
+                          <RefreshCw className="w-3.5 h-3.5 mr-1" /> Reset Vehicle Weights
+                        </Button>
+                      )}
                     </div>
                   )}
 
-                  {/* Weight Entry */}
-                  <div className="space-y-2">
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                      <div>
-                        <Label className="text-[11px] text-slate-400">Gross Weight (LBS)</Label>
-                        <Input
-                          type="number"
-                          value={grossWeight}
-                          onChange={(e) => setGrossWeight(parseFloat(e.target.value) || 0)}
-                          className="bg-slate-950 border-slate-800 text-emerald-300 font-mono font-bold text-base mt-1 h-11"
-                        />
-                      </div>
+                  {/* Weight Entry (Single Item Mode) */}
+                  {weighingMode === 'SINGLE_ITEM' && (
+                    <>
+                      <div className="space-y-2">
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                          <div>
+                            <Label className="text-[11px] text-slate-400">Gross Weight (LBS)</Label>
+                            <Input
+                              type="number"
+                              value={grossWeight}
+                              onChange={(e) => setGrossWeight(parseFloat(e.target.value) || 0)}
+                              className="bg-slate-950 border-slate-800 text-emerald-300 font-mono font-bold text-base mt-1 h-11"
+                            />
+                          </div>
 
-                      <div>
-                        <Label className="text-[11px] text-slate-400">Box/Container Tare (LBS)</Label>
-                        <Input
-                          type="number"
-                          value={tareWeight}
-                          onChange={(e) => setTareWeight(parseFloat(e.target.value) || 0)}
-                          className="bg-slate-950 border-slate-800 text-amber-300 font-mono text-base mt-1 h-11"
-                        />
-                      </div>
+                          <div>
+                            <Label className="text-[11px] text-slate-400">Box/Container Tare (LBS)</Label>
+                            <Input
+                              type="number"
+                              value={tareWeight}
+                              onChange={(e) => setTareWeight(parseFloat(e.target.value) || 0)}
+                              className="bg-slate-950 border-slate-800 text-amber-300 font-mono text-base mt-1 h-11"
+                            />
+                          </div>
 
-                      <div>
-                        <Label className="text-[11px] text-slate-400">Contamination %</Label>
-                        <Input
-                          type="number"
-                          value={deductionPercent}
-                          onChange={(e) => setDeductionPercent(parseFloat(e.target.value) || 0)}
-                          className="bg-slate-950 border-slate-800 text-red-400 font-mono text-base mt-1 h-11"
-                        />
-                      </div>
-                    </div>
+                          <div>
+                            <Label className="text-[11px] text-slate-400">Contamination %</Label>
+                            <Input
+                              type="number"
+                              value={deductionPercent}
+                              onChange={(e) => setDeductionPercent(parseFloat(e.target.value) || 0)}
+                              className="bg-slate-950 border-slate-800 text-red-400 font-mono text-base mt-1 h-11"
+                            />
+                          </div>
+                        </div>
 
-                    <div className="flex items-center gap-1.5 pt-1 text-xs">
-                      <span className="text-slate-500 font-mono text-[10px] hidden sm:inline">Quick Adjust:</span>
-                      <button
-                        type="button"
-                        onClick={() => setGrossWeight((w) => Math.max(0, w + 10))}
-                        className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-mono text-xs font-bold border border-slate-700 active:scale-95"
-                      >
-                        +10 lbs
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setGrossWeight((w) => Math.max(0, w + 50))}
-                        className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-mono text-xs font-bold border border-slate-700 active:scale-95"
-                      >
-                        +50 lbs
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setGrossWeight((w) => Math.max(0, w + 100))}
-                        className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-mono text-xs font-bold border border-slate-700 active:scale-95"
-                      >
-                        +100 lbs
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => { setGrossWeight(0); setTareWeight(0); }}
-                        className="px-2.5 py-1.5 rounded-lg bg-slate-950 text-slate-400 hover:text-white text-xs border border-slate-800 ml-auto"
-                      >
-                        Clear Weights
-                      </button>
-                    </div>
-                  </div>
+                        <div className="flex items-center gap-1.5 pt-1 text-xs">
+                          <span className="text-slate-500 font-mono text-[10px] hidden sm:inline">Quick Adjust:</span>
+                          <button
+                            type="button"
+                            onClick={() => setGrossWeight((w) => Math.max(0, w + 10))}
+                            className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-mono text-xs font-bold border border-slate-700 active:scale-95"
+                          >
+                            +10 lbs
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setGrossWeight((w) => Math.max(0, w + 50))}
+                            className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-mono text-xs font-bold border border-slate-700 active:scale-95"
+                          >
+                            +50 lbs
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setGrossWeight((w) => Math.max(0, w + 100))}
+                            className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-mono text-xs font-bold border border-slate-700 active:scale-95"
+                          >
+                            +100 lbs
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { setGrossWeight(0); setTareWeight(0); }}
+                            className="px-2.5 py-1.5 rounded-lg bg-slate-950 text-slate-400 hover:text-white text-xs border border-slate-800 ml-auto"
+                          >
+                            Clear Weights
+                          </button>
+                        </div>
+                      </div>
+                    </>
+                  )}
 
                   <Button
                     onClick={handleAddLine}
-                    disabled={grossWeight <= 0}
-                    className="w-full h-12 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-sm shadow-md"
+                    disabled={weighingMode === 'VEHICLE_DOUBLE' ? (!isGrossInCaptured || !isTareOutCaptured) : (grossWeight <= 0)}
+                    className="w-full h-12 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-sm shadow-md disabled:bg-emerald-900 disabled:text-emerald-400"
                   >
                     <Plus className="w-5 h-5 mr-1" /> Add Line Item To Voucher
                   </Button>
@@ -1257,7 +1290,7 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
 
             {/* Right Column: Live Gauge & Statutory Payout Options */}
             <div className="space-y-6">
-              <LiveScaleGauge onHoldWeight={handleHoldWeightFromScale} compact />
+              <LiveScaleGauge onHoldWeight={weighingMode === 'SINGLE_ITEM' ? handleHoldWeightFromScale : undefined} compact />
 
               <Card className="bg-slate-900 border-slate-800 text-white shadow-xl">
                 <CardHeader className="py-3 px-4 bg-slate-950/60 border-b border-slate-800">
@@ -1384,7 +1417,7 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
                   <Button
                     onClick={handleSubmitTicket}
                     disabled={lines.length === 0}
-                    className="w-full h-12 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-slate-950 font-extrabold shadow-lg shadow-emerald-950 text-sm tracking-wide"
+                    className="w-full h-12 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-slate-950 font-extrabold shadow-lg shadow-emerald-950 text-sm tracking-wide disabled:from-slate-600 disabled:to-slate-600"
                   >
                     <CheckCircle2 className="w-5 h-5 mr-2" /> Complete Ticket #{customReceiptNumber} & Issue Voucher
                   </Button>
@@ -1458,7 +1491,7 @@ export const ScrapYardIntakeForm: React.FC<ScrapYardIntakeFormProps> = ({ onBack
                           </Badge>
                         </div>
                         <p className="text-xs text-slate-400 font-mono mt-0.5">
-                          Phone: <span className="text-emerald-400">{ticket.customerPhone || 'N/A'}</span> | ID #: {ticket.customerIdNumber || 'On File'} | Vehicle Tag: {ticket.vehicleLicensePlate || 'N/A'}
+                          Phone: <span className="text-emerald-400">{ticket.customerPhone || 'N/A'}</span> | ID #: {ticket.customerIdNumber || 'Not Entered'} | Vehicle Tag: {ticket.vehicleLicensePlate || 'Not Entered'}
                         </p>
                         <p className="text-[10px] text-slate-500 mt-0.5">
                           Saved: {new Date(ticket.createdAt).toLocaleTimeString()} ({ticket.operatorName})
