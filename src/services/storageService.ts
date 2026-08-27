@@ -55,11 +55,25 @@ function readCached<T>(key: string, fallback: T): T {
   return cache.get(key) as T ?? fallback;
 }
 
+const selfWrites = new Set<string>();
+
 function writeCached<T>(key: string, value: T): void {
   cache.set(key, value);
-  sharedStorage.setItem(key, JSON.stringify(value));
+  selfWrites.add(key);
+  try {
+    sharedStorage.setItem(key, JSON.stringify(value));
+  } finally {
+    selfWrites.delete(key);
+  }
   subscribers.get(key)?.forEach((fn) => fn());
 }
+
+// External writes (login hydrate, background workstation sync) update
+// localStorage directly — drop stale in-memory snapshots for those keys so
+// the next read picks up the fresh data.
+sharedStorage.subscribeKey((key: string) => {
+  if (!selfWrites.has(key)) cache.delete(key);
+});
 
 function patchCached<T>(key: string, value: T): void {
   writeCached(key, value);
@@ -448,4 +462,10 @@ export const storageService = {
   // ── React integration helper ──────────────────────────────────────────────
   // Returns a subscription fn; call it to unsubscribe.
   subscribe,
+
+  /** Drops the in-memory snapshot for a key so the next read re-parses localStorage. */
+  refreshCacheFromStorage(key: string): void {
+    cache.delete(key);
+    subscribers.get(key)?.forEach((fn) => fn());
+  },
 };

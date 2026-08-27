@@ -1,5 +1,6 @@
 import { apiRequest } from "./apiClient";
 import { sharedStorage } from "./sharedStorage";
+import { storageService } from "./storageService";
 import { toast } from "sonner";
 
 const SHARED_KEYS = [
@@ -58,12 +59,31 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
+// Workstation state machine: a record that advanced further on another device
+// (e.g. a ticket COMPLETED there) must win over this browser's stale copy.
+const STATUS_RANK: Record<string, number> = { DRAFT: 0, PENDING: 1, COMPLETED: 2, VOIDED: 2 };
+const GROWING_ARRAY_FIELDS = ["scrapLines", "weightTransactions"];
+const PENDING_WEIGH_FIELDS = ["scaleGrossInWeight", "scaleGrossInAt", "scaleTareOutWeight", "scaleTareOutAt"];
+
 function mergeRecord(local: Record<string, unknown>, remote: Record<string, unknown>) {
-  const merged: Record<string, unknown> = { ...remote, ...local };
+  const localRank = STATUS_RANK[String(local.status ?? "")] ?? 0;
+  const remoteRank = STATUS_RANK[String(remote.status ?? "")] ?? 0;
+  const remoteWins = remoteRank > localRank;
+  const merged: Record<string, unknown> = remoteWins ? { ...local, ...remote } : { ...remote, ...local };
   for (const field of ["carRecord", "complianceCaptures"]) {
     if (isRecord(remote[field]) && isRecord(local[field])) {
       merged[field] = { ...remote[field], ...local[field] };
     }
+  }
+  // Monotonic fields: keep whichever copy knows more, even at equal status,
+  // so loads weighed on another workstation are never dropped.
+  for (const field of GROWING_ARRAY_FIELDS) {
+    if (Array.isArray(remote[field]) && Array.isArray(local[field]) && remote[field].length > local[field].length) {
+      merged[field] = remote[field];
+    }
+  }
+  for (const field of PENDING_WEIGH_FIELDS) {
+    if (remote[field] != null && local[field] == null) merged[field] = remote[field];
   }
   return merged;
 }
@@ -184,7 +204,9 @@ class SyncService {
         // mtime key is updated by persistLocalSnapshot, so mirror it.
         try { localStorage.setItem(`${entry.key}__mtime__`, String(Date.parse(entry.updatedAt))); } catch { /* ignore */ }
         applied += 1;
-        sharedStorage.subscribeKey.length; // touch to ensure module load
+        // Drop storageService's stale in-memory snapshot for this key so any
+        // getTickets()/getMetals() call re-reads the merged localStorage data.
+        storageService.refreshCacheFromStorage(entry.key);
         // Trigger a soft refresh on any open components.
         window.dispatchEvent(new CustomEvent("mahaffeys:remote-sync", { detail: { key: entry.key } }));
       }

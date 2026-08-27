@@ -94,6 +94,31 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
     refreshQueue();
   }, []);
 
+  // Live cross-workstation updates: when another device (e.g. the iPad)
+  // changes tickets, refresh the queue — and if the intake loaded in this
+  // editor was completed elsewhere, clear it so a finished load can't be
+  // weighed or paid out twice.
+  useEffect(() => {
+    const onRemoteSync = (event: Event) => {
+      const detail = (event as CustomEvent<{ key?: string }>).detail;
+      if (detail?.key && detail.key !== 'mahaffeys_tickets') return;
+      refreshQueue();
+      if (activeTicketId) {
+        const stillOpen = storageService
+          .getTickets()
+          .some((t) => t.id === activeTicketId && t.ticketType === 'SCRAP_METAL' && t.status === 'PENDING');
+        if (!stillOpen) {
+          setActiveTicket(null);
+          onActiveTicketChange(null);
+          toast.info(`Intake #${activeTicketId} was completed on another workstation`);
+        }
+      }
+    };
+    window.addEventListener('mahaffeys:remote-sync', onRemoteSync);
+    return () => window.removeEventListener('mahaffeys:remote-sync', onRemoteSync);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTicketId]);
+
   const syncEditorState = (ticket: Ticket) => {
     setPayoutMethod(ticket.payoutMethod === 'Check' ? 'Check' : 'Cash');
     if (ticket.checkNumber) setCheckNumber(ticket.checkNumber);

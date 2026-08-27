@@ -180,12 +180,31 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
+// Workstation state machine: a record that advanced further on another device
+// (e.g. a ticket COMPLETED there) must win over this browser's stale copy.
+const STATUS_RANK: Record<string, number> = { DRAFT: 0, PENDING: 1, COMPLETED: 2, VOIDED: 2 };
+const GROWING_ARRAY_FIELDS = ["scrapLines", "weightTransactions"];
+const PENDING_WEIGH_FIELDS = ["scaleGrossInWeight", "scaleGrossInAt", "scaleTareOutWeight", "scaleTareOutAt"];
+
 function mergeRecord(localRecord: Record<string, unknown>, serverRecord: Record<string, unknown>) {
-  const merged = { ...serverRecord, ...localRecord };
+  const localRank = STATUS_RANK[String(localRecord.status ?? "")] ?? 0;
+  const serverRank = STATUS_RANK[String(serverRecord.status ?? "")] ?? 0;
+  const serverWins = serverRank > localRank;
+  const merged: Record<string, unknown> = serverWins ? { ...localRecord, ...serverRecord } : { ...serverRecord, ...localRecord };
   for (const field of ["carRecord", "complianceCaptures"]) {
     if (isRecord(serverRecord[field]) && isRecord(localRecord[field])) {
       merged[field] = { ...serverRecord[field], ...localRecord[field] };
     }
+  }
+  // Monotonic fields: keep whichever copy knows more, even at equal status,
+  // so loads weighed on another workstation are never dropped.
+  for (const field of GROWING_ARRAY_FIELDS) {
+    if (Array.isArray(serverRecord[field]) && Array.isArray(localRecord[field]) && serverRecord[field].length > localRecord[field].length) {
+      merged[field] = serverRecord[field];
+    }
+  }
+  for (const field of PENDING_WEIGH_FIELDS) {
+    if (serverRecord[field] != null && localRecord[field] == null) merged[field] = serverRecord[field];
   }
   return merged;
 }
