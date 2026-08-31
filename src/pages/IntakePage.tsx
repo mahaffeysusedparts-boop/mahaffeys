@@ -6,6 +6,7 @@ import { IntakeModeSelector } from '@/components/intake/IntakeModeSelector';
 import { CarIntakeForm } from '@/components/intake/CarIntakeForm';
 import { IntakeCollectionForm } from '@/components/intake/IntakeCollectionForm';
 import { ScaleWeightLogger } from '@/components/intake/ScaleWeightLogger';
+import { StoplightControlPanel } from '@/components/scale/StoplightControlPanel';
 import { ReceiptModal } from '@/components/receipts/ReceiptModal';
 import { Button } from '@/components/ui/button';
 import { Car, Scale, ArrowLeft } from 'lucide-react';
@@ -117,13 +118,16 @@ export default function IntakePage() {
 
         {/* View 4: Scrap intake Part 2 — scale IN/OUT weighing & payout */}
         {activeMode === 'SCRAP_METAL' && scrapStage === 'SCALE' && (
-          <ScaleWeightLogger
-            onBack={handleResetIntake}
-            onNewIntake={() => { setScrapTicketId(null); setScrapStage('COLLECT'); }}
-            activeTicketId={scrapTicketId}
-            onActiveTicketChange={setScrapTicketId}
-            onTicketCreated={handleTicketCreated}
-          />
+          <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
+            <ScaleWeightLogger
+              onBack={handleResetIntake}
+              onNewIntake={() => { setScrapTicketId(null); setScrapStage('COLLECT'); }}
+              activeTicketId={scrapTicketId}
+              onActiveTicketChange={setScrapTicketId}
+              onTicketCreated={handleTicketCreated}
+            />
+            <StoplightControlPanel />
+          </div>
         )}
 
       </main>

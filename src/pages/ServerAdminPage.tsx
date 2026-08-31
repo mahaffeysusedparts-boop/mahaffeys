@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Activity, Cpu, Database, HardDrive, RefreshCw, RotateCw, Server, Terminal } from "lucide-react";
 import { Navbar } from "@/components/layout/Navbar";
 import { ScaleServerManager } from "@/components/server/ScaleServerManager";
+import { StoplightServerManager } from "@/components/server/StoplightServerManager";
 import { StorageBayManager } from "@/components/server/StorageBayManager";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -174,6 +175,7 @@ export default function ServerAdminPage() {
             </section>
 
             <ScaleServerManager />
+            <StoplightServerManager />
             <StorageBayManager />
 
             <Card className="mt-5 rounded-3xl border-slate-800 bg-slate-900 text-slate-100 shadow-xl">
