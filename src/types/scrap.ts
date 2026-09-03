@@ -223,6 +223,7 @@ export interface ComplianceCaptures {
   personPhotoUrl?: string;
   idPhotoUrl?: string;
   vehiclePhotoUrl?: string;
+  doorJambVinPhotoUrl?: string;
   licensePlatePhotoUrl?: string;
   loadPhotoUrl?: string;
   signatureUrl?: string;

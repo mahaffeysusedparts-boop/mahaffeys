@@ -4,6 +4,7 @@ import { storageService } from '@/services/storageService';
 import { uploadDataUrl } from '@/services/mediaService';
 import { PrintStickerModal } from '@/components/vehicle/PrintStickerModal';
 import { VehicleStickerData } from '@/components/vehicle/VehicleSticker';
+import { VinScannerModal } from '@/components/intake/VinScannerModal';
 
 import { decodeVin, VinDecodeResult } from '@/services/vinService';
 import { Button } from '@/components/ui/button';
@@ -29,6 +30,7 @@ import {
   FileCheck,
   Hash,
   RefreshCw,
+  ScanLine,
   User,
   Ban,
   Printer,
@@ -70,6 +72,10 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
   const [isSaving, setIsSaving] = useState(false);
   const [stickerVehicle, setStickerVehicle] = useState<VehicleStickerData | null>(null);
   const [isStickerOpen, setIsStickerOpen] = useState(false);
+
+  // AI Door-Jamb VIN Scanner
+  const [vinScannerOpen, setVinScannerOpen] = useState(false);
+  const [doorJambPhotoUrl, setDoorJambPhotoUrl] = useState<string>('');
   
   // References for device camera / file capture
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -155,6 +161,21 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
     setVin(noVinTag);
     setDecodedVehicle(null);
     toast.info(`Skipped VIN. Assigned: ${noVinTag}`);
+  };
+
+  // AI scanner confirmed a VIN — fill it in; the auto-decode effect takes over.
+  const handleVinCaptured = async (capturedVin: string, photoDataUrl?: string) => {
+    setVin(capturedVin);
+    toast.success(`VIN captured: ${capturedVin}`, {
+      description: 'Decoding year, make, model, and engine specs from NHTSA…',
+    });
+    if (!photoDataUrl) return;
+    try {
+      const url = await uploadDataUrl(photoDataUrl, `door-jamb-${capturedVin}.jpg`);
+      setDoorJambPhotoUrl(url);
+    } catch {
+      // The photo is a compliance bonus — a failed upload should never block intake.
+    }
   };
 
   const handleDecodeVinWithVin = async (vinString: string) => {
@@ -294,6 +315,7 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
       carRecord,
       complianceCaptures: {
         vehiclePhotoUrl: photoUrl,
+        ...(doorJambPhotoUrl ? { doorJambVinPhotoUrl: doorJambPhotoUrl } : {}),
       },
 
       grossTotal: purchasePrice,
@@ -329,6 +351,7 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
       setSellerAddress('');
       setLicensePlate('');
       setPhotoUrl('');
+      setDoorJambPhotoUrl('');
 
       setNotes('');
 
@@ -563,8 +586,16 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
                       setDecodedVehicle(null);
                     }}
                     placeholder="e.g. 1FTRF12W88KA10291"
-                    className="bg-slate-950 border-slate-800 text-amber-300 font-mono tracking-wider font-bold text-sm uppercase flex-1"
+                    className="bg-slate-950 border-slate-800 text-amber-300 font-mono tracking-wider font-bold text-sm uppercase flex-1 min-w-[220px]"
                   />
+
+                  <Button
+                    type="button"
+                    onClick={() => setVinScannerOpen(true)}
+                    className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs shrink-0 gap-1.5"
+                  >
+                    <ScanLine className="w-4 h-4" /> Scan Door Jamb
+                  </Button>
 
                   <Button
                     type="button"
@@ -577,8 +608,13 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
                     {isDecodingVin ? 'Looking up…' : 'Decode'}
                   </Button>
                 </div>
+                {doorJambPhotoUrl && (
+                  <div className="flex items-center gap-1.5 text-[10px] font-semibold text-emerald-400">
+                    <ScanLine className="w-3 h-3" /> Door-jamb VIN photo attached for compliance
+                  </div>
+                )}
                 <p className="text-[10px] text-slate-400">
-                  Type the full 17-character VIN — it <strong>decodes automatically</strong> and fills in year, make, model, and engine details. No VIN on the vehicle? Tap <strong>"Skip / No VIN"</strong>.
+                  Snap the <strong>door-jamb sticker</strong> with the AI scanner — it reads the VIN, validates the check digit, and <strong>auto-fills everything</strong>. You can also type the 17 characters manually. No VIN on the vehicle? Tap <strong>"Skip / No VIN"</strong>.
                 </p>
               </div>
 
@@ -992,6 +1028,12 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
         </div>
 
       </div>
+
+      <VinScannerModal
+        open={vinScannerOpen}
+        onOpenChange={setVinScannerOpen}
+        onConfirm={handleVinCaptured}
+      />
 
       <PrintStickerModal
         open={isStickerOpen}
