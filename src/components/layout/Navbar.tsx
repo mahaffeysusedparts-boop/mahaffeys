@@ -6,6 +6,7 @@ import { storageService } from '@/services/storageService';
 import { useAuth } from '@/context/AuthContext';
 import { ScaleConfigModal } from '../scale/ScaleConfigModal';
 import { QuickSearchButton } from './QuickSearch';
+import { SyncStatusIndicator } from './SyncStatusIndicator';
 import {
   Sheet,
   SheetContent,
@@ -121,10 +122,10 @@ export const Navbar: React.FC = () => {
       <header className="bg-slate-900 border-b border-slate-800 text-white sticky top-0 z-40 shadow-xl">
         <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
-            
+
             {/* Left Section: Mobile Menu Trigger + Logo */}
             <div className="flex items-center gap-2 sm:gap-3">
-              
+
               {/* Mobile / iPad Drawer Trigger */}
               <Sheet open={mobileMenuOpen} onOpenChange={handleMobileMenuChange}>
                 <SheetTrigger asChild>
@@ -271,10 +272,10 @@ export const Navbar: React.FC = () => {
               })}
             </nav>
 
-            {/* Right: Scale Live Status & User Profile Dropdown */}
+            {/* Right: Scale Live Status, Sync Status & User Profile Dropdown */}
             <div className="flex items-center space-x-2">
               <QuickSearchButton />
-              
+
               {/* Scale Indicator */}
               <button
                 onClick={() => setConfigOpen(true)}
@@ -298,6 +299,9 @@ export const Navbar: React.FC = () => {
                   </div>
                 </div>
               </button>
+
+              {/* Sync Status Indicator */}
+              <SyncStatusIndicator />
 
               {/* Admin Pending Requests Notification Badge */}
               {isAdmin && pendingUsersCount > 0 && (

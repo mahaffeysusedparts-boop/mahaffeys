@@ -7,6 +7,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "./context/AuthContext";
 import { ProtectedRoute } from "./components/auth/ProtectedRoute";
 import { LoadingSpinner } from "./components/layout/LoadingSpinner";
+import { AppErrorBoundary } from "./components/common/AppErrorBoundary";
 import "./print.css";
 
 const DashboardPage = lazy(() => import("./pages/DashboardPage"));
@@ -48,152 +49,184 @@ const App = () => (
         <BrowserRouter>
           <Suspense fallback={<LoadingSpinner />}>
             <Routes>
-            {/* PUBLIC AUTH ROUTES */}
-            <Route path="/setup" element={<LoginPage />} />
-            <Route path="/login" element={<LoginPage />} />
-            <Route path="/pending-approval" element={<PendingApprovalPage />} />
+              {/* PUBLIC AUTH ROUTES */}
+              <Route path="/setup" element={<LoginPage />} />
+              <Route path="/login" element={<LoginPage />} />
+              <Route path="/pending-approval" element={<PendingApprovalPage />} />
 
-            {/* PUBLIC YARD PARTS CATALOG EXCEPTION (Guest Accessible) */}
-            <Route path="/inventory" element={<PublicInventoryPage />} />
-            <Route path="/inventory/vehicle/:vin" element={<PublicVehicleDetailPage />} />
-            <Route path="/vehicles" element={<PublicVehicleInventoryPage />} />
+              {/* PUBLIC YARD PARTS CATALOG EXCEPTION (Guest Accessible) */}
+              <Route path="/inventory" element={<PublicInventoryPage />} />
+              <Route path="/inventory/vehicle/:vin" element={<PublicVehicleDetailPage />} />
+              <Route path="/vehicles" element={<PublicVehicleInventoryPage />} />
 
-            {/* PROTECTED WORKSTATION ROUTES */}
-            <Route
-              path="/"
-              element={
-                <ProtectedRoute>
-                  <DashboardPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/dashboard"
-              element={
-                <ProtectedRoute>
-                  <DashboardPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/intake"
-              element={
-                <ProtectedRoute>
-                  <IntakePage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/pull-a-part"
-              element={
-                <ProtectedRoute>
-                  <PullAPartPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/compliance"
-              element={
-                <ProtectedRoute>
-                  <CompliancePage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/cameras"
-              element={
-                <ProtectedRoute>
-                  <CamerasPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/tickets"
-              element={
-                <ProtectedRoute>
-                  <TicketsPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/pricing"
-              element={
-                <ProtectedRoute>
-                  <PricingPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/containers"
-              element={
-                <ProtectedRoute>
-                  <ContainersPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/cash-drawer"
-              element={
-                <ProtectedRoute>
-                  <CashDrawerPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/yard-map"
-              element={
-                <ProtectedRoute>
-                  <YardMapPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/customers"
-              element={
-                <ProtectedRoute>
-                  <CustomersPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/users"
-              element={
-                <ProtectedRoute requireAdmin>
-                  <UserManagementPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/system-status"
-              element={
-                <ProtectedRoute>
-                  <SystemHealthPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/server-admin"
-              element={
-                <ProtectedRoute requireAdmin>
-                  <ServerAdminPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route path="/reports" element={<ProtectedRoute><ReportsPage /></ProtectedRoute>} />
-            <Route path="/operations" element={<ProtectedRoute><OperationsPage /></ProtectedRoute>} />
-            <Route path="/shipments" element={<ProtectedRoute><ShipmentsPage /></ProtectedRoute>} />
-            <Route path="/team" element={<ProtectedRoute><TeamOpsPage /></ProtectedRoute>} />
-            <Route
-              path="/settings"
-              element={
-                <ProtectedRoute requireAdmin>
-                  <SettingsPage />
-                </ProtectedRoute>
-              }
-            />
+              {/* PROTECTED WORKSTATION ROUTES - Wrapped with Error Boundary */}
+              <Route
+                path="/"
+                element={
+                  <AppErrorBoundary>
+                    <ProtectedRoute>
+                      <DashboardPage />
+                    </ProtectedRoute>
+                  </AppErrorBoundary>
+                }
+              />
+              <Route
+                path="/dashboard"
+                element={
+                  <AppErrorBoundary>
+                    <ProtectedRoute>
+                      <DashboardPage />
+                    </ProtectedRoute>
+                  </AppErrorBoundary>
+                }
+              />
+              <Route
+                path="/intake"
+                element={
+                  <AppErrorBoundary>
+                    <ProtectedRoute>
+                      <IntakePage />
+                    </ProtectedRoute>
+                  </AppErrorBoundary>
+                }
+              />
+              <Route
+                path="/pull-a-part"
+                element={
+                  <AppErrorBoundary>
+                    <ProtectedRoute>
+                      <PullAPartPage />
+                    </ProtectedRoute>
+                  </AppErrorBoundary>
+                }
+              />
+              <Route
+                path="/compliance"
+                element={
+                  <AppErrorBoundary>
+                    <ProtectedRoute>
+                      <CompliancePage />
+                    </ProtectedRoute>
+                  </AppErrorBoundary>
+                }
+              />
+              <Route
+                path="/cameras"
+                element={
+                  <AppErrorBoundary>
+                    <ProtectedRoute>
+                      <CamerasPage />
+                    </ProtectedRoute>
+                  </AppErrorBoundary>
+                }
+              />
+              <Route
+                path="/tickets"
+                element={
+                  <AppErrorBoundary>
+                    <ProtectedRoute>
+                      <TicketsPage />
+                    </ProtectedRoute>
+                  </AppErrorBoundary>
+                }
+              />
+              <Route
+                path="/pricing"
+                element={
+                  <AppErrorBoundary>
+                    <ProtectedRoute>
+                      <PricingPage />
+                    </ProtectedRoute>
+                  </AppErrorBoundary>
+                }
+              />
+              <Route
+                path="/containers"
+                element={
+                  <AppErrorBoundary>
+                    <ProtectedRoute>
+                      <ContainersPage />
+                    </ProtectedRoute>
+                  </AppErrorBoundary>
+                }
+              />
+              <Route
+                path="/cash-drawer"
+                element={
+                  <AppErrorBoundary>
+                    <ProtectedRoute>
+                      <CashDrawerPage />
+                    </ProtectedRoute>
+                  </AppErrorBoundary>
+                }
+              />
+              <Route
+                path="/yard-map"
+                element={
+                  <AppErrorBoundary>
+                    <ProtectedRoute>
+                      <YardMapPage />
+                    </ProtectedRoute>
+                  </AppErrorBoundary>
+                }
+              />
+              <Route
+                path="/customers"
+                element={
+                  <AppErrorBoundary>
+                    <ProtectedRoute>
+                      <CustomersPage />
+                    </ProtectedRoute>
+                  </AppErrorBoundary>
+                }
+              />
+              <Route
+                path="/users"
+                element={
+                  <AppErrorBoundary>
+                    <ProtectedRoute requireAdmin>
+                      <UserManagementPage />
+                    </ProtectedRoute>
+                  </AppErrorBoundary>
+                }
+              />
+              <Route
+                path="/system-status"
+                element={
+                  <AppErrorBoundary>
+                    <ProtectedRoute>
+                      <SystemHealthPage />
+                    </ProtectedRoute>
+                  </AppErrorBoundary>
+                }
+              />
+              <Route
+                path="/server-admin"
+                element={
+                  <AppErrorBoundary>
+                    <ProtectedRoute requireAdmin>
+                      <ServerAdminPage />
+                    </ProtectedRoute>
+                  </AppErrorBoundary>
+                }
+              />
+              <Route path="/reports" element={<AppErrorBoundary><ProtectedRoute><ReportsPage /></ProtectedRoute></AppErrorBoundary>} />
+              <Route path="/operations" element={<AppErrorBoundary><ProtectedRoute><OperationsPage /></ProtectedRoute></AppErrorBoundary>} />
+              <Route path="/shipments" element={<AppErrorBoundary><ProtectedRoute><ShipmentsPage /></ProtectedRoute></AppErrorBoundary>} />
+              <Route path="/team" element={<AppErrorBoundary><ProtectedRoute><TeamOpsPage /></ProtectedRoute></AppErrorBoundary>} />
+              <Route
+                path="/settings"
+                element={
+                  <AppErrorBoundary>
+                    <ProtectedRoute requireAdmin>
+                      <SettingsPage />
+                    </ProtectedRoute>
+                  </AppErrorBoundary>
+                }
+              />
 
-            {/* CATCH-ALL 404 */}
-            <Route path="*" element={<NotFound />} />
+              {/* CATCH-ALL 404 */}
+              <Route path="*" element={<NotFound />} />
             </Routes>
           </Suspense>
         </BrowserRouter>

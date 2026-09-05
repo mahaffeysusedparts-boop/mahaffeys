@@ -1,5 +1,7 @@
 import { apiRequest } from "./apiClient";
 import { toast } from "sonner";
+import { diagnosticLogger } from "./diagnosticLogger";
+import { offlineQueue } from "./offlineQueue";
 
 const SHARED_KEYS = [
   "mahaffeys_metals",
@@ -53,6 +55,38 @@ const LEGACY_DEMO_IDS: Record<string, Set<string>> = {
 
 const MTIME_KEY_SUFFIX = "__mtime__";
 
+// Schema normalization map for corrupt data recovery
+const SCHEMA_DEFAULTS: Record<string, unknown> = {
+  mahaffeys_metals: [],
+  mahaffeys_car_rates: [],
+  mahaffeys_customers: [],
+  mahaffeys_tickets: [],
+  mahaffeys_settings: {},
+  mahaffeys_nmvtis_logs: [],
+  mahaffeys_cat_codes: [],
+  mahaffeys_container_drops: [],
+  mahaffeys_cash_drawer: [],
+  mahaffeys_yard_bays: [],
+  mahaffeys_pull_parts: [],
+  mahaffeys_pull_yard_vehicles: [],
+  mahaffeys_removed_inventory_vehicles: [],
+  mahaffeys_core_returns: [],
+  mahaffeys_admission_passes: [],
+  mahaffeys_ip_cameras: [],
+  mahaffeys_shipments: [],
+  mahaffeys_mills: [],
+  mahaffeys_timeclock: [],
+  mahaffeys_checklists: [],
+  mahaffeys_tasks: [],
+  mahaffeys_equipment: [],
+  mahaffeys_maintenance_logs: [],
+  mahaffeys_rate_history: [],
+  mahaffeys_operations_goals: {},
+  mahaffeys_operations_alert_rules: [],
+  mahaffeys_operations_alerts: [],
+  mahaffeys_operations_summaries: [],
+};
+
 function removeLegacyDemoData(key: string, value: unknown): unknown {
   const ids = LEGACY_DEMO_IDS[key];
   if (ids && Array.isArray(value)) {
@@ -89,17 +123,12 @@ const listeners = new Set<StatusListener>();
 const keyListeners = new Set<KeyListener>();
 
 // Single-pass media stripper.
-// Why: the previous implementation did stringify → parse → recursive walk →
-// stringify. That meant every save parsed the whole dataset (10k+ tickets on
-// a busy yard) three times just to drop embedded images. The walk now runs
-// exactly once and produces a compact string directly.
 const MEDIA_PREFIX = /^data:(image|video|audio)\//i;
 const BASE64_CHAR_DENSITY = /[A-Za-z0-9+/=_-]{160,}/;
 
 function stripMedia(value: unknown): unknown {
   if (value === null || value === undefined) return value;
   if (typeof value === "string") {
-    // Cheap single check instead of a regex match on every string.
     if (value.length > 240 && BASE64_CHAR_DENSITY.test(value)) return undefined;
     if (MEDIA_PREFIX.test(value)) return undefined;
     return value;
@@ -154,8 +183,6 @@ function persistLocalSnapshot(key: string, serialized: string) {
     compactExistingSnapshots();
     localStorage.setItem(key, compacted);
   }
-  // Track mtime so the cross-workstation delta sync can do an "only send
-  // what changed since" payload instead of always sending full snapshots.
   try {
     localStorage.setItem(`${key}${MTIME_KEY_SUFFIX}`, String(Date.now()));
   } catch { /* best effort */ }
@@ -196,8 +223,6 @@ function mergeRecord(localRecord: Record<string, unknown>, serverRecord: Record<
       merged[field] = { ...serverRecord[field], ...localRecord[field] };
     }
   }
-  // Monotonic fields: keep whichever copy knows more, even at equal status,
-  // so loads weighed on another workstation are never dropped.
   for (const field of GROWING_ARRAY_FIELDS) {
     if (Array.isArray(serverRecord[field]) && Array.isArray(localRecord[field]) && serverRecord[field].length > localRecord[field].length) {
       merged[field] = serverRecord[field];
@@ -246,15 +271,40 @@ function notifyKey(key: string) {
 }
 
 // ---------------------------------------------------------------------------
+// Corrupt Data Self-Healing
+// ---------------------------------------------------------------------------
+// Wrapped storage parsing with try-catch fallback and schema normalization
+// prevents corrupt strings from halting application startup.
+
+function safeParseJSON(key: string, raw: string | null): unknown {
+  if (raw === null) return null;
+  try {
+    return JSON.parse(raw);
+  } catch (error) {
+    diagnosticLogger.warn("sharedStorage", `Corrupt JSON detected for key "${key}"`, {
+      error: error instanceof Error ? error.message : String(error),
+      key,
+      rawLength: raw.length,
+    });
+
+    // Attempt schema normalization - restore defaults
+    const defaultVal = SCHEMA_DEFAULTS[key];
+    if (defaultVal !== undefined) {
+      diagnosticLogger.info("sharedStorage", `Restoring default schema for key "${key}"`);
+      try {
+        localStorage.setItem(key, JSON.stringify(defaultVal));
+      } catch { /* ignore */ }
+      return defaultVal;
+    }
+
+    // No schema default - return null and let caller handle it
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Upload queue + debouncing
 // ---------------------------------------------------------------------------
-// Why: 3–5 rapid edits in PricingPage were each firing a full upload. The
-// pendingWrites Map captured only the LAST value per key, so technically
-// only one upload was queued, but the calls still did a full state hydrate
-// in the meantime and the next save would race with the retry loop. We now
-// (a) dedupe per key, (b) debounce 200ms so multi-click actions coalesce,
-// and (c) gate on the connection status so we don't pile up work while
-// already in the error backoff.
 
 const pendingWrites = new Map<string, string>();
 let flushPromise: Promise<void> | null = null;
@@ -278,8 +328,6 @@ async function flushWrites(): Promise<void> {
 
   flushPromise = (async () => {
     while (pendingWrites.size > 0) {
-      // Snapshot the current queue so re-entrant writes during the in-flight
-      // upload land in the next pass instead of being lost.
       const batch = [...pendingWrites.entries()];
       pendingWrites.clear();
 
@@ -291,7 +339,6 @@ async function flushWrites(): Promise<void> {
         } catch (error) {
           const message = error instanceof Error ? error.message : "The server rejected the update.";
           console.error(`Server sync failed for ${key}:`, error);
-          // Re-queue so a future flush picks it up.
           if (!pendingWrites.has(key)) pendingWrites.set(key, serialized);
           setStatus("error");
           notifySyncError(message);
@@ -338,7 +385,7 @@ function collectLocalState() {
   return Object.fromEntries(
     SHARED_KEYS.flatMap((key) => {
       const value = localStorage.getItem(key);
-      return value === null ? [] : [[key, JSON.parse(value)]];
+      return value === null ? [] : [[key, safeParseJSON(key, value)]];
     }),
   );
 }
@@ -359,9 +406,6 @@ export const sharedStorage = {
     notifyKey(key);
     if (remoteEnabled && (SHARED_KEYS as readonly string[]).includes(key)) {
       pendingWrites.set(key, value);
-      // While in error backoff we still want the local write to be durable,
-      // but we should not pile up further upload attempts until the next
-      // retry ticks. Pending writes are picked up by the next flush anyway.
       if (connectionStatus === "connected") {
         scheduleFlush();
       }
@@ -390,8 +434,8 @@ export const sharedStorage = {
 
     for (const [key, serverValue] of entries) {
       if (!(SHARED_KEYS as readonly string[]).includes(key)) continue;
-      const localSerialized = localStorage.getItem(key);
-      const localValue = localSerialized ? JSON.parse(localSerialized) as unknown : null;
+      const localRaw = localStorage.getItem(key);
+      const localValue = localRaw ? safeParseJSON(key, localRaw) : null;
       const mergedValue = mergeKeys.has(key) && localValue
         ? mergeRecords(localValue, serverValue)
         : serverValue;
@@ -451,8 +495,6 @@ export const sharedStorage = {
     };
   },
 
-  // Force an immediate upload (skip the debounce window). Used when the
-  // app is about to unmount or the user explicitly clicks a "sync now" CTA.
   async flushNow() {
     return flushWrites();
   },

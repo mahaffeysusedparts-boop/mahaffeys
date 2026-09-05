@@ -2,6 +2,8 @@ import { apiRequest } from "./apiClient";
 import { sharedStorage } from "./sharedStorage";
 import { storageService } from "./storageService";
 import { toast } from "sonner";
+import { diagnosticLogger } from "./diagnosticLogger";
+import { offlineQueue } from "./offlineQueue";
 
 const SHARED_KEYS = [
   "mahaffeys_metals",
@@ -37,6 +39,7 @@ const SHARED_KEYS = [
 const LOCAL_USER_KEY = "mahaffeys_sync_user_id";
 const POLL_INTERVAL_MS = 10_000;
 const SLOW_POLL_INTERVAL_MS = 60_000;
+const HEARTBEAT_INTERVAL_MS = 30_000;
 const MERGE_KEYS = new Set(["mahaffeys_tickets", "mahaffeys_pull_yard_vehicles"]);
 
 interface SinceEntry {
@@ -116,12 +119,15 @@ class SyncService {
   private status: SyncStatus = "idle";
   private listeners = new Set<SyncListener>();
   private pollTimer: ReturnType<typeof setTimeout> | null = null;
+  private heartbeatTimer: ReturnType<typeof setTimeout> | null = null;
   private intervalMs = POLL_INTERVAL_MS;
   private inFlight = false;
   private docVisible = typeof document === "undefined" || document.visibilityState !== "hidden";
   private errorCount = 0;
   private lastNotifiedError = 0;
   private booted = false;
+  private isOnline = typeof navigator !== "undefined" ? navigator.onLine : true;
+  private serverTimeOffset = 0;
 
   constructor() {
     if (typeof document !== "undefined") {
@@ -131,15 +137,63 @@ class SyncService {
         if (this.booted) this.scheduleNextPoll(0);
       });
     }
+
+    // Network event listeners
+    if (typeof window !== "undefined") {
+      window.addEventListener("online", () => this.handleOnline());
+      window.addEventListener("offline", () => this.handleOffline());
+    }
+  }
+
+  private handleOnline(): void {
+    this.isOnline = true;
+    diagnosticLogger.sync("SyncService", "Network restored - resuming sync");
+    toast.success("Back online - syncing queued changes");
+    this.errorCount = 0;
+    this.intervalMs = POLL_INTERVAL_MS;
+    this.scheduleNextPoll(0);
+    this.startHeartbeat();
+  }
+
+  private handleOffline(): void {
+    this.isOnline = false;
+    diagnosticLogger.sync("SyncService", "Network lost - entering offline mode");
+    toast.error("Network disconnected - changes queued locally");
+    this.stopHeartbeat();
+  }
+
+  private startHeartbeat(): void {
+    this.stopHeartbeat();
+    this.heartbeatTimer = setInterval(() => void this.heartbeat(), HEARTBEAT_INTERVAL_MS);
+  }
+
+  private stopHeartbeat(): void {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
+  }
+
+  private async heartbeat(): Promise<void> {
+    if (!this.isOnline || this.inFlight) return;
+    try {
+      const response = await apiRequest<{ serverTime: string }>("/api/health");
+      this.serverTimeOffset = Date.parse(response.serverTime) - Date.now();
+      diagnosticLogger.debug("SyncService", "Heartbeat OK", { serverTimeOffset: this.serverTimeOffset });
+    } catch (error) {
+      diagnosticLogger.warn("SyncService", "Heartbeat failed", { error: error instanceof Error ? error.message : String(error) });
+    }
   }
 
   start() {
     this.booted = true;
+    this.startHeartbeat();
     void this.poll();
   }
 
   stop() {
     this.booted = false;
+    this.stopHeartbeat();
     if (this.pollTimer) {
       clearTimeout(this.pollTimer);
       this.pollTimer = null;
@@ -154,8 +208,8 @@ class SyncService {
     };
   }
 
-  getStatus(): { status: SyncStatus; lastSyncedAt: number } {
-    return { status: this.status, lastSyncedAt: this.lastSyncedAt };
+  getStatus(): { status: SyncStatus; lastSyncedAt: number; isOnline: boolean; serverTimeOffset: number } {
+    return { status: this.status, lastSyncedAt: this.lastSyncedAt, isOnline: this.isOnline, serverTimeOffset: this.serverTimeOffset };
   }
 
   private notify() {
@@ -176,6 +230,10 @@ class SyncService {
 
   private async poll() {
     if (this.inFlight) {
+      this.scheduleNextPoll();
+      return;
+    }
+    if (!this.isOnline) {
       this.scheduleNextPoll();
       return;
     }
@@ -225,7 +283,7 @@ class SyncService {
       const now = Date.now();
       if (now - this.lastNotifiedError > 30_000) {
         this.lastNotifiedError = now;
-        console.warn("Background sync poll failed", error);
+        diagnosticLogger.warn("SyncService", "Background sync poll failed", { error: error instanceof Error ? error.message : String(error) });
       }
     } finally {
       this.inFlight = false;
