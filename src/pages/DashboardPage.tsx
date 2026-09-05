@@ -58,11 +58,31 @@ export default function DashboardPage() {
 
   const completedTickets = tickets.filter((t) => t.status === "COMPLETED");
 
-  const todayTickets = completedTickets.filter((t) => {
-    const tDate = new Date(t.createdAt).toDateString();
-    const today = new Date().toDateString();
-    return tDate === today;
-  });
+  const isSameDay = (a: string | Date, b: Date) =>
+    new Date(a).toDateString() === b.toDateString();
+
+  const todayTickets = completedTickets.filter((t) =>
+    isSameDay(t.createdAt, new Date()),
+  );
+
+  // "Cars brought in today" = every CAR_SALVAGE ticket created today,
+  // regardless of completion status (intake vs. processed).
+  const carsBroughtInToday = tickets.filter(
+    (t) => t.ticketType === "CAR_SALVAGE" && isSameDay(t.createdAt, new Date()),
+  );
+
+  // Most-recent-first sorts for the activity stream.
+  const recentCarsIn = [...tickets]
+    .filter((t) => t.ticketType === "CAR_SALVAGE")
+    .sort(
+      (a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    );
+
+  const recentReceipts = [...completedTickets].sort(
+    (a, b) =>
+      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+  );
 
   // Calculate Key KPIs
   const totalTodayPayout = todayTickets.reduce((acc, t) => acc + t.finalPayout, 0);
@@ -77,7 +97,7 @@ export default function DashboardPage() {
     return acc;
   }, 0);
 
-  const carsStagedToday = todayTickets.filter((t) => t.ticketType === "CAR_SALVAGE").length;
+  const carsStagedToday = carsBroughtInToday.length;
   const vehiclesCount = storageService.getPullYardVehicles().length;
   const cashLogs = storageService.getCashDrawerLogs();
   const currentCashBalance = cashLogs.length > 0 ? cashLogs[0].balanceAfter : 0;
@@ -248,11 +268,11 @@ export default function DashboardPage() {
             </CardContent>
           </Card>
 
-          {/* Card 3: Vehicles Processed Today */}
+          {/* Card 3: Cars Brought In Today */}
           <Card className="bg-slate-900 border-slate-800 text-white shadow-xl">
             <CardContent className="p-5 flex items-center justify-between">
               <div>
-                <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">Vehicles Processed Today</p>
+                <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">Cars Brought In Today</p>
                 <p className="text-3xl font-black text-sky-400 font-mono mt-1">
                   {carsStagedToday} <span className="text-sm font-normal text-slate-400">Cars</span>
                 </p>
@@ -398,8 +418,43 @@ export default function DashboardPage() {
           </CardHeader>
 
           <CardContent className="p-0">
+            {/* Most Recent Cars In */}
             <div className="divide-y divide-slate-800/80">
-              {completedTickets.slice(0, 5).map((t) => (
+              <div className="px-4 py-2 bg-slate-950/60 border-b border-slate-800 text-[10px] font-mono uppercase tracking-wider text-slate-500">
+                Most Recent Cars In
+              </div>
+              {recentCarsIn.slice(0, 5).map((t) => (
+                <div key={t.id} className="p-4 flex items-center justify-between hover:bg-slate-800/40 text-xs font-mono transition-colors">
+                  <div className="flex items-center gap-3">
+                    <div className={`p-2 rounded-xl ${t.ticketType === "CAR_SALVAGE" ? "bg-amber-950 text-amber-400 border border-amber-800" : "bg-emerald-950 text-emerald-400 border border-emerald-800"}`}>
+                      {t.ticketType === "CAR_SALVAGE" ? <Car className="w-4 h-4" /> : <Scale className="w-4 h-4" />}
+                    </div>
+                    <div>
+                      <div className="font-bold text-white font-sans text-sm">{t.customerName}</div>
+                      <div className="text-[11px] text-slate-400 font-mono">
+                        Ticket #{t.id} • {new Date(t.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="text-right">
+                    <div className="text-emerald-400 font-black text-sm font-mono">
+                      ${t.finalPayout.toFixed(2)}
+                    </div>
+                    <Badge variant="outline" className="border-slate-700 text-slate-300 text-[10px] font-sans">
+                      {t.payoutMethod}
+                    </Badge>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Most Recent Receipts */}
+            <div className="divide-y divide-slate-800/80">
+              <div className="px-4 py-2 bg-slate-950/60 border-b border-slate-800 text-[10px] font-mono uppercase tracking-wider text-slate-500">
+                Most Recent Receipts
+              </div>
+              {recentReceipts.slice(0, 5).map((t) => (
                 <div key={t.id} className="p-4 flex items-center justify-between hover:bg-slate-800/40 text-xs font-mono transition-colors">
                   <div className="flex items-center gap-3">
                     <div className={`p-2 rounded-xl ${t.ticketType === "CAR_SALVAGE" ? "bg-amber-950 text-amber-400 border border-amber-800" : "bg-emerald-950 text-emerald-400 border border-emerald-800"}`}>
