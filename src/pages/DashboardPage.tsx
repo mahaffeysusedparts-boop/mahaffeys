@@ -2,12 +2,13 @@ import React, { useState, useEffect } from "react";
 import { Navbar } from "@/components/layout/Navbar";
 import { storageService } from "@/services/storageService";
 import { scaleService } from "@/services/scaleService";
-import { Ticket, ScaleStatus, YardSettings } from "@/types/scrap";
+import { Ticket, ScaleStatus, YardSettings, ScaleConfig } from "@/types/scrap";
 import { useAuth } from "@/context/AuthContext";
 import { Link } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   AreaChart,
   Area,
@@ -47,11 +48,15 @@ export default function DashboardPage() {
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [scaleStatus, setScaleStatus] = useState<ScaleStatus>(scaleService.getStatus());
   const [settings, setSettings] = useState<YardSettings>(storageService.getSettings());
+  const [scales, setScales] = useState<ScaleConfig[]>(scaleService.getScales());
+  const [currentScaleId, setCurrentScaleId] = useState<string | null>(scaleService.getCurrentScaleId());
   const { isAdmin, pendingUsersCount } = useAuth();
 
   useEffect(() => {
     setTickets(storageService.getTickets());
     setSettings(storageService.getSettings());
+    setScales(scaleService.getScales());
+    setCurrentScaleId(scaleService.getCurrentScaleId());
     const scaleUnsub = scaleService.subscribe((s) => setScaleStatus(s));
     return () => scaleUnsub();
   }, []);
@@ -172,7 +177,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Live Scale Weight HUD Indicator Banner */}
+        {/* Scale Selector */}\n        <Card className="bg-slate-900 border-slate-800 text-white shadow-xl">\n          <CardContent className="p-4 flex flex-col sm:flex-row items-center justify-between gap-4">\n            <div className="flex items-center gap-3">\n              <Scale className="w-5 h-5 text-emerald-400" />\n              <div>\n                <Label className="text-xs text-slate-400 font-bold uppercase tracking-wider">Active Scale</Label>\n                <p className="text-sm font-semibold text-white mt-0.5">\n                  {currentScaleId\n                    ? scales.find((s) => s.id === currentScaleId)?.name || 'Unknown Scale'\n                    : 'No Scale Selected'}\n                </p>\n              </div>\n            </div>\n            <div className="flex items-center gap-3 w-full sm:w-auto">\n              <Select\n                value={currentScaleId || ''}\n                onValueChange={(val) => {\n                  scaleService.setCurrentScale(val || null);\n                  setCurrentScaleId(val || null);\n                  setScales(scaleService.getScales());\n                  toast.success(val ? `Switched to scale: ${scales.find((s) => s.id === val)?.name}` : 'Scale disconnected');\n                }}\n              >\n                <SelectTrigger className="w-full sm:w-64 border-slate-700 bg-slate-800 text-white text-xs">\n                  <SelectValue placeholder="Select a scale" />\n                </SelectTrigger>\n                <SelectContent className="border-slate-700 bg-slate-900 text-white">\n                  <SelectItem value="">No Scale</SelectItem>\n                  {scales.map((s) => (\n                    <SelectItem key={s.id} value={s.id}>\n                      {s.name} {s.location ? `(${s.location})` : ''}\n                    </SelectItem>\n                  ))}\n                </SelectContent>\n              </Select>\n              <Link to="/settings">\n                <Button variant="outline" size="sm" className="border-slate-700 bg-slate-800 text-slate-300 text-xs">\n                  Configure Scales\n                </Button>\n              </Link>\n            </div>\n          </CardContent>\n        </Card>\n\n        {/* Live Scale Weight HUD Indicator Banner */}
         <Card className="bg-slate-900 border-2 border-emerald-500/30 text-white shadow-xl">
           <CardContent className="p-4 sm:p-5 flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-4">

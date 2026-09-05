@@ -1,5 +1,6 @@
-import { ScaleStatus, WeightUnit } from '@/types/scrap';
+import { ScaleConfig, ScaleStatus, WeightUnit } from '@/types/scrap';
 import { diagnosticLogger } from './diagnosticLogger';
+import { storageService } from './storageService';
 
 type ScaleListener = (status: ScaleStatus) => void;
 
@@ -39,6 +40,9 @@ class ScaleService {
     connected: false,
   };
 
+  private scales: ScaleConfig[] = [];
+  private currentScaleId: string | null = null;
+
   private listeners = new Set<ScaleListener>();
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private requestInFlight = false;
@@ -63,8 +67,85 @@ class ScaleService {
   private readonly NOISE_THRESHOLD = 0.5;
 
   constructor() {
-    this.connectServer();
+    this.loadScales();
     this.startWatchdog();
+  }
+
+  private loadScales() {
+    const settings = storageService.getSettings();
+    this.scales = settings.scales || [];
+    this.currentScaleId = settings.currentScaleId || null;
+    if (this.currentScaleId) {
+      const scale = this.scales.find((s) => s.id === this.currentScaleId);
+      if (scale) {
+        this.status.mode = scale.connectionType;
+      }
+    }
+  }
+
+  private persistCurrentScale() {
+    const settings = storageService.getSettings();
+    settings.currentScaleId = this.currentScaleId;
+    settings.scales = this.scales;
+    storageService.saveSettings(settings);
+  }
+
+  public getScales(): ScaleConfig[] {
+    return [...this.scales];
+  }
+
+  public getCurrentScaleId(): string | null {
+    return this.currentScaleId;
+  }
+
+  public getCurrentScale(): ScaleConfig | null {
+    return this.scales.find((s) => s.id === this.currentScaleId) ?? null;
+  }
+
+  public setCurrentScale(id: string | null) {
+    this.currentScaleId = id ?? null;
+    const scale = this.scales.find((s) => s.id === this.currentScaleId);
+    if (scale) {
+      this.status.mode = scale.connectionType;
+    } else {
+      this.status.mode = 'SERVER';
+    }
+    this.persistCurrentScale();
+    this.notify();
+    // Trigger an immediate poll for the new scale
+    void this.pollServer();
+  }
+
+  public connectScale(id: string) {
+    this.setCurrentScale(id);
+  }
+
+  public addScale(scale: Omit<ScaleConfig, 'id'>): ScaleConfig {
+    const newScale: ScaleConfig = {
+      ...scale,
+      id: `scale-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+    };
+    this.scales = [...this.scales, newScale];
+    this.persistCurrentScale();
+    return newScale;
+  }
+
+  public updateScale(id: string, updates: Partial<Omit<ScaleConfig, 'id'>>): void {
+    this.scales = this.scales.map((s) =>
+      s.id === id ? { ...s, ...updates } : s,
+    );
+    this.persistCurrentScale();
+    this.notify();
+  }
+
+  public deleteScale(id: string): void {
+    this.scales = this.scales.filter((s) => s.id !== id);
+    if (this.currentScaleId === id) {
+      this.currentScaleId = null;
+      this.status.mode = 'SERVER';
+    }
+    this.persistCurrentScale();
+    this.notify();
   }
 
   public getStatus(): ScaleStatus {
@@ -153,7 +234,17 @@ class ScaleService {
     this.requestInFlight = true;
 
     try {
-      const response = await fetch('/api/scale/status', { cache: 'no-store' });
+      const currentScale = this.getCurrentScale();
+      const params = new URLSearchParams();
+      if (currentScale) {
+        params.set('scaleId', currentScale.id);
+        params.set('connectionType', currentScale.connectionType);
+        if (currentScale.portName) params.set('portName', currentScale.portName);
+        if (currentScale.baudRate) params.set('baudRate', String(currentScale.baudRate));
+        if (currentScale.webSocketUrl) params.set('webSocketUrl', currentScale.webSocketUrl);
+      }
+
+      const response = await fetch(`/api/scale/status?${params.toString()}`, { cache: 'no-store' });
       if (!response.ok) throw new Error(`Scale server returned ${response.status}`);
       const serverStatus = await response.json() as ServerScaleStatus;
 

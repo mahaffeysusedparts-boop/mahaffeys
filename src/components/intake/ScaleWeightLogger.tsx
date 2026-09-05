@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { MetalGrade, ScaleStatus, ScrapTicketLine, Ticket, WeightTransaction } from '@/types/scrap';
+import { MetalGrade, ScaleStatus, ScrapTicketLine, Ticket, WeightTransaction, ScaleConfig } from '@/types/scrap';
 import { scaleService } from '@/services/scaleService';
 import { storageService } from '@/services/storageService';
 import { calculateComplianceScore } from '@/utils/complianceUtils';
@@ -70,6 +70,8 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
   const [activeTicket, setActiveTicket] = useState<Ticket | null>(null);
 
   const [scale, setScale] = useState<ScaleStatus>(scaleService.getStatus());
+  const [scales, setScales] = useState<ScaleConfig[]>(scaleService.getScales());
+  const [currentScaleId, setCurrentScaleId] = useState<string | null>(scaleService.getCurrentScaleId());
 
   const [selectedMetalId, setSelectedMetalId] = useState(metals[0]?.id ?? '');
   const [deductionPercent, setDeductionPercent] = useState(0);
@@ -79,7 +81,12 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
   const [checkNumber, setCheckNumber] = useState(`CHK-${Math.floor(1000 + Math.random() * 9000)}`);
   const [notes, setNotes] = useState('');
 
-  useEffect(() => scaleService.subscribe(setScale), []);
+  useEffect(() => {
+    const unsub = scaleService.subscribe((s) => setScale(s));
+    setScales(scaleService.getScales());
+    setCurrentScaleId(scaleService.getCurrentScaleId());
+    return unsub;
+  }, []);
 
   const refreshQueue = () => {
     setQueue(

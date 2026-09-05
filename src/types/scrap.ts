@@ -389,6 +389,17 @@ export interface NMVTISReportLog {
   downloadUrl?: string;
 }
 
+export interface ScaleConfig {
+  id: string;
+  name: string;
+  location: string;
+  connectionType: ScaleConnectionMode;
+  portName?: string;
+  baudRate?: number;
+  webSocketUrl?: string;
+  isDefault: boolean;
+}
+
 export interface YardSettings {
   yardName: string;
   address: string;
@@ -409,6 +420,8 @@ export interface YardSettings {
   safetyRequirements?: string;
   customDomain?: string;
   shipmentVarianceTolerancePct?: number;
+  scales: ScaleConfig[];
+  currentScaleId: string | null;
 }
 
 export type ShipmentStatus = 'STAGED' | 'IN_TRANSIT' | 'DELIVERED' | 'SETTLED' | 'DISCREPANCY';

@@ -134,6 +134,8 @@ const DEFAULT_SETTINGS: YardSettings = {
   operatorName: "Operator",
   admissionFeeUsd: 0,
   cashDrawerFloatLimit: 0,
+  scales: [],
+  currentScaleId: null,
 };
 
 const DEFAULT_GOALS: ShiftGoals = {
