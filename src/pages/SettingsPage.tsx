@@ -1,5 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { YardSettings } from '@/types/scrap';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { ScaleConfig, YardSettings } from '@/types/scrap';
 import { storageService } from '@/services/storageService';
 import { scaleService } from '@/services/scaleService';
 import { authService } from '@/services/authService';
@@ -109,6 +109,52 @@ export default function SettingsPage() {
 
   const handleChange = (field: keyof YardSettings, value: any) => {
     setSettings((prev) => ({ ...prev, [field]: value }));
+  };
+
+  // ── Multi-scale configuration ──────────────────────────────────────────────
+  const [scalesVersion, setScalesVersion] = useState(0);
+  const configuredScales = useMemo(() => scaleService.getScales(), [scalesVersion]);
+
+  const refreshScales = () => setScalesVersion((v) => v + 1);
+
+  const handleAddScale = () => {
+    const created = scaleService.addScale({
+      name: 'Scale ' + (scaleService.getScales().length + 1),
+      location: '',
+      connectionType: 'SERVER',
+      isDefault: scaleService.getScales().length === 0,
+    });
+    scaleService.setCurrentScale(created.id);
+    refreshScales();
+    toast.success('Scale added — set its connection parameters below');
+  };
+
+  const updateScaleField = (id: string, updates: Partial<ScaleConfig>) => {
+    scaleService.updateScale(id, updates);
+    refreshScales();
+  };
+
+  const handleSelectScale = (id: string) => {
+    scaleService.setCurrentScale(id);
+    refreshScales();
+    toast.success('Active scale switched');
+  };
+
+  const handleToggleDefault = (scale: ScaleConfig) => {
+    scaleService.getScales().forEach((s) => {
+      if (s.id !== scale.id) scaleService.updateScale(s.id, { isDefault: false });
+    });
+    scaleService.updateScale(scale.id, { isDefault: !scale.isDefault });
+    if (!scale.isDefault) scaleService.setCurrentScale(scale.id);
+    refreshScales();
+    toast.success(scale.isDefault ? 'Default scale cleared' : 'Default scale updated');
+  };
+
+  const handleDeleteScale = (scale: ScaleConfig) => {
+    if (!confirm('Delete scale "' + (scale.name || 'Unnamed Scale') + '"?')) return;
+    scaleService.deleteScale(scale.id);
+    refreshScales();
+    toast.success('Scale deleted');
   };
 
   const handleSave = () => {
@@ -608,7 +654,165 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
 
-        {/* Section 3.5: Scale Configuration */}\n        <Card className="bg-slate-900 border-slate-800 text-white shadow-lg">\n          <CardHeader className="py-3 px-4 bg-slate-950/60 border-b border-slate-800">\n            <CardTitle className="text-sm font-bold tracking-wide uppercase text-slate-300 flex items-center gap-2">\n              <Scale className="w-4 h-4 text-emerald-400" /> Scale Configuration\n            </CardTitle>\n          </CardHeader>\n\n          <CardContent className="p-4 space-y-4">\n            <div className="space-y-4">\n              <div className="flex items-center justify-between mb-2">\n                <h3 className="text-lg font-semibold text-white">Configured Scales</h3>\n                <Button\n                  onClick={() => {\n                    const newScale = scaleService.addScale({\n                      name: `New Scale ${scaleService.getScales().length + 1}`,\n                      location: 'Location',\n                      connectionType: 'SERVER',\n                      isDefault: scaleService.getScales().length === 0,\n                    });\n                    scaleService.setCurrentScale(newScale.id);\n                    toast.success('New scale added!');\n                  }}\n                  className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-3 py-1"\n                >\n                  <Plus className="w-3 h-3" /> Add New Scale\n                </Button>\n              </div>\n\n              {scaleService.getScales().map((scale) => (\n                <div\n                  key={scale.id}\n                  className="border border-slate-800 rounded-xl p-4 bg-slate-950"\n                >\n                  <div className="flex items-center justify-between mb-2">\n                    <div className="flex items-center gap-2">\n                      <Scale className="w-4 h-4 text-emerald-400" />\n                      <div className="flex flex-col">\n                        <h4 className="font-semibold text-white">{scale.name}</h4>\n                        <p className="text-sm text-slate-400">{scale.location}</p>\n                      </div>\n                    </div>\n                    <div className="flex items-center gap-2">\n                      <Badge\n                        variant="outline"\n                        className={`text-[10px] font-mono px-2 py-0.5 ${scale.id === scaleService.getCurrentScaleId() ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' : 'bg-slate-800/20 text-slate-300 border-slate-700/40'}`}\n                      >\n                        {scale.id === scaleService.getCurrentScaleId() ? 'Active' : 'Inactive'}\n                      </Badge>\n                      <Button\n                        onClick={() => {\n                          scaleService.setCurrentScale(scale.id);\n                          toast.success(`Switched to ${scale.name}`);\n                        }}\n                        variant="ghost"\n                        size="sm"\n                        className="text-slate-400 hover:text-white"\n                      >\n                        <RotateCcw className="w-3 h-3" /> Select\n                      </Button>\n                      <Button\n                        onClick={() => {\n                          const updatedName = prompt('Enter new scale name:', scale.name);\n                          if (updatedName !== null && updatedName.trim() !== '') {\n                            scaleService.updateScale(scale.id, { name: updatedName.trim() });\n                            toast.success('Scale updated!');\n                          }\n                        }}\n                        variant="outline"\n                        size="sm"\n                        className="text-slate-400 hover:text-white border-slate-600"\n                      >\n                        <FileText className="w-3 h-3" /> Edit\n                      </Button>\n                      <Button\n                        onClick={() => {\n                          if (confirm(`Delete scale '${scale.name}'?`)) {\n                            scaleService.deleteScale(scale.id);\n                            toast.success('Scale deleted!');\n                          }\n                        }}\n                        variant="outline"\n                        size="sm"\n                        className="text-slate-400 hover:text-white border-slate-600"\n                      >\n                        <Trash2 className="w-3 h-3" /> Delete\n                      </Button>\n                    </div>\n                  </div>\n\n                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-3 border-t border-slate-800">\n                    <div>\n                      <Label className="text-xs text-slate-300">Connection Type</Label>\n                      <Select\n                        value={scale.connectionType}\n                        onValueChange={(val) => scaleService.updateScale(scale.id, { connectionType: val })}\n                      >\n                        <SelectTrigger className="bg-slate-950 border-slate-800 text-white text-xs mt-1">\n                          <SelectValue />\n                        </SelectTrigger>\n                        <SelectContent className="bg-slate-900 border-slate-800 text-white text-xs">\n                          <SelectItem value="SERVER">Server</SelectItem>\n                          <SelectItem value="WEB_SERIAL">Web Serial</SelectItem>\n                          <SelectItem value="WEBSOCKET">WebSocket</SelectItem>\n                        </SelectContent>\n                      </Select>\n                    </div>\n\n                    <div>\n                      <Label className="text-xs text-slate-300">Port Name</Label>\n                      <Input\n                        type="text"\n                        value={scale.portName || ''}\n                        onChange={(e) => scaleService.updateScale(scale.id, { portName: e.target.value || undefined })}\n                        className="bg-slate-950 border-slate-800 text-white text-xs mt-1"\n                      />\n                    </div>\n\n                    <div>\n                      <Label className="text-xs text-slate-300">Baud Rate</Label>\n                      <Input\n                        type="number"\n                        value={scale.baudRate?.toString() || ''}\n                        onChange={(e) => {\n                          const val = parseInt(e.target.value);\n                          scaleService.updateScale(scale.id, { baudRate: Number.isNaN(val) ? undefined : val });\n                        }}\n                        className="bg-slate-950 border-slate-800 text-white text-xs mt-1"\n                      />\n                    </div>\n\n                    <div className="sm:col-span-3">\n                      <Label className="text-xs text-slate-300">WebSocket URL</Label>\n                      <Input\n                        type="text"\n                        value={scale.webSocketUrl || ''}\n                        onChange={(e) => scaleService.updateScale(scale.id, { webSocketUrl: e.target.value || undefined })}\n                        className="bg-slate-950 border-slate-800 text-white text-xs mt-1"\n                      />\n                    </div>\n\n                    <div>\n                      <Label className="text-xs text-slate-300">Default Scale</Label>\n                      <div className="flex items-center gap-2">\n                        <Input\n                          type="checkbox"\n                          checked={scale.isDefault}\n                          onChange={(e) => {\n                            scaleService.getScales().forEach((s) => {\n                              if (s.id !== scale.id) {\n                                scaleService.updateScale(s.id, { isDefault: false });\n                              }\n                            });\n                            scaleService.updateScale(scale.id, { isDefault: e.target.checked });\n                            if (e.target.checked) {\n                              scaleService.setCurrentScale(scale.id);\n                            }\n                            toast.success('Default scale updated!');\n                          }}\n                          className="h-4 w-4 text-emerald-400"\n                        />\n                        <span className="text-sm text-slate-400">Set as default</span>\n                      </div>\n                    </div>\n                  </div>\n                </div>\n              ))}\n\n              {scaleService.getScales().length === 0 && (\n                <div className="text-center py-8 text-slate-400">\n                  <p>No scales configured. Click \"Add New Scale\" to get started.</p>\n                </div>\n              )}\n            </div>\n          </CardContent>\n        </Card>\n\n        {/* Section 4: Data Management */}
+        {/* Section 3.5: Scale Configuration */}
+        <Card className="bg-slate-900 border-slate-800 text-white shadow-lg">
+          <CardHeader className="py-3 px-4 bg-slate-950/60 border-b border-slate-800">
+            <CardTitle className="text-sm font-bold tracking-wide uppercase text-slate-300 flex items-center gap-2">
+              <Scale className="w-4 h-4 text-emerald-400" /> Scale Configuration — Multi-Platform Setup
+            </CardTitle>
+          </CardHeader>
+
+          <CardContent className="p-4 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-bold text-white">Configured Scales</h3>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  Add every platform in the yard, then choose which one the dashboard and intake station subscribe to.
+                </p>
+              </div>
+              <Button
+                size="sm"
+                onClick={handleAddScale}
+                className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold gap-1.5 shrink-0"
+              >
+                <Plus className="w-3.5 h-3.5" /> Add New Scale
+              </Button>
+            </div>
+
+            {configuredScales.length === 0 && (
+              <div className="rounded-xl border border-dashed border-slate-700 bg-slate-950 py-8 text-center text-xs text-slate-400">
+                No scales configured yet — add your first platform to enable multi-scale switching.
+              </div>
+            )}
+
+            <div className="space-y-4">
+              {configuredScales.map((scale) => (
+                <div key={scale.id} className="rounded-xl border border-slate-800 bg-slate-950 p-4 space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2.5">
+                      <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                        <Scale className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <div className="text-sm font-bold text-white flex items-center gap-2">
+                          {scale.name || 'Unnamed Scale'}
+                          {scale.id === scaleService.getCurrentScaleId() && (
+                            <Badge className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[9px] font-mono">ACTIVE</Badge>
+                          )}
+                          {scale.isDefault && (
+                            <Badge className="bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[9px] font-mono">DEFAULT</Badge>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-slate-400 font-mono">
+                          {scale.location || 'No location set'} · {scale.connectionType}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1.5">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => handleSelectScale(scale.id)}
+                        className="h-7 text-[11px] font-semibold text-emerald-400 hover:text-emerald-300 hover:bg-emerald-950"
+                      >
+                        Use This Scale
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => handleToggleDefault(scale)}
+                        className="h-7 text-[11px] font-semibold text-amber-400 hover:text-amber-300 hover:bg-amber-950"
+                      >
+                        {scale.isDefault ? 'Unset Default' : 'Make Default'}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => handleDeleteScale(scale)}
+                        className="h-7 text-[11px] text-red-400 hover:text-red-300 hover:bg-red-950"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-3 border-t border-slate-800">
+                    <div>
+                      <Label className="text-[11px] text-slate-400">Scale Name</Label>
+                      <Input
+                        value={scale.name}
+                        onChange={(e) => updateScaleField(scale.id, { name: e.target.value })}
+                        className="bg-slate-900 border-slate-800 text-white text-xs mt-1 h-9"
+                      />
+                    </div>
+
+                    <div>
+                      <Label className="text-[11px] text-slate-400">Location</Label>
+                      <Input
+                        value={scale.location}
+                        onChange={(e) => updateScaleField(scale.id, { location: e.target.value })}
+                        placeholder="e.g. Receiving Dock"
+                        className="bg-slate-900 border-slate-800 text-white text-xs mt-1 h-9"
+                      />
+                    </div>
+
+                    <div>
+                      <Label className="text-[11px] text-slate-400">Connection Type</Label>
+                      <Select
+                        value={scale.connectionType}
+                        onValueChange={(val) => updateScaleField(scale.id, { connectionType: val as ScaleConfig['connectionType'] })}
+                      >
+                        <SelectTrigger className="bg-slate-900 border-slate-800 text-white text-xs mt-1 h-9">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="bg-slate-900 border-slate-800 text-white text-xs">
+                          <SelectItem value="SERVER">Server</SelectItem>
+                          <SelectItem value="WEB_SERIAL">Web Serial</SelectItem>
+                          <SelectItem value="WEBSOCKET">WebSocket</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div>
+                      <Label className="text-[11px] text-slate-400">Serial Port / Baud</Label>
+                      <div className="flex gap-2 mt-1">
+                        <Input
+                          value={scale.portName || ''}
+                          onChange={(e) => updateScaleField(scale.id, { portName: e.target.value || undefined })}
+                          placeholder="COM3"
+                          className="bg-slate-900 border-slate-800 text-white text-xs h-9"
+                        />
+                        <Input
+                          type="number"
+                          value={scale.baudRate ?? ''}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value, 10);
+                            updateScaleField(scale.id, { baudRate: Number.isNaN(val) ? undefined : val });
+                          }}
+                          placeholder="9600"
+                          className="bg-slate-900 border-slate-800 text-white text-xs h-9 w-24"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="sm:col-span-2 lg:col-span-4">
+                      <Label className="text-[11px] text-slate-400">WebSocket Feed URL (optional)</Label>
+                      <Input
+                        value={scale.webSocketUrl || ''}
+                        onChange={(e) => updateScaleField(scale.id, { webSocketUrl: e.target.value || undefined })}
+                        placeholder="ws://192.168.1.50:8080/scale"
+                        className="bg-slate-900 border-slate-800 text-white text-xs mt-1 h-9"
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Section 4: Data Management */}
         <Card className="bg-slate-900 border-slate-800 text-white shadow-lg">
           <CardHeader className="py-3 px-4 bg-slate-950/60 border-b border-slate-800">
             <CardTitle className="text-sm font-bold tracking-wide uppercase text-slate-300 flex items-center justify-between gap-2">

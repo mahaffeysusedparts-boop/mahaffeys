@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
 import {
   AreaChart,
   Area,
@@ -134,6 +135,7 @@ export default function DashboardPage() {
     toast.success("Scale indicator zeroed!");
   };
 
+  const currentScale = scales.find((s) => s.id === currentScaleId) ?? null;
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
       <Navbar />
@@ -177,7 +179,72 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Scale Selector */}\n        <Card className="bg-slate-900 border-slate-800 text-white shadow-xl">\n          <CardContent className="p-4 flex flex-col sm:flex-row items-center justify-between gap-4">\n            <div className="flex items-center gap-3">\n              <Scale className="w-5 h-5 text-emerald-400" />\n              <div>\n                <Label className="text-xs text-slate-400 font-bold uppercase tracking-wider">Active Scale</Label>\n                <p className="text-sm font-semibold text-white mt-0.5">\n                  {currentScaleId\n                    ? scales.find((s) => s.id === currentScaleId)?.name || 'Unknown Scale'\n                    : 'No Scale Selected'}\n                </p>\n              </div>\n            </div>\n            <div className="flex items-center gap-3 w-full sm:w-auto">\n              <Select\n                value={currentScaleId || ''}\n                onValueChange={(val) => {\n                  scaleService.setCurrentScale(val || null);\n                  setCurrentScaleId(val || null);\n                  setScales(scaleService.getScales());\n                  toast.success(val ? `Switched to scale: ${scales.find((s) => s.id === val)?.name}` : 'Scale disconnected');\n                }}\n              >\n                <SelectTrigger className="w-full sm:w-64 border-slate-700 bg-slate-800 text-white text-xs">\n                  <SelectValue placeholder="Select a scale" />\n                </SelectTrigger>\n                <SelectContent className="border-slate-700 bg-slate-900 text-white">\n                  <SelectItem value="">No Scale</SelectItem>\n                  {scales.map((s) => (\n                    <SelectItem key={s.id} value={s.id}>\n                      {s.name} {s.location ? `(${s.location})` : ''}\n                    </SelectItem>\n                  ))}\n                </SelectContent>\n              </Select>\n              <Link to="/settings">\n                <Button variant="outline" size="sm" className="border-slate-700 bg-slate-800 text-slate-300 text-xs">\n                  Configure Scales\n                </Button>\n              </Link>\n            </div>\n          </CardContent>\n        </Card>\n\n        {/* Live Scale Weight HUD Indicator Banner */}
+        {/* Scale Selector */}
+        <Card className="bg-slate-900 border-slate-800 text-white shadow-xl">
+          <CardContent className="p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-2xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                <Scale className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400">
+                    ACTIVE SCALE
+                  </span>
+                  <Badge
+                    variant="outline"
+                    className={
+                      scaleStatus.connected
+                        ? 'bg-emerald-950 text-emerald-300 border-emerald-500/40 text-[10px] font-mono uppercase'
+                        : 'bg-red-950 text-red-300 border-red-500/40 text-[10px] font-mono uppercase'
+                    }
+                  >
+                    {scaleStatus.connected ? 'CONNECTED' : 'OFFLINE'}
+                  </Badge>
+                </div>
+                <p className="text-sm font-bold text-white mt-0.5 font-mono">
+                  {currentScale
+                    ? currentScale.name + (currentScale.location ? ' · ' + currentScale.location : '')
+                    : 'No scale connected'}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 w-full sm:w-auto">
+              <Select
+                value={currentScaleId || 'none'}
+                onValueChange={(val) => {
+                  const id = val === 'none' ? null : val;
+                  const next = scales.find((s) => s.id === id);
+                  scaleService.setCurrentScale(id);
+                  setCurrentScaleId(id);
+                  setScales(scaleService.getScales());
+                  toast.success(next ? 'Switched to scale: ' + next.name : 'Scale disconnected');
+                }}
+              >
+                <SelectTrigger className="w-full sm:w-64 border-slate-700 bg-slate-800 text-white text-xs">
+                  <SelectValue placeholder="Select a scale" />
+                </SelectTrigger>
+                <SelectContent className="border-slate-700 bg-slate-900 text-white">
+                  <SelectItem value="none">No Scale</SelectItem>
+                  {scales.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>
+                      {s.name}
+                      {s.location ? ' (' + s.location + ')' : ''}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Link to="/settings" className="shrink-0">
+                <Button variant="outline" size="sm" className="border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs">
+                  Configure Scales
+                </Button>
+              </Link>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Live Scale Weight HUD Indicator Banner */}
         <Card className="bg-slate-900 border-2 border-emerald-500/30 text-white shadow-xl">
           <CardContent className="p-4 sm:p-5 flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-4">

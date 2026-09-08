@@ -573,6 +573,29 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          <Select
+            value={currentScaleId || 'none'}
+            onValueChange={(val) => {
+              const id = val === 'none' ? null : val;
+              const next = scales.find((s) => s.id === id);
+              scaleService.setCurrentScale(id);
+              setCurrentScaleId(id);
+              toast.success(next ? 'Switched to scale: ' + next.name : 'Scale disconnected');
+            }}
+          >
+            <SelectTrigger className="h-8 w-52 border-slate-700 bg-slate-800 text-xs text-white">
+              <SelectValue placeholder="Active Scale" />
+            </SelectTrigger>
+            <SelectContent className="border-slate-700 bg-slate-900 text-white">
+              <SelectItem value="none">No Scale</SelectItem>
+              {scales.map((s) => (
+                <SelectItem key={s.id} value={s.id} className="text-xs">
+                  {s.name}
+                  {s.location ? ' (' + s.location + ')' : ''}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <Button
             size="sm"
             onClick={onNewIntake}
