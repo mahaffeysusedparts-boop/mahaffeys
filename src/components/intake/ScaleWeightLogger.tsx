@@ -12,6 +12,17 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { scaleAccent } from '@/components/scale/scaleAccent';
+import {
   AlertTriangle,
   ArrowDownUp,
   ArrowLeft,
@@ -72,6 +83,9 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
   const [scale, setScale] = useState<ScaleStatus>(scaleService.getStatus());
   const [scales, setScales] = useState<ScaleConfig[]>(scaleService.getScales());
   const [currentScaleId, setCurrentScaleId] = useState<string | null>(scaleService.getCurrentScaleId());
+  // A platform switch awaiting confirmation (mid-weighing guard). The value's
+  // id may be null = "No Scale".
+  const [pendingScaleSwitch, setPendingScaleSwitch] = useState<{ id: string | null } | null>(null);
 
   const [selectedMetalId, setSelectedMetalId] = useState(metals[0]?.id ?? '');
   const [deductionPercent, setDeductionPercent] = useState(0);
@@ -82,11 +96,59 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
   const [notes, setNotes] = useState('');
 
   useEffect(() => {
-    const unsub = scaleService.subscribe((s) => setScale(s));
+    const unsub = scaleService.subscribe((s) => {
+      setScale(s);
+      setScales(scaleService.getScales());
+      setCurrentScaleId(scaleService.getCurrentScaleId());
+    });
     setScales(scaleService.getScales());
     setCurrentScaleId(scaleService.getCurrentScaleId());
     return unsub;
   }, []);
+
+  const activeScale = scales.find((s) => s.id === currentScaleId) ?? null;
+  const accent = scaleAccent(activeScale?.accentColor);
+
+  const applyScaleSwitch = (id: string | null) => {
+    const next = scales.find((s) => s.id === id);
+    scaleService.setCurrentScale(id);
+    setCurrentScaleId(id);
+    toast.success(next ? 'Switched to scale: ' + next.name : 'Scale disconnected');
+  };
+
+  // Mid-weighing switch guard: if the active intake has an IN weight but no
+  // OUT yet, confirm before moving to another platform.
+  const requestScaleSwitch = (id: string | null) => {
+    if (id === currentScaleId) return;
+    const midWeighing = !!activeTicket
+      && activeTicket.scaleGrossInWeight != null
+      && activeTicket.scaleTareOutWeight == null;
+    if (midWeighing) {
+      setPendingScaleSwitch({ id });
+      return;
+    }
+    applyScaleSwitch(id);
+  };
+
+  const cycleActiveScale = () => {
+    const list = scaleService.getScales();
+    if (list.length < 2) return;
+    const index = list.findIndex((s) => s.id === scaleService.getCurrentScaleId());
+    const next = list[(index + 1) % list.length];
+    requestScaleSwitch(next.id);
+  };
+
+  // Alt+S cycles platforms at the intake station.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.altKey && (e.key === 's' || e.key === 'S')) {
+        e.preventDefault();
+        cycleActiveScale();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  });
 
   const refreshQueue = () => {
     setQueue(
@@ -108,6 +170,13 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
   useEffect(() => {
     const onRemoteSync = (event: Event) => {
       const detail = (event as CustomEvent<{ key?: string }>).detail;
+      // Scale config edited on another workstation: pull it in live.
+      if (detail?.key === 'mahaffeys_settings') {
+        scaleService.reloadScales();
+        setScales(scaleService.getScales());
+        setCurrentScaleId(scaleService.getCurrentScaleId());
+        return;
+      }
       if (detail?.key && detail.key !== 'mahaffeys_tickets') return;
       refreshQueue();
       if (activeTicketId) {
@@ -174,6 +243,8 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
       weightLbs,
       recordedAt: new Date().toISOString(),
       operatorName: storageService.getSettings().operatorName,
+      // Audit stamp — which platform captured this reading.
+      scaleName: scaleService.getCurrentScale()?.name,
     },
   ];
 
@@ -575,23 +646,21 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
         <div className="flex flex-wrap items-center gap-2">
           <Select
             value={currentScaleId || 'none'}
-            onValueChange={(val) => {
-              const id = val === 'none' ? null : val;
-              const next = scales.find((s) => s.id === id);
-              scaleService.setCurrentScale(id);
-              setCurrentScaleId(id);
-              toast.success(next ? 'Switched to scale: ' + next.name : 'Scale disconnected');
-            }}
+            onValueChange={(val) => requestScaleSwitch(val === 'none' ? null : val)}
           >
-            <SelectTrigger className="h-8 w-52 border-slate-700 bg-slate-800 text-xs text-white">
+            <SelectTrigger className="h-8 w-52 gap-2 border-slate-700 bg-slate-800 text-xs text-white">
+              <span className={`h-2 w-2 shrink-0 rounded-full ${accent.dot}`} />
               <SelectValue placeholder="Active Scale" />
             </SelectTrigger>
             <SelectContent className="border-slate-700 bg-slate-900 text-white">
               <SelectItem value="none">No Scale</SelectItem>
               {scales.map((s) => (
                 <SelectItem key={s.id} value={s.id} className="text-xs">
-                  {s.name}
-                  {s.location ? ' (' + s.location + ')' : ''}
+                  <span className="flex items-center gap-2">
+                    <span className={`h-2 w-2 rounded-full ${scaleAccent(s.accentColor).dot}`} />
+                    {s.name}
+                    {s.location ? ' (' + s.location + ')' : ''}
+                  </span>
                 </SelectItem>
               ))}
             </SelectContent>
@@ -814,7 +883,14 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
                   <div className="relative overflow-hidden rounded-xl border border-slate-800 bg-black/90 p-4">
                     <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(#10b981_1px,transparent_1px)] [background-size:16px_16px] opacity-5" />
                     <div className="relative z-10 flex items-center justify-between font-mono text-[10px] text-slate-400">
-                      <span>GROSS: {scale.grossWeight.toLocaleString()} {scale.unit}</span>
+                      <span className="flex items-center gap-1.5">
+                        GROSS: {scale.grossWeight.toLocaleString()} {scale.unit}
+                        {activeScale && (
+                          <span className={`rounded border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${accent.chipBorder} ${accent.chipBg} ${accent.chipText}`}>
+                            {activeScale.name}
+                          </span>
+                        )}
+                      </span>
                       {scale.tareWeight > 0 && (
                         <span className="font-bold text-amber-400">TARE: {scale.tareWeight.toLocaleString()} {scale.unit}</span>
                       )}
@@ -1181,6 +1257,45 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
           </div>
         </>
       )}
+
+      {/* Mid-weighing platform switch guard */}
+      <AlertDialog
+        open={pendingScaleSwitch !== null}
+        onOpenChange={(open) => { if (!open) setPendingScaleSwitch(null); }}
+      >
+        <AlertDialogContent className="border-slate-700 bg-slate-900 text-white rounded-2xl">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-white">
+              <AlertTriangle className="h-5 w-5 text-amber-400" />
+              Switch scale mid-weighing?
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-slate-300">
+              Intake <span className="font-mono font-bold text-white">#{activeTicket?.id}</span> for{' '}
+              <span className="font-bold text-white">{activeTicket?.customerName}</span> has an IN weight of{' '}
+              <span className="font-mono font-bold text-emerald-400">{fmtLbs(activeTicket?.scaleGrossInWeight)} LBS</span> but no OUT yet —
+              the OUT reading will come from{' '}
+              <span className="font-bold text-amber-300">
+                {pendingScaleSwitch ? (scales.find((s) => s.id === pendingScaleSwitch.id)?.name ?? 'No Scale') : ''}
+              </span>
+              . Switch anyway?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="border-slate-700 bg-slate-800 text-slate-200 hover:bg-slate-700 hover:text-white">
+              Keep Current Platform
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (pendingScaleSwitch) applyScaleSwitch(pendingScaleSwitch.id);
+                setPendingScaleSwitch(null);
+              }}
+              className="bg-amber-600 font-bold text-white hover:bg-amber-500"
+            >
+              Switch Platform
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

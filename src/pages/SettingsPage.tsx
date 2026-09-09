@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { ScaleConfig, YardSettings } from '@/types/scrap';
 import { storageService } from '@/services/storageService';
 import { scaleService } from '@/services/scaleService';
@@ -13,6 +14,9 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
+import { SCALE_ACCENT_COLORS } from '@/types/scrap';
+import { scaleAccent } from '@/components/scale/scaleAccent';
 import {
   Settings,
   Save,
@@ -35,6 +39,8 @@ import {
   ImageOff,
   Plus,
   Trash2,
+  FlaskConical,
+  ScrollText,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -113,9 +119,23 @@ export default function SettingsPage() {
 
   // ── Multi-scale configuration ──────────────────────────────────────────────
   const [scalesVersion, setScalesVersion] = useState(0);
+  const [testingScaleId, setTestingScaleId] = useState<string | null>(null);
+  const [scaleTests, setScaleTests] = useState<Record<string, { ok: boolean; message: string } | undefined>>({});
   const configuredScales = useMemo(() => scaleService.getScales(), [scalesVersion]);
 
   const refreshScales = () => setScalesVersion((v) => v + 1);
+
+  const handleTestScale = async (id: string) => {
+    setTestingScaleId(id);
+    const result = await scaleService.testScale(id);
+    setScaleTests((prev) => ({ ...prev, [id]: result }));
+    setTestingScaleId(null);
+    if (result.ok) {
+      toast.success('Scale test passed', { description: result.message });
+    } else {
+      toast.error('Scale test failed', { description: result.message });
+    }
+  };
 
   const handleAddScale = () => {
     const created = scaleService.addScale({
@@ -210,6 +230,7 @@ export default function SettingsPage() {
         pullVehicles: storageService.getPullYardVehicles(),
         coreReturns: storageService.getCoreReturns(),
         admissionPasses: storageService.getAdmissionPasses(),
+        scaleEvents: storageService.getScaleEvents(),
       };
 
       // Embed every referenced snapshot so photos survive copying this file
@@ -267,6 +288,7 @@ export default function SettingsPage() {
           mahaffeys_pull_yard_vehicles: data.pullVehicles,
           mahaffeys_core_returns: data.coreReturns,
           mahaffeys_admission_passes: data.admissionPasses,
+          mahaffeys_scale_events: data.scaleEvents,
         };
         await sharedStorage.importState(Object.fromEntries(Object.entries(state).filter(([, value]) => value !== undefined)));
         toast.success("Backup imported into the shared PC database");
@@ -713,6 +735,16 @@ export default function SettingsPage() {
                       <Button
                         size="sm"
                         variant="ghost"
+                        onClick={() => handleTestScale(scale.id)}
+                        disabled={testingScaleId === scale.id}
+                        className="h-7 gap-1 text-[11px] font-semibold text-sky-400 hover:text-sky-300 hover:bg-sky-950"
+                      >
+                        <FlaskConical className="w-3.5 h-3.5" />
+                        {testingScaleId === scale.id ? 'Testing…' : 'Test'}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
                         onClick={() => handleSelectScale(scale.id)}
                         className="h-7 text-[11px] font-semibold text-emerald-400 hover:text-emerald-300 hover:bg-emerald-950"
                       >
@@ -805,9 +837,87 @@ export default function SettingsPage() {
                         className="bg-slate-900 border-slate-800 text-white text-xs mt-1 h-9"
                       />
                     </div>
+
+                    <div className="sm:col-span-2 lg:col-span-4">
+                      <Label className="text-[11px] text-slate-400">Accent Color — tags this platform in readouts &amp; the journal</Label>
+                      <div className="flex flex-wrap items-center gap-2 mt-1.5">
+                        {SCALE_ACCENT_COLORS.map((color) => {
+                          const isSelected = (scale.accentColor ?? 'emerald') === color;
+                          return (
+                            <button
+                              key={color}
+                              type="button"
+                              onClick={() => updateScaleField(scale.id, { accentColor: color })}
+                              aria-label={`Set accent color ${color}`}
+                              className={`h-8 w-8 rounded-lg border border-slate-700 transition-all ${scaleAccent(color).swatch} ${
+                                isSelected ? 'ring-2 ring-white ring-offset-2 ring-offset-slate-950' : 'opacity-50 hover:opacity-90'
+                              }`}
+                            />
+                          );
+                        })}
+                      </div>
+                    </div>
                   </div>
+
+                  {scaleTests[scale.id] && (
+                    <p className={`text-[11px] font-mono ${scaleTests[scale.id]!.ok ? 'text-emerald-400' : 'text-red-400'}`}>
+                      ● Last test {scaleTests[scale.id]!.ok ? 'passed' : 'failed'} — {scaleTests[scale.id]!.message}
+                    </p>
+                  )}
                 </div>
               ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Section 3.6: Weight Activity Journal */}
+        <Card className="bg-slate-900 border-slate-800 text-white shadow-lg">
+          <CardHeader className="py-3 px-4 bg-slate-950/60 border-b border-slate-800 flex flex-row items-center justify-between">
+            <CardTitle className="text-sm font-bold tracking-wide uppercase text-slate-300 flex items-center gap-2">
+              <ScrollText className="w-4 h-4 text-rose-400" /> Weight Activity Journal
+            </CardTitle>
+            <Link to="/scale-log">
+              <Button variant="outline" size="sm" className="border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs">
+                Open the Journal
+              </Button>
+            </Link>
+          </CardHeader>
+
+          <CardContent className="p-4 space-y-4">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-sm font-bold text-white">Log every load that crosses a platform</p>
+                <p className="text-[11px] text-slate-400 mt-0.5 leading-relaxed">
+                  Automatically records one journal entry whenever settled weight goes on or comes off any scale — no
+                  ticket required. The journal keeps the most recent 500 events and is included in JSON backups.
+                </p>
+              </div>
+              <Switch
+                checked={settings.scaleEventLoggingEnabled !== false}
+                onCheckedChange={(checked) => handleChange('scaleEventLoggingEnabled', checked)}
+                aria-label="Toggle weight activity journal"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 border-t border-slate-800">
+              <div>
+                <Label className="text-[11px] text-slate-400">Detection Threshold (LBS)</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  value={settings.scaleEventThresholdLbs ?? 20}
+                  onChange={(e) => handleChange('scaleEventThresholdLbs', Math.max(1, parseInt(e.target.value, 10) || 20))}
+                  className="bg-slate-950 border-slate-800 text-white text-xs mt-1 h-9"
+                />
+                <p className="text-[10px] text-slate-400 mt-1">
+                  A settled change of at least this many pounds is logged as one event; smaller drift is ignored.
+                </p>
+              </div>
+              <div className="flex items-end">
+                <p className="text-[10px] text-slate-500 font-mono pb-1">
+                  Journal settings apply once "Save Yard Settings" is clicked.
+                </p>
+              </div>
             </div>
           </CardContent>
         </Card>

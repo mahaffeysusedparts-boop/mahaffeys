@@ -25,6 +25,7 @@ import type {
   EquipmentItem,
   MaintenanceLogEntry,
   MetalRateChangeLog,
+  ScaleWeightEvent,
 } from "@/types/scrap";
 import type {
   AlertRule,
@@ -119,6 +120,8 @@ function clearKeys(keys: string[]): void {
 // ---------------------------------------------------------------------------
 // Default values
 // ---------------------------------------------------------------------------
+const MAX_SCALE_EVENTS = 500;
+
 const DEFAULT_SETTINGS: YardSettings = {
   yardName: "My Recycling Yard",
   address: "",
@@ -395,6 +398,19 @@ export const storageService = {
     patchCached("mahaffeys_rate_history", upsertItem("mahaffeys_rate_history", log, existing));
   },
 
+  // ── Weight Activity Journal ───────────────────────────────────────────────
+  // Newest-first, hard-capped so a busy platform can never grow storage
+  // without bound. Events are emitted by scaleService's plateau detection.
+  getScaleEvents: (): ScaleWeightEvent[] => readCached("mahaffeys_scale_events", []),
+
+  addScaleEvent: (event: ScaleWeightEvent): ScaleWeightEvent => {
+    const existing = storageService.getScaleEvents();
+    patchCached("mahaffeys_scale_events", [event, ...existing].slice(0, MAX_SCALE_EVENTS));
+    return event;
+  },
+
+  clearScaleEvents: (): void => patchCached("mahaffeys_scale_events", []),
+
   // ── Settings ──────────────────────────────────────────────────────────────
   getSettings: (): YardSettings => readCached("mahaffeys_settings", DEFAULT_SETTINGS),
   saveSettings: (settings: YardSettings) => patchCached("mahaffeys_settings", settings),
@@ -424,6 +440,7 @@ export const storageService = {
       "mahaffeys_equipment",
       "mahaffeys_maintenance_logs",
       "mahaffeys_rate_history",
+      "mahaffeys_scale_events",
       "mahaffeys_removed_inventory_vehicles",
       "mahaffeys_operations_goals",
       "mahaffeys_operations_alert_rules",

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Navbar } from "@/components/layout/Navbar";
 import { storageService } from "@/services/storageService";
 import { scaleService } from "@/services/scaleService";
-import { Ticket, ScaleStatus, YardSettings, ScaleConfig } from "@/types/scrap";
+import { Ticket, ScaleStatus, YardSettings, ScaleConfig, ScaleWeightEvent } from "@/types/scrap";
 import { useAuth } from "@/context/AuthContext";
 import { Link } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
+import { scaleAccent } from "@/components/scale/scaleAccent";
 import {
   AreaChart,
   Area,
@@ -41,6 +42,7 @@ import {
   Truck,
   BarChart3,
   ClipboardList,
+  ScrollText,
 } from "lucide-react";
 import { toast } from "sonner";
 import { PhotoIntakeCard } from "@/components/photo-intake/PhotoIntakeCard";
@@ -51,15 +53,34 @@ export default function DashboardPage() {
   const [settings, setSettings] = useState<YardSettings>(storageService.getSettings());
   const [scales, setScales] = useState<ScaleConfig[]>(scaleService.getScales());
   const [currentScaleId, setCurrentScaleId] = useState<string | null>(scaleService.getCurrentScaleId());
+  const [scaleEvents, setScaleEvents] = useState<ScaleWeightEvent[]>(storageService.getScaleEvents());
   const { isAdmin, pendingUsersCount } = useAuth();
+
+  const syncScaleState = () => {
+    setScales(scaleService.getScales());
+    setCurrentScaleId(scaleService.getCurrentScaleId());
+  };
 
   useEffect(() => {
     setTickets(storageService.getTickets());
     setSettings(storageService.getSettings());
-    setScales(scaleService.getScales());
-    setCurrentScaleId(scaleService.getCurrentScaleId());
+    syncScaleState();
     const scaleUnsub = scaleService.subscribe((s) => setScaleStatus(s));
-    return () => scaleUnsub();
+    // Live cross-workstation sync: scale edits made elsewhere (or journal
+    // events recorded on other stations) appear here without a refresh.
+    const settingsUnsub = storageService.subscribe("mahaffeys_settings", () => {
+      scaleService.reloadScales();
+      syncScaleState();
+      setSettings(storageService.getSettings());
+    });
+    const eventsUnsub = storageService.subscribe("mahaffeys_scale_events", () => {
+      setScaleEvents(storageService.getScaleEvents());
+    });
+    return () => {
+      scaleUnsub();
+      settingsUnsub();
+      eventsUnsub();
+    };
   }, []);
 
   const completedTickets = tickets.filter((t) => t.status === "COMPLETED");
@@ -136,6 +157,9 @@ export default function DashboardPage() {
   };
 
   const currentScale = scales.find((s) => s.id === currentScaleId) ?? null;
+  const activeAccent = scaleAccent(currentScale?.accentColor);
+  const scaleWall = scaleService.getAllScaleStatuses();
+  const recentScaleEvents = scaleEvents.slice(0, 8);
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
       <Navbar />
@@ -222,15 +246,19 @@ export default function DashboardPage() {
                   toast.success(next ? 'Switched to scale: ' + next.name : 'Scale disconnected');
                 }}
               >
-                <SelectTrigger className="w-full sm:w-64 border-slate-700 bg-slate-800 text-white text-xs">
+                <SelectTrigger className="w-full sm:w-64 gap-2 border-slate-700 bg-slate-800 text-white text-xs">
+                  <span className={`h-2 w-2 shrink-0 rounded-full ${activeAccent.dot}`} />
                   <SelectValue placeholder="Select a scale" />
                 </SelectTrigger>
                 <SelectContent className="border-slate-700 bg-slate-900 text-white">
                   <SelectItem value="none">No Scale</SelectItem>
                   {scales.map((s) => (
                     <SelectItem key={s.id} value={s.id}>
-                      {s.name}
-                      {s.location ? ' (' + s.location + ')' : ''}
+                      <span className="flex items-center gap-2">
+                        <span className={`h-2 w-2 rounded-full ${scaleAccent(s.accentColor).dot}`} />
+                        {s.name}
+                        {s.location ? ' (' + s.location + ')' : ''}
+                      </span>
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -274,9 +302,14 @@ export default function DashboardPage() {
                   <span className="text-base font-bold text-slate-400 uppercase">
                     {scaleStatus.unit} NET
                   </span>
-                  <span className="text-xs text-slate-500 ml-2">
-                    (Mode: {scaleStatus.mode})
-                  </span>
+                  <Badge
+                    variant="outline"
+                    className={`ml-2 text-[10px] font-mono ${activeAccent.chipBorder} ${activeAccent.chipBg} ${activeAccent.chipText}`}
+                  >
+                    {currentScale
+                      ? currentScale.name + (currentScale.location ? ' · ' + currentScale.location : '')
+                      : 'No scale selected'}
+                  </Badge>
                 </div>
               </div>
             </div>
@@ -298,6 +331,115 @@ export default function DashboardPage() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Scale Activity — live journal strip */}
+        <Card className="bg-slate-900 border-slate-800 text-white shadow-xl">
+          <CardHeader className="py-4 px-6 bg-slate-950/60 border-b border-slate-800 flex items-center justify-between">
+            <CardTitle className="text-base font-bold text-white flex items-center gap-2">
+              <ScrollText className="w-5 h-5 text-rose-400" /> Scale Activity — Last 8 Events
+            </CardTitle>
+            <Link to="/scale-log" className="text-xs text-amber-400 hover:underline flex items-center gap-1 font-semibold">
+              Open Weight Journal <ChevronRight className="w-4 h-4" />
+            </Link>
+          </CardHeader>
+          <CardContent className="p-0">
+            {recentScaleEvents.length === 0 ? (
+              <div className="px-6 py-6 text-center text-xs text-slate-500 font-mono">
+                No platform activity detected yet — loads crossing any scale will appear here automatically.
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-800/80">
+                {recentScaleEvents.map((event) => {
+                  const scale = scales.find((s) => s.id === event.scaleId);
+                  const dot = scaleAccent(scale?.accentColor).dot;
+                  return (
+                    <div key={event.id} className="px-6 py-2.5 flex items-center justify-between text-xs font-mono">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${dot}`} />
+                        <span className="font-bold text-white truncate">{event.scaleName}</span>
+                        <span className="text-slate-500">
+                          {new Date(event.detectedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="text-slate-400">
+                          Gross <span className="font-bold text-slate-200">{event.grossAfterLbs.toLocaleString()}</span> LBS
+                        </span>
+                        <Badge
+                          className={`font-mono text-[10px] ${
+                            event.direction === "ADDED"
+                              ? "border border-emerald-500/40 bg-emerald-500/15 text-emerald-300"
+                              : "border border-amber-500/40 bg-amber-500/15 text-amber-300"
+                          }`}
+                        >
+                          {event.direction === "ADDED" ? "+" : "−"}{event.deltaLbs.toLocaleString()} LBS {event.direction === "ADDED" ? "ON" : "OFF"}
+                        </Badge>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Scale Wall — live status of every configured platform */}
+        {scales.length > 0 && (
+          <Card className="bg-slate-900 border-slate-800 text-white shadow-xl">
+            <CardHeader className="py-4 px-6 bg-slate-950/60 border-b border-slate-800">
+              <CardTitle className="text-base font-bold text-white flex items-center gap-2">
+                <Activity className="w-5 h-5 text-sky-400" /> Scale Wall — All Platforms
+              </CardTitle>
+              <CardDescription className="text-xs text-slate-400 mt-0.5">
+                Live status of every platform in the yard, regardless of which one is active.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="p-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                {scaleWall.map((entry) => {
+                  const isActive = entry.scaleId === currentScaleId;
+                  const accent = scaleAccent(scales.find((s) => s.id === entry.scaleId)?.accentColor);
+                  return (
+                    <div
+                      key={entry.scaleId}
+                      className={`rounded-xl border p-3 space-y-2 ${
+                        isActive ? "border-emerald-500/60 bg-emerald-950/30 ring-1 ring-emerald-500/40" : "border-slate-800 bg-slate-950"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${accent.dot}`} />
+                          <span className="text-sm font-bold text-white truncate">{entry.name}</span>
+                        </div>
+                        {isActive && (
+                          <Badge className="shrink-0 bg-emerald-500 font-mono text-[9px] font-black text-slate-950">ACTIVE</Badge>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-slate-400 font-mono truncate">
+                        {entry.location || "No location set"} · {entry.connectionType.replace("_", " ")}
+                      </p>
+                      <div className="flex items-baseline justify-between font-mono">
+                        <span className={`text-2xl font-black ${entry.connected ? "text-emerald-400" : "text-slate-500"}`}>
+                          {entry.weight.toLocaleString()}
+                        </span>
+                        <span className="text-[10px] text-slate-500 uppercase">{entry.unit}</span>
+                      </div>
+                      <Badge
+                        className={`font-mono text-[9px] uppercase ${
+                          entry.connected
+                            ? "border border-emerald-500/40 bg-emerald-950 text-emerald-300"
+                            : "border border-slate-700 bg-slate-900 text-slate-400"
+                        }`}
+                      >
+                        {entry.connected ? (entry.isStable ? "CONNECTED · STABLE" : "CONNECTED · MOTION") : "OFFLINE"}
+                      </Badge>
+                    </div>
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         <PhotoIntakeCard />
 
@@ -452,6 +594,7 @@ export default function DashboardPage() {
                 { title: "Cash Drawer Station", path: "/cash-drawer", icon: Banknote, color: "text-emerald-400" },
                 { title: "Yard Storage Grid Map", path: "/yard-map", icon: Map, color: "text-blue-400" },
                 { title: "Mill Shipment Ledger", path: "/shipments", icon: Truck, color: "text-emerald-400" },
+                { title: "Scale Activity Journal", path: "/scale-log", icon: ScrollText, color: "text-rose-400" },
                 { title: "Reports & Analytics", path: "/reports", icon: BarChart3, color: "text-amber-400" },
                 { title: "Team Operations", path: "/team", icon: ClipboardList, color: "text-sky-400" },
                 ...(isAdmin

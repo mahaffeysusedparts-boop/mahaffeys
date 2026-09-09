@@ -376,6 +376,8 @@ export interface WeightTransaction {
   weightLbs: number;
   recordedAt: string;
   operatorName?: string;
+  /** Platform that captured this reading — audit trail for multi-scale yards. */
+  scaleName?: string;
 }
 
 export interface NMVTISReportLog {
@@ -389,6 +391,10 @@ export interface NMVTISReportLog {
   downloadUrl?: string;
 }
 
+export type ScaleAccentColor = 'emerald' | 'amber' | 'sky' | 'violet' | 'rose';
+
+export const SCALE_ACCENT_COLORS: ScaleAccentColor[] = ['emerald', 'amber', 'sky', 'violet', 'rose'];
+
 export interface ScaleConfig {
   id: string;
   name: string;
@@ -398,6 +404,36 @@ export interface ScaleConfig {
   baudRate?: number;
   webSocketUrl?: string;
   isDefault: boolean;
+  /** Preset color used to tag this platform across readouts and the journal. */
+  accentColor?: ScaleAccentColor;
+}
+
+/**
+ * Weight Activity Journal entry — automatically logged whenever a load goes
+ * on or comes off any platform (no ticket required). One event per settled
+ * weight change, not per poll tick.
+ */
+export interface ScaleWeightEvent {
+  id: string;
+  scaleId: string | null;   // null = legacy/unconfigured scale
+  scaleName: string;
+  direction: 'ADDED' | 'REMOVED';
+  deltaLbs: number;         // magnitude of the change
+  grossAfterLbs: number;    // platform reading after the change
+  detectedAt: string;       // ISO timestamp
+}
+
+/** Server-side snapshot of one platform in the all-scales registry (Scale Wall). */
+export interface ScaleRegistryEntry {
+  scaleId: string;
+  name: string;
+  location: string;
+  connectionType: string;
+  connected: boolean;
+  weight: number;
+  unit: WeightUnit;
+  isStable: boolean;
+  lastSeenAt?: string;
 }
 
 export interface YardSettings {
@@ -422,6 +458,9 @@ export interface YardSettings {
   shipmentVarianceTolerancePct?: number;
   scales: ScaleConfig[];
   currentScaleId: string | null;
+  /** Weight Activity Journal — logs every load that goes on/off a platform. */
+  scaleEventLoggingEnabled?: boolean; // default: on
+  scaleEventThresholdLbs?: number;    // default: 20
 }
 
 export type ShipmentStatus = 'STAGED' | 'IN_TRANSIT' | 'DELIVERED' | 'SETTLED' | 'DISCREPANCY';

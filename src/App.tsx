@@ -33,6 +33,7 @@ const UserManagementPage = lazy(() => import("./pages/UserManagementPage"));
 const LoginPage = lazy(() => import("./pages/LoginPage"));
 const PendingApprovalPage = lazy(() => import("./pages/PendingApprovalPage"));
 const ReportsPage = lazy(() => import("./pages/ReportsPage"));
+const ScaleLogPage = lazy(() => import("./pages/ScaleLogPage"));
 const ShipmentsPage = lazy(() => import("./pages/ShipmentsPage"));
 const TeamOpsPage = lazy(() => import("./pages/TeamOpsPage"));
 const OperationsPage = lazy(() => import("./pages/OperationsPage"));
@@ -211,6 +212,7 @@ const App = () => (
                 }
               />
               <Route path="/reports" element={<AppErrorBoundary><ProtectedRoute><ReportsPage /></ProtectedRoute></AppErrorBoundary>} />
+              <Route path="/scale-log" element={<AppErrorBoundary><ProtectedRoute><ScaleLogPage /></ProtectedRoute></AppErrorBoundary>} />
               <Route path="/operations" element={<AppErrorBoundary><ProtectedRoute><OperationsPage /></ProtectedRoute></AppErrorBoundary>} />
               <Route path="/shipments" element={<AppErrorBoundary><ProtectedRoute><ShipmentsPage /></ProtectedRoute></AppErrorBoundary>} />
               <Route path="/team" element={<AppErrorBoundary><ProtectedRoute><TeamOpsPage /></ProtectedRoute></AppErrorBoundary>} />

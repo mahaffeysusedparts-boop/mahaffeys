@@ -5,6 +5,7 @@ import { scaleService } from '@/services/scaleService';
 import { storageService } from '@/services/storageService';
 import { useAuth } from '@/context/AuthContext';
 import { ScaleConfigModal } from '../scale/ScaleConfigModal';
+import { ScaleQuickSwitcher } from '../scale/ScaleQuickSwitcher';
 import { QuickSearchButton } from './QuickSearch';
 import { SyncStatusIndicator } from './SyncStatusIndicator';
 import {
@@ -275,6 +276,9 @@ export const Navbar: React.FC = () => {
             {/* Right: Scale Live Status, Sync Status & User Profile Dropdown */}
             <div className="flex items-center space-x-2">
               <QuickSearchButton />
+
+              {/* Scale Quick Switcher */}
+              <ScaleQuickSwitcher />
 
               {/* Scale Indicator */}
               <button
