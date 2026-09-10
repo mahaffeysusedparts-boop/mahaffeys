@@ -1,4 +1,4 @@
-import { Ticket, ComplianceCaptures } from "@/types/scrap";
+import { Ticket, ComplianceCaptures, NMVTISReportLog, YardSettings } from "@/types/scrap";
 
 export interface DLScanResult {
   fullName: string;
@@ -290,4 +290,88 @@ export function downloadFile(content: string, fileName: string, mimeType: string
   link.click();
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
+}
+
+// ---------------------------------------------------------------------------
+// NMVTIS reporting cadence
+// ---------------------------------------------------------------------------
+
+export interface NmvtisStatus {
+  /** ISO timestamp of the next (or overdue) reporting deadline. */
+  dueDate: string;
+  isOverdue: boolean;
+  /** Whole days from now until dueDate; 0 = due today, negative = overdue days. */
+  daysUntilDue: number;
+  /** ISO timestamp of the most recent batch export, when one exists. */
+  lastBatchDate: string | null;
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Reporting day-of-month clamped into the target month (28 max avoids Feb roll-over). */
+function reportingDay(settings: Pick<YardSettings, "nmvtisReportingDayOfMonth">): number {
+  const day = Number(settings.nmvtisReportingDayOfMonth);
+  if (!Number.isFinite(day) || day < 1) return 1;
+  return Math.min(28, Math.round(day));
+}
+
+function cadenceMonths(settings: Pick<YardSettings, "nmvtisCadenceMonths">): number {
+  const months = Number(settings.nmvtisCadenceMonths);
+  if (!Number.isFinite(months) || months < 1) return 1;
+  return Math.min(12, Math.round(months));
+}
+
+function withDayOfMonth(year: number, monthIndex: number, day: number): Date {
+  const lastDay = new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
+  return new Date(Date.UTC(year, monthIndex, Math.min(day, lastDay), 12, 0, 0));
+}
+
+/**
+ * Derives the next NMVTIS deadline from the batch history + settings:
+ * lastBatch + cadence months, landing on the configured day-of-month. With no
+ * history the deadline is the upcoming configured day (this month, else next).
+ */
+export function getNmvtisStatus(
+  logs: Pick<NMVTISReportLog, "exportedAt">[],
+  settings: Pick<YardSettings, "nmvtisReportingDayOfMonth" | "nmvtisCadenceMonths">,
+  now: Date = new Date(),
+): NmvtisStatus {
+  const day = reportingDay(settings);
+  const cadence = cadenceMonths(settings);
+
+  const lastBatch = logs
+    .map((log) => new Date(log.exportedAt).getTime())
+    .filter((time) => Number.isFinite(time))
+    .sort((a, b) => b - a)[0];
+
+  let dueDate: Date;
+  if (Number.isFinite(lastBatch)) {
+    const anchor = new Date(lastBatch!);
+    // Roll the anchor forward by the cadence, then pin the reporting day.
+    const targetMonth = anchor.getUTCMonth() + cadence;
+    dueDate = withDayOfMonth(anchor.getUTCFullYear(), targetMonth, day);
+    // If the computed deadline already lapsed before the anchor itself, keep rolling.
+    while (dueDate.getTime() < anchor.getTime()) {
+      const next = new Date(Date.UTC(dueDate.getUTCFullYear(), dueDate.getUTCMonth() + cadence, 1));
+      dueDate = withDayOfMonth(next.getUTCFullYear(), next.getUTCMonth(), day);
+    }
+  } else {
+    const thisMonth = withDayOfMonth(now.getUTCFullYear(), now.getUTCMonth(), day);
+    dueDate = thisMonth.getTime() >= now.getTime() - DAY_MS
+      ? thisMonth
+      : withDayOfMonth(now.getUTCFullYear(), now.getUTCMonth() + cadence, day);
+  }
+
+  const daysUntilDue = Math.ceil((dueDate.getTime() - now.getTime()) / DAY_MS);
+  return {
+    dueDate: dueDate.toISOString(),
+    isOverdue: dueDate.getTime() < now.getTime(),
+    daysUntilDue,
+    lastBatchDate: Number.isFinite(lastBatch) ? new Date(lastBatch!).toISOString() : null,
+  };
+}
+
+/** True when the deadline is within `windowDays` (inclusive), or overdue. */
+export function isNmvtisDueSoon(status: NmvtisStatus, windowDays = 7): boolean {
+  return status.isOverdue || status.daysUntilDue <= windowDays;
 }
