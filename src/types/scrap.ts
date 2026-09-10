@@ -6,22 +6,6 @@ export type WeightUnit = 'LBS' | 'KG';
 
 export type UserRole = 'admin' | 'yard_manager' | 'scale_operator' | 'yard_employee';
 
-/** Bank coordinates printed on voucher checks. Synced like every other setting. */
-export interface BankInfo {
-  bankName: string;
-  routingNumber: string;
-  accountNumber: string;
-  /** First check number of the current pad; subsequent numbers auto-increment from the highest printed. */
-  checkStartNumber: number;
-}
-
-/** Admin override stamp recorded when a vehicle is crushed inside its title hold window. */
-export interface HoldOverride {
-  by: string;
-  at: string;
-  reason: string;
-}
-
 export type AccountStatus = 'pending' | 'approved' | 'rejected' | 'disabled';
 
 export type IpCameraType = 'MJPEG' | 'SNAPSHOT' | 'HLS' | 'RTSP_STREAM';
@@ -155,9 +139,6 @@ export interface PullYardVehicle {
   purchasePrice?: number;
   originSource?: string;
   notes?: string;
-  /** Title/crush hold deadline (ISO). Legacy records without it are backfilled from the intake date. */
-  holdUntil?: string;
-  holdOverride?: HoldOverride;
 }
 
 export interface CoreReturnLog {
@@ -324,10 +305,6 @@ export interface CarIntakeRecord {
   titleStatus: 'Clean Title' | 'Salvage Title' | 'Bill of Sale' | 'Missing Title (Affidavit)' | 'Junk / Scrap Certificate';
   titleNumber?: string;
   
-  /** Title/crush hold deadline stamped at intake (intakeDate + settings.crushHoldDays). */
-  holdUntil?: string;
-  holdOverride?: HoldOverride;
-  
   hasCatalyticConverter: boolean;
   catCondition: 'Original OEM' | 'Aftermarket' | 'Missing / Removed';
   catCodeSerial?: string;
@@ -389,8 +366,6 @@ export interface Ticket {
   finalPayout: number;
   payoutMethod: 'Cash' | 'Check' | 'ACH Direct Transfer' | 'Yard Credit';
   checkNumber?: string;
-  /** Audit stamp recorded when a voucher check is printed for this ticket. */
-  checkPrintedAt?: string;
   notes?: string;
   operatorName: string;
 }
@@ -475,16 +450,6 @@ export interface YardSettings {
   webSocketUrl: string;
   operatorName: string;
   nmvtisReportingId?: string;
-  /** Day of month the NMVTIS batch is due (1–28). */
-  nmvtisReportingDayOfMonth?: number;
-  /** Months between NMVTIS reporting deadlines (1 = monthly). */
-  nmvtisCadenceMonths?: number;
-  /** Title/crush hold length in days (see your state's requirement). */
-  crushHoldDays?: number;
-  crushHoldEnabled?: boolean;
-  /** Per-role page access overrides saved by an admin; keys missing fall back to the built-in defaults. */
-  rolePageAccess?: Partial<Record<UserRole, string[]>>;
-  bankInfo?: BankInfo;
   cashDrawerFloatLimit?: number;
   admissionFeeUsd?: number;
   publicHours?: string;
