@@ -133,6 +133,14 @@ export interface PullYardVehicle {
   fuelType?: string;
   dateSetInYard: string;
   status: PullYardVehicleStatus;
+  /** Crush-hold expiry (title hold) — derived lazily from dateSetInYard when absent. */
+  holdUntil?: string;
+  /** Admin override that authorized crushing inside the hold window. */
+  holdOverride?: {
+    by: string;
+    at: string;
+    reason: string;
+  };
   partsRemaining: string[];
   dismantlingLog: VehicleDismantlingLog;
   photoUrl?: string;
@@ -283,6 +291,14 @@ export interface CarIntakeRecord {
   series?: string;
   color: string;
   mileage?: number;
+  /** Earliest date the vehicle may legally be crushed (title/crush hold). */
+  holdUntil?: string;
+  /** Admin override that authorized crushing inside the hold window. */
+  holdOverride?: {
+    by: string;
+    at: string;
+    reason: string;
+  };
   bodyClass?: string;
   vehicleType?: string;
   driveType?: string;
@@ -461,6 +477,22 @@ export interface YardSettings {
   /** Weight Activity Journal — logs every load that goes on/off a platform. */
   scaleEventLoggingEnabled?: boolean; // default: on
   scaleEventThresholdLbs?: number;    // default: 20
+
+  /** Bank details printed on voucher checks. Syncs like all settings; masked in list views. */
+  bankInfo?: {
+    bankName: string;
+    routingNumber: string;
+    accountNumber: string;
+    checkStartNumber: number;
+  };
+
+  /** NMVTIS reporting cadence — day of month + interval between batches. */
+  nmvtisReportingDayOfMonth?: number; // default: 1
+  nmvtisCadenceMonths?: number;       // default: 1
+
+  /** Title/crush hold applied to salvage vehicles at intake. */
+  crushHoldEnabled?: boolean;         // default: on
+  crushHoldDays?: number;             // default: 30
 }
 
 export type ShipmentStatus = 'STAGED' | 'IN_TRANSIT' | 'DELIVERED' | 'SETTLED' | 'DISCREPANCY';

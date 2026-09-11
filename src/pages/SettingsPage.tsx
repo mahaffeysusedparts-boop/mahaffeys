@@ -41,6 +41,11 @@ import {
   Trash2,
   FlaskConical,
   ScrollText,
+  Landmark,
+  Eye,
+  EyeOff,
+  CalendarClock,
+  Lock,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -109,6 +114,7 @@ export default function SettingsPage() {
   const [isExportingBackup, setIsExportingBackup] = useState(false);
   const [isAuditingPhotos, setIsAuditingPhotos] = useState(false);
   const [photoAudit, setPhotoAudit] = useState<PhotoAuditResult | null>(null);
+  const [showBankDetails, setShowBankDetails] = useState(false);
   const importFileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => sharedStorage.subscribe(setConnectionStatus), []);
@@ -116,6 +122,25 @@ export default function SettingsPage() {
   const handleChange = (field: keyof YardSettings, value: any) => {
     setSettings((prev) => ({ ...prev, [field]: value }));
   };
+
+  const bank = settings.bankInfo;
+  const handleBankChange = (field: 'bankName' | 'routingNumber' | 'accountNumber' | 'checkStartNumber', value: string) => {
+    const next = {
+      bankName: bank?.bankName || '',
+      routingNumber: bank?.routingNumber || '',
+      accountNumber: bank?.accountNumber || '',
+      checkStartNumber: bank?.checkStartNumber ?? 1000,
+      ...bank,
+    };
+    if (field === 'checkStartNumber') {
+      next.checkStartNumber = Math.max(1, parseInt(value, 10) || 1);
+    } else {
+      next[field] = value;
+    }
+    handleChange('bankInfo', next);
+  };
+
+  const maskTail = (value: string) => (value ? `••••${value.slice(-4)}` : '—');
 
   // ── Multi-scale configuration ──────────────────────────────────────────────
   const [scalesVersion, setScalesVersion] = useState(0);
@@ -623,6 +648,177 @@ export default function SettingsPage() {
                   rows={2}
                   className="bg-slate-950 border-slate-800 text-white text-xs mt-1"
                 />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Section 2.5: Check & Payout Printing */}
+        <Card className="bg-slate-900 border-slate-800 text-white shadow-lg">
+          <CardHeader className="py-3 px-4 bg-slate-950/60 border-b border-slate-800 flex flex-row items-center justify-between">
+            <CardTitle className="text-sm font-bold tracking-wide uppercase text-slate-300 flex items-center gap-2">
+              <Landmark className="w-4 h-4 text-emerald-400" /> Check &amp; Payout Printing
+            </CardTitle>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={() => setShowBankDetails((s) => !s)}
+              className="h-7 gap-1.5 text-[11px] font-semibold text-slate-300 hover:text-white"
+            >
+              {showBankDetails ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+              {showBankDetails ? 'Hide Numbers' : 'Reveal Numbers'}
+            </Button>
+          </CardHeader>
+
+          <CardContent className="p-4 space-y-4">
+            <p className="text-[11px] text-slate-400 leading-relaxed">
+              Used by voucher-check printing on the Tickets page. Numbers stay masked everywhere except
+              this admin screen and the printed check itself.
+            </p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <Label className="text-xs text-slate-300">Bank Name</Label>
+                <Input
+                  value={bank?.bankName || ''}
+                  onChange={(e) => handleBankChange('bankName', e.target.value)}
+                  placeholder="First National Yard Bank"
+                  className="bg-slate-950 border-slate-800 text-white text-xs mt-1"
+                />
+              </div>
+
+              <div>
+                <Label className="text-xs text-slate-300">Routing Number (ABA)</Label>
+                <Input
+                  type={showBankDetails ? 'text' : 'password'}
+                  inputMode="numeric"
+                  value={bank?.routingNumber || ''}
+                  onChange={(e) => handleBankChange('routingNumber', e.target.value.replace(/\D/g, '').slice(0, 9))}
+                  placeholder="061000104"
+                  className="bg-slate-950 border-slate-800 text-white font-mono text-xs mt-1 tracking-widest"
+                />
+              </div>
+
+              <div>
+                <Label className="text-xs text-slate-300">Account Number</Label>
+                <Input
+                  type={showBankDetails ? 'text' : 'password'}
+                  inputMode="numeric"
+                  value={bank?.accountNumber || ''}
+                  onChange={(e) => handleBankChange('accountNumber', e.target.value.slice(0, 17))}
+                  placeholder="000123456789"
+                  className="bg-slate-950 border-slate-800 text-white font-mono text-xs mt-1 tracking-widest"
+                />
+              </div>
+
+              <div>
+                <Label className="text-xs text-slate-300">First Check Number</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  value={bank?.checkStartNumber ?? 1000}
+                  onChange={(e) => handleBankChange('checkStartNumber', e.target.value)}
+                  className="bg-slate-950 border-slate-800 text-white font-mono text-xs mt-1"
+                />
+                <p className="text-[10px] text-slate-500 mt-1">
+                  Sequential numbering continues from every check already stamped on tickets.
+                </p>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-slate-800 bg-slate-950 p-3 font-mono text-[11px] text-slate-400 space-y-1">
+              <div className="flex justify-between">
+                <span>Routing on file:</span>
+                <span className={showBankDetails ? 'text-emerald-400' : 'text-slate-300'}>
+                  {showBankDetails ? bank?.routingNumber || '—' : maskTail(bank?.routingNumber || '')}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span>Account on file:</span>
+                <span className={showBankDetails ? 'text-emerald-400' : 'text-slate-300'}>
+                  {showBankDetails ? bank?.accountNumber || '—' : maskTail(bank?.accountNumber || '')}
+                </span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Section 2.6: Compliance Automation (NMVTIS cadence + crush hold) */}
+        <Card className="bg-slate-900 border-slate-800 text-white shadow-lg">
+          <CardHeader className="py-3 px-4 bg-slate-950/60 border-b border-slate-800">
+            <CardTitle className="text-sm font-bold tracking-wide uppercase text-slate-300 flex items-center gap-2">
+              <CalendarClock className="w-4 h-4 text-blue-400" /> Compliance Automation — NMVTIS Cadence &amp; Crush Hold
+            </CardTitle>
+          </CardHeader>
+
+          <CardContent className="p-4 space-y-5">
+            <div className="space-y-3">
+              <p className="text-xs font-bold text-white">NMVTIS reporting cadence</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <Label className="text-[11px] text-slate-400">Report due day of month (1–28)</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={28}
+                    value={settings.nmvtisReportingDayOfMonth ?? 1}
+                    onChange={(e) => handleChange('nmvtisReportingDayOfMonth', Math.min(28, Math.max(1, parseInt(e.target.value, 10) || 1)))}
+                    className="bg-slate-950 border-slate-800 text-white font-mono text-xs mt-1 h-9"
+                  />
+                </div>
+                <div>
+                  <Label className="text-[11px] text-slate-400">Cadence (months between batches)</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={12}
+                    value={settings.nmvtisCadenceMonths ?? 1}
+                    onChange={(e) => handleChange('nmvtisCadenceMonths', Math.min(12, Math.max(1, parseInt(e.target.value, 10) || 1)))}
+                    className="bg-slate-950 border-slate-800 text-white font-mono text-xs mt-1 h-9"
+                  />
+                </div>
+              </div>
+              <p className="text-[10px] text-slate-500">
+                Amber banners appear on the Dashboard and Compliance hub when a batch is due within 7 days; they turn
+                rose once overdue.
+              </p>
+            </div>
+
+            <div className="space-y-3 pt-4 border-t border-slate-800">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-xs font-bold text-white">Title / crush hold</p>
+                  <p className="text-[10px] text-slate-400 mt-0.5 max-w-md leading-relaxed">
+                    Vehicles salvaged at intake cannot be crushed for this many days. Overriding early requires an
+                    admin reason. <span className="text-amber-400">Check your state's requirement</span> — defaults
+                    are not legal advice.
+                  </p>
+                </div>
+                <Switch
+                  checked={settings.crushHoldEnabled !== false}
+                  onCheckedChange={(checked) => handleChange('crushHoldEnabled', checked)}
+                  aria-label="Toggle crush hold"
+                />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <Label className="text-[11px] text-slate-400 flex items-center gap-1.5">
+                    <Lock className="w-3 h-3 text-amber-400" /> Hold length (days)
+                  </Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={365}
+                    disabled={settings.crushHoldEnabled === false}
+                    value={settings.crushHoldDays ?? 30}
+                    onChange={(e) => handleChange('crushHoldDays', Math.min(365, Math.max(1, parseInt(e.target.value, 10) || 30)))}
+                    className="bg-slate-950 border-slate-800 text-white font-mono text-xs mt-1 h-9 disabled:opacity-50"
+                  />
+                  <p className="text-[10px] text-slate-500 mt-1">
+                    Stamped on new intakes; legacy vehicles backfill from their set-in-yard date.
+                  </p>
+                </div>
               </div>
             </div>
           </CardContent>

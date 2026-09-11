@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Ticket, YardSettings } from '@/types/scrap';
 import { storageService } from '@/services/storageService';
+import { CheckPrintModal } from '@/components/receipts/CheckPrintModal';
 import {
   Dialog,
   DialogContent,
@@ -8,7 +9,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Printer, ShieldCheck, QrCode, AlertTriangle, UserCheck, Building } from 'lucide-react';
+import { Printer, ShieldCheck, QrCode, AlertTriangle, UserCheck, Building, Landmark } from 'lucide-react';
 
 interface ReceiptModalProps {
   ticket: Ticket | null;
@@ -17,6 +18,8 @@ interface ReceiptModalProps {
 }
 
 export const ReceiptModal: React.FC<ReceiptModalProps> = ({ ticket, open, onOpenChange }) => {
+  const [checkOpen, setCheckOpen] = useState(false);
+
   if (!ticket) return null;
 
   const settings: YardSettings = storageService.getSettings();
@@ -258,7 +261,8 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ ticket, open, onOpen
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[720px] bg-slate-950 text-slate-100 border-slate-800 max-h-[90vh] overflow-y-auto printable-receipt-container">
         <DialogHeader className="border-b border-slate-800 pb-3 print:hidden">
           <div className="flex items-center justify-between">
@@ -275,6 +279,19 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ ticket, open, onOpen
             >
               <Printer className="w-4 h-4 mr-1.5" /> Print Both Copies
             </Button>
+            {ticket.payoutMethod === 'Check' && (
+              <Button
+                onClick={() => {
+                  onOpenChange(false);
+                  setCheckOpen(true);
+                }}
+                size="sm"
+                variant="outline"
+                className="border-sky-500/40 bg-sky-950/40 hover:bg-sky-900/60 text-sky-300 font-bold"
+              >
+                <Landmark className="w-4 h-4 mr-1.5" /> Print Check
+              </Button>
+            )}
           </div>
         </DialogHeader>
 
@@ -303,5 +320,12 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ ticket, open, onOpen
 
       </DialogContent>
     </Dialog>
+
+      <CheckPrintModal
+        ticket={ticket}
+        open={checkOpen}
+        onOpenChange={setCheckOpen}
+      />
+    </>
   );
 };

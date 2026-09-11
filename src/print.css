@@ -4,6 +4,49 @@
     margin: 0;
   }
 
+  @page check-sheet-page {
+    size: letter portrait;
+    margin: 0.5in;
+  }
+
+  /* Voucher check: one letter page. The app chrome is hidden by the shared
+     .printable-receipt-container pipeline in globals.css; these rules pin the
+     check itself to exact paper geometry. */
+  .check-sheet {
+    page: check-sheet-page;
+    width: 7.5in !important;
+    max-width: 7.5in !important;
+    min-height: 10in;
+    margin: 0 auto !important;
+    padding: 0.15in !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    border: 1px solid #000000 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    break-inside: avoid;
+    page-break-inside: avoid;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  /* End-of-day Z-report: letter paper, but allowed to flow across pages. */
+  .z-report-sheet {
+    page: check-sheet-page;
+    width: 7.5in !important;
+    max-width: 7.5in !important;
+    margin: 0 auto !important;
+    padding: 0.25in 0.3in !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    border: 1px solid #000000 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    break-inside: auto;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
   body {
     margin: 0 !important;
     background: #ffffff !important;

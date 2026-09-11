@@ -1,4 +1,4 @@
-import { Ticket, ComplianceCaptures } from "@/types/scrap";
+import { Ticket, ComplianceCaptures, NMVTISReportLog, YardSettings } from "@/types/scrap";
 
 export interface DLScanResult {
   fullName: string;
@@ -290,4 +290,73 @@ export function downloadFile(content: string, fileName: string, mimeType: string
   link.click();
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// NMVTIS reporting cadence
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface NmvtisStatus {
+  /** Next scheduled batch due date (local time). */
+  dueDate: Date;
+  isOverdue: boolean;
+  /** Whole calendar days from `now` until the due date — negative when overdue. */
+  daysUntilDue: number;
+  /** ISO timestamp of the most recent exported batch, or null if none ever. */
+  lastBatchDate: string | null;
+}
+
+const DAY_MS = 86_400_000;
+const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+
+/**
+ * Derives the next NMVTIS reporting due date from the yard's cadence settings
+ * and the batch history:
+ * - With history: due on the configured day-of-month, `cadenceMonths` after
+ *   the month of the last batch (advancing further if the last batch landed
+ *   after that slot, i.e. it was reported late).
+ * - Without history: due on the configured day-of-month in the current month
+ *   (so a yard that never reported shows as overdue once the day passes).
+ */
+export function getNmvtisStatus(
+  logs: NMVTISReportLog[],
+  settings: YardSettings,
+  now: Date = new Date()
+): NmvtisStatus {
+  const dayOfMonth = Math.min(Math.max(settings.nmvtisReportingDayOfMonth ?? 1, 1), 28);
+  const cadenceMonths = Math.max(settings.nmvtisCadenceMonths ?? 1, 1);
+
+  const sorted = [...logs].sort((a, b) => b.exportedAt.localeCompare(a.exportedAt));
+  const lastBatchDate = sorted[0]?.exportedAt ?? null;
+
+  const slotInMonth = (base: Date, monthsAhead: number): Date =>
+    new Date(base.getFullYear(), base.getMonth() + monthsAhead, dayOfMonth);
+
+  let dueDate: Date;
+  if (lastBatchDate) {
+    const anchor = new Date(lastBatchDate);
+    dueDate = slotInMonth(anchor, cadenceMonths);
+    // A late batch (exported on/after the next slot) pushes the schedule forward.
+    while (dueDate.getTime() <= anchor.getTime()) {
+      dueDate = new Date(dueDate.getFullYear(), dueDate.getMonth() + cadenceMonths, dayOfMonth);
+    }
+  } else {
+    dueDate = slotInMonth(startOfDay(now), 0);
+  }
+
+  const daysUntilDue = Math.round(
+    (startOfDay(dueDate).getTime() - startOfDay(now).getTime()) / DAY_MS
+  );
+
+  return {
+    dueDate,
+    isOverdue: daysUntilDue < 0,
+    daysUntilDue,
+    lastBatchDate,
+  };
+}
+
+/** True when the NMVTIS banner should be shown: due within 7 days or overdue. */
+export function isNmvtisBannerActive(status: NmvtisStatus): boolean {
+  return status.isOverdue || status.daysUntilDue <= 7;
 }

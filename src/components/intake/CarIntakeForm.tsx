@@ -1,10 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { CarIntakeRecord, Ticket } from '@/types/scrap';
 import { storageService } from '@/services/storageService';
+import { apiRequest } from '@/services/apiClient';
 import { uploadDataUrl } from '@/services/mediaService';
 import { PrintStickerModal } from '@/components/vehicle/PrintStickerModal';
 import { VehicleStickerData } from '@/components/vehicle/VehicleSticker';
 import { VinScannerModal } from '@/components/intake/VinScannerModal';
+import { PlateScannerModal } from '@/components/intake/PlateScannerModal';
+import { computeHoldUntilForIntake } from '@/utils/holdUtils';
 
 import { decodeVin, VinDecodeResult } from '@/services/vinService';
 import { Button } from '@/components/ui/button';
@@ -76,6 +79,10 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
   // AI Door-Jamb VIN Scanner
   const [vinScannerOpen, setVinScannerOpen] = useState(false);
   const [doorJambPhotoUrl, setDoorJambPhotoUrl] = useState<string>('');
+
+  // Phone plate scanner (rear camera) + LPR seller-history lookup
+  const [plateScannerOpen, setPlateScannerOpen] = useState(false);
+  const [lprLoading, setLprLoading] = useState(false);
   
   // References for device camera / file capture
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -130,6 +137,36 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
 
   const [payoutMethod, setPayoutMethod] = useState<'Cash' | 'Check' | 'ACH Direct Transfer'>('Cash');
   const [checkNumber, setCheckNumber] = useState<string>('CHK-' + Math.floor(1000 + Math.random() * 9000));
+
+  // Confirmed plate from the scanner: fill the field, then pull seller history via LPR.
+  const handlePlateCaptured = async (plate: string) => {
+    setLicensePlate(plate);
+    setLprLoading(true);
+    try {
+      const result = await apiRequest<{ plate: string; customer: { fullName: string; phone: string; idNumber?: string; address?: string; vehicleLicensePlate?: string } | null }>(
+        `/api/lpr/lookup?plate=${encodeURIComponent(plate)}`
+      );
+      if (result.customer) {
+        setSellerName((prev) => prev || result.customer!.fullName);
+        setSellerPhone((prev) => prev || result.customer!.phone || '');
+        setSellerIdNumber((prev) => prev || result.customer!.idNumber || '');
+        setSellerAddress((prev) => prev || result.customer!.address || '');
+        toast.success(`Seller history found for plate ${plate}`, {
+          description: `${result.customer.fullName}${result.customer.phone ? ` · ${result.customer.phone}` : ''} — fields pre-filled.`,
+        });
+      } else {
+        toast.info(`No prior seller found for plate ${plate}`, {
+          description: 'This plate is not on file yet — enter the seller details below.',
+        });
+      }
+    } catch (error) {
+      toast.warning('Seller lookup unavailable', {
+        description: error instanceof Error ? error.message : 'The plate was kept — you can retry later.',
+      });
+    } finally {
+      setLprLoading(false);
+    }
+  };
 
   const handleAutoGenerateReceiptNumber = () => {
     const newNum = `T-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
@@ -280,6 +317,12 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
       vinDecoderSource: decodedVehicle?.source,
       titleStatus,
       titleNumber,
+      // Title/crush hold — stamped at intake from the yard's hold settings.
+      holdUntil:
+        computeHoldUntilForIntake(new Date(), {
+          enabled: settings.crushHoldEnabled !== false,
+          crushHoldDays: settings.crushHoldDays ?? 30,
+        }) ?? undefined,
       yardStatus: 'PENDING',
       hasCatalyticConverter,
       catCondition,
@@ -789,8 +832,29 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
                   <Input value={sellerPhone} onChange={(e) => setSellerPhone(e.target.value)} placeholder="(555) 555-0123" className="mt-1 h-10 bg-slate-950 border-slate-800 text-white text-xs" />
                 </div>
                 <div>
-                  <Label className="flex items-center justify-between text-xs text-slate-300"><span>License Plate</span>{licensePlate && <span className="font-mono text-[10px] text-sky-300">PLATE ON FILE</span>}</Label>
-                  <Input value={licensePlate} onChange={(e) => setLicensePlate(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))} placeholder="ABC1234" className="mt-1 h-10 bg-slate-950 border-slate-800 text-amber-300 font-mono font-bold uppercase" />
+                  <Label className="flex items-center justify-between text-xs text-slate-300">
+                    <span>License Plate</span>
+                    {licensePlate && <span className="font-mono text-[10px] text-sky-300">PLATE ON FILE</span>}
+                  </Label>
+                  <div className="flex gap-2 mt-1">
+                    <Input
+                      value={licensePlate}
+                      onChange={(e) => setLicensePlate(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
+                      placeholder="ABC1234"
+                      className="h-10 bg-slate-950 border-slate-800 text-amber-300 font-mono font-bold uppercase"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setPlateScannerOpen(true)}
+                      disabled={lprLoading}
+                      className="h-10 shrink-0 gap-1.5 border-sky-500/40 bg-sky-950/40 text-sky-300 hover:bg-sky-900/50 font-bold text-xs"
+                      title="Scan plate with the phone camera"
+                    >
+                      {lprLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <ScanLine className="w-4 h-4" />}
+                      Scan
+                    </Button>
+                  </div>
                 </div>
                 <div className="sm:col-span-2">
 
@@ -1033,6 +1097,12 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
         open={vinScannerOpen}
         onOpenChange={setVinScannerOpen}
         onConfirm={handleVinCaptured}
+      />
+
+      <PlateScannerModal
+        open={plateScannerOpen}
+        onOpenChange={setPlateScannerOpen}
+        onConfirm={(plate) => void handlePlateCaptured(plate)}
       />
 
       <PrintStickerModal

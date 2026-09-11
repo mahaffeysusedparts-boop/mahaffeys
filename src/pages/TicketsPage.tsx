@@ -4,6 +4,7 @@ import { storageService } from '@/services/storageService';
 import { sharedStorage } from '@/services/sharedStorage';
 import { Navbar } from '@/components/layout/Navbar';
 import { ReceiptModal } from '@/components/receipts/ReceiptModal';
+import { CheckPrintModal } from '@/components/receipts/CheckPrintModal';
 import { calculateComplianceScore } from '@/utils/complianceUtils';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -32,6 +33,7 @@ import {
   ShieldCheck,
   Edit3,
   Hash,
+  Landmark,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -42,6 +44,8 @@ export default function TicketsPage() {
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
   const [inspectionTicket, setInspectionTicket] = useState<Ticket | null>(null);
   const [receiptOpen, setReceiptOpen] = useState(false);
+  const [checkTicket, setCheckTicket] = useState<Ticket | null>(null);
+  const [checkOpen, setCheckOpen] = useState(false);
 
   // Edit Receipt Number Modal
   const [editReceiptTicket, setEditReceiptTicket] = useState<Ticket | null>(null);
@@ -342,6 +346,22 @@ export default function TicketsPage() {
                             <Printer className="w-3.5 h-3.5 mr-1 text-emerald-400" /> Receipt
                           </Button>
 
+                          {t.payoutMethod === 'Check' && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                setCheckTicket(t);
+                                setCheckOpen(true);
+                              }}
+                              disabled={t.status === 'VOIDED'}
+                              className="h-7 px-2 text-sky-300 hover:text-sky-200 hover:bg-slate-800 text-xs"
+                              title="Print voucher check"
+                            >
+                              <Landmark className="w-3.5 h-3.5 mr-1" /> Check
+                            </Button>
+                          )}
+
                           {t.status === 'COMPLETED' && (
                             <Button
                               variant="ghost"
@@ -369,6 +389,12 @@ export default function TicketsPage() {
         ticket={selectedTicket}
         open={receiptOpen}
         onOpenChange={setReceiptOpen}
+      />
+
+      <CheckPrintModal
+        ticket={checkTicket}
+        open={checkOpen}
+        onOpenChange={setCheckOpen}
       />
 
       {/* EDIT RECEIPT NUMBER MODAL */}

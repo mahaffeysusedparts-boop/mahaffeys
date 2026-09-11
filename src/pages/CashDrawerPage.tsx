@@ -15,6 +15,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { EndOfDayReport } from "@/components/receipts/EndOfDayReport";
 import {
   Banknote,
   Plus,
@@ -28,6 +29,7 @@ import {
   Calculator,
   Receipt,
   Vault,
+  ClipboardList,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -35,6 +37,7 @@ export default function CashDrawerPage() {
   const [logs, setLogs] = useState<CashDrawerLog[]>([]);
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [reconcileModalOpen, setReconcileModalOpen] = useState(false);
+  const [zReportOpen, setZReportOpen] = useState(false);
 
   // Replenish form
   const [addAmount, setAddAmount] = useState(2000);
@@ -101,6 +104,10 @@ export default function CashDrawerPage() {
     setReconcileModalOpen(false);
     toast.success(`End-of-day cash reconciliation completed!`, {
       description: `Counted Total: $${countedTotal.toFixed(2)}`,
+      action: {
+        label: "View Z-Report",
+        onClick: () => setZReportOpen(true),
+      },
     });
   };
 
@@ -132,6 +139,14 @@ export default function CashDrawerPage() {
           </div>
 
           <div className="flex items-center gap-2">
+            <Button
+              onClick={() => setZReportOpen(true)}
+              variant="outline"
+              className="border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold gap-1.5"
+            >
+              <ClipboardList className="w-4 h-4 text-emerald-400" /> End of Day
+            </Button>
+
             <Button
               onClick={() => setReconcileModalOpen(true)}
               variant="outline"
@@ -432,6 +447,9 @@ export default function CashDrawerPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* End-of-Day Z Report */}
+      <EndOfDayReport open={zReportOpen} onOpenChange={setZReportOpen} />
     </div>
   );
 }

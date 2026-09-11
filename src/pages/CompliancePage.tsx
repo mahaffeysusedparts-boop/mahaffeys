@@ -7,7 +7,10 @@ import {
   generateLawEnforcementLogCsv,
   downloadFile,
   calculateComplianceScore,
+  getNmvtisStatus,
+  isNmvtisBannerActive,
 } from "@/utils/complianceUtils";
+import { buildEvidencePackage, downloadEvidencePackage, EVIDENCE_MAX_TICKETS } from "@/utils/evidencePackage";
 import {
   analyzeDriverLicenseImage,
   analyzeLicensePlateImage,
@@ -30,6 +33,16 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   ShieldCheck,
   FileSpreadsheet,
   Download,
@@ -47,6 +60,9 @@ import {
   Scan,
   CreditCard,
   Building,
+  PackageCheck,
+  CalendarClock,
+  SendHorizonal,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -57,6 +73,8 @@ export const CompliancePage: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<"ALL" | "PENDING" | "REPORTED" | "DISCREPANCY">("ALL");
   const [selectedTicketForModal, setSelectedTicketForModal] = useState<Ticket | null>(null);
+  const [reportAllOpen, setReportAllOpen] = useState(false);
+  const [isPackaging, setIsPackaging] = useState(false);
 
   // AI Vision Inspection State inside Modal
   const [isAiInspecting, setIsAiScanning] = useState(false);
@@ -102,6 +120,13 @@ export const CompliancePage: React.FC = () => {
   const pendingCount = vehicleTickets.filter(
     (t) => !(t.complianceCaptures?.nmvtisReported || t.carRecord?.complianceCaptures?.nmvtisReported)
   ).length;
+
+  const pendingVehicleTickets = vehicleTickets.filter(
+    (t) => !(t.complianceCaptures?.nmvtisReported || t.carRecord?.complianceCaptures?.nmvtisReported)
+  );
+
+  const nmvtisStatus = getNmvtisStatus(logs, yardSettings);
+  const nmvtisBannerActive = isNmvtisBannerActive(nmvtisStatus);
 
   const reportedCount = vehicleTickets.filter(
     (t) => t.complianceCaptures?.nmvtisReported || t.carRecord?.complianceCaptures?.nmvtisReported
@@ -213,6 +238,86 @@ export const CompliancePage: React.FC = () => {
     toast.success("State Law Enforcement Anti-Theft Log Exported!");
   };
 
+  // One-click batch: marks every pending vehicle as reported, logs one batch entry,
+  // and downloads the NMVTIS CSV in a single action.
+  const handleReportAllPending = () => {
+    if (pendingVehicleTickets.length === 0) {
+      toast.info("No vehicles are pending NMVTIS reporting");
+      return;
+    }
+
+    const csvContent = generateNMVTISCsv(pendingVehicleTickets, yardSettings.nmvtisReportingId || yardSettings.licenseNumber);
+    const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+    const batchId = `NMVTIS-BATCH-${dateStr}-${Math.floor(100 + Math.random() * 900)}`;
+    downloadFile(csvContent, `${batchId}.csv`, "text/csv;charset=utf-8;");
+
+    const targetIds = pendingVehicleTickets.map((t) => t.id);
+    storageService.markTicketsAsNMVTISReported(targetIds, batchId);
+
+    storageService.saveNMVTISLog({
+      id: `log-${Date.now()}`,
+      batchId,
+      exportedAt: new Date().toISOString(),
+      ticketCount: targetIds.length,
+      ticketIds: targetIds,
+      status: "EXPORTED",
+      exportedBy: yardSettings.operatorName,
+      downloadUrl: `${batchId}.csv`,
+    });
+
+    loadData();
+    setSelectedTicketIds([]);
+    setReportAllOpen(false);
+    toast.success(`Reported ${targetIds.length} vehicles to NMVTIS`, {
+      description: `Batch ${batchId} · CSV downloaded`,
+    });
+  };
+
+  // Evidence ZIP: works with the multi-select, or the whole filtered view.
+  const handlePackageEvidence = async (scopeTickets?: Ticket[]) => {
+    const targets = scopeTickets ?? (selectedTicketIds.length > 0
+      ? vehicleTickets.filter((t) => selectedTicketIds.includes(t.id))
+      : filteredTickets);
+
+    if (targets.length === 0) {
+      toast.error("No vehicle records selected to package");
+      return;
+    }
+    if (targets.length > EVIDENCE_MAX_TICKETS) {
+      toast.error(`Too many tickets for one package (${targets.length})`, {
+        description: `Cap is ${EVIDENCE_MAX_TICKETS} — split the selection by month.`,
+      });
+      return;
+    }
+
+    setIsPackaging(true);
+    const toastId = toast.loading("Building evidence package…", {
+      description: "Collecting compliance photos and CSVs",
+    });
+    try {
+      const result = await buildEvidencePackage(targets, {
+        settings: yardSettings,
+        onProgress: (done, total) => {
+          if (total > 0 && done % 5 === 0) {
+            toast.loading("Building evidence package…", {
+              id: toastId,
+              description: `${done}/${total} photos collected`,
+            });
+          }
+        },
+      });
+      downloadEvidencePackage(result);
+      toast.success(`Evidence package ready — ${result.fileCount} files`, {
+        id: toastId,
+        description: `${result.fileName}${result.skippedPhotos ? ` · ${result.skippedPhotos} photo(s) skipped` : ""}`,
+      });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Evidence packaging failed", { id: toastId });
+    } finally {
+      setIsPackaging(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 font-sans">
       <Navbar />
@@ -239,7 +344,7 @@ export const CompliancePage: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Button
               onClick={handleExportPoliceLog}
               variant="outline"
@@ -248,13 +353,71 @@ export const CompliancePage: React.FC = () => {
               <FileSpreadsheet className="w-4 h-4 text-emerald-400" /> Law Enforcement Log (CSV)
             </Button>
             <Button
+              onClick={() => handlePackageEvidence()}
+              disabled={isPackaging}
+              variant="outline"
+              className="border-violet-500/40 bg-violet-950/40 hover:bg-violet-900/50 text-violet-300 text-xs gap-1.5"
+            >
+              {isPackaging ? <Loader2 className="w-4 h-4 animate-spin" /> : <PackageCheck className="w-4 h-4" />}
+              Package Evidence ({selectedTicketIds.length > 0 ? selectedTicketIds.length : filteredTickets.length})
+            </Button>
+            <Button
               onClick={handleExportNMVTISBatch}
+              variant="outline"
+              className="border-blue-500/40 bg-blue-950/40 hover:bg-blue-900/50 text-blue-300 text-xs gap-1.5"
+            >
+              <Download className="w-4 h-4" /> Export Selected ({selectedTicketIds.length > 0 ? selectedTicketIds.length : filteredTickets.length})
+            </Button>
+            <Button
+              onClick={() => setReportAllOpen(true)}
+              disabled={pendingCount === 0}
               className="bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs gap-1.5 shadow-lg shadow-blue-950"
             >
-              <Download className="w-4 h-4" /> Export NMVTIS Batch ({selectedTicketIds.length > 0 ? selectedTicketIds.length : filteredTickets.length})
+              <SendHorizonal className="w-4 h-4" /> Report All Pending ({pendingCount})
             </Button>
           </div>
         </div>
+
+        {/* NMVTIS CADENCE BANNER — amber within 7 days of due, rose once overdue */}
+        {nmvtisBannerActive && (
+          <div
+            className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border p-4 ${
+              nmvtisStatus.isOverdue
+                ? "border-rose-500/40 bg-rose-500/10"
+                : "border-amber-500/40 bg-amber-500/10"
+            }`}
+          >
+            <div className="flex items-start gap-3">
+              <CalendarClock
+                className={`w-5 h-5 mt-0.5 shrink-0 ${nmvtisStatus.isOverdue ? "text-rose-400 animate-pulse" : "text-amber-400"}`}
+              />
+              <div>
+                <p className={`text-sm font-bold ${nmvtisStatus.isOverdue ? "text-rose-300" : "text-amber-200"}`}>
+                  {nmvtisStatus.isOverdue
+                    ? `NMVTIS report overdue — was due ${nmvtisStatus.dueDate.toLocaleDateString()}`
+                    : `NMVTIS report due ${nmvtisStatus.dueDate.toLocaleDateString()} — ${nmvtisStatus.daysUntilDue} day${nmvtisStatus.daysUntilDue === 1 ? "" : "s"}`}
+                </p>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  {pendingCount} vehicle{pendingCount === 1 ? "" : "s"} pending ·{" "}
+                  {nmvtisStatus.lastBatchDate
+                    ? `last batch ${new Date(nmvtisStatus.lastBatchDate).toLocaleDateString()}`
+                    : "no batch exported yet"}
+                  {" · "}cadence set in Settings
+                </p>
+              </div>
+            </div>
+            <Button
+              size="sm"
+              onClick={() => setReportAllOpen(true)}
+              disabled={pendingCount === 0}
+              className={`text-white font-bold text-xs shrink-0 ${
+                nmvtisStatus.isOverdue ? "bg-rose-600 hover:bg-rose-500" : "bg-amber-600 hover:bg-amber-500"
+              }`}
+            >
+              <SendHorizonal className="w-4 h-4 mr-1.5" /> Report All Pending Now
+            </Button>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <Card className="bg-slate-900 border-slate-800 text-white">
@@ -566,6 +729,17 @@ export const CompliancePage: React.FC = () => {
                       Run AI Photo OCR Audit
                     </Button>
 
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handlePackageEvidence([selectedTicketForModal])}
+                      disabled={isPackaging}
+                      className="border-violet-500/40 bg-violet-950/40 hover:bg-violet-900/50 text-violet-300 font-bold text-xs gap-1.5"
+                    >
+                      {isPackaging ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PackageCheck className="w-3.5 h-3.5" />}
+                      Package Evidence
+                    </Button>
+
                     <Badge className="bg-emerald-950 text-emerald-400 border-emerald-500/40 font-mono">
                       {selectedTicketForModal.carRecord?.vin}
                     </Badge>
@@ -668,6 +842,44 @@ export const CompliancePage: React.FC = () => {
             </DialogContent>
           </Dialog>
         )}
+
+        {/* REPORT ALL PENDING CONFIRMATION — shows the count + VIN preview */}
+        <AlertDialog open={reportAllOpen} onOpenChange={setReportAllOpen}>
+          <AlertDialogContent className="bg-slate-950 text-slate-100 border-slate-800 sm:max-w-[520px]">
+            <AlertDialogHeader>
+              <AlertDialogTitle className="flex items-center gap-2 text-base font-bold text-white">
+                <SendHorizonal className="w-5 h-5 text-blue-400" /> Report all pending vehicles to NMVTIS?
+              </AlertDialogTitle>
+              <AlertDialogDescription className="text-xs text-slate-400">
+                This marks <strong className="text-white">{pendingVehicleTickets.length}</strong> pending
+                vehicle ticket{pendingVehicleTickets.length === 1 ? "" : "s"} as reported, records one batch log
+                entry, and downloads the NMVTIS CSV.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+
+            <div className="max-h-48 overflow-y-auto rounded-xl border border-slate-800 bg-slate-900 p-3 space-y-1 font-mono text-[11px]">
+              {pendingVehicleTickets.slice(0, 50).map((t) => (
+                <div key={t.id} className="flex justify-between gap-3">
+                  <span className="text-amber-300">{t.carRecord?.vin || 'NO VIN'}</span>
+                  <span className="text-slate-500 truncate">{t.customerName}</span>
+                </div>
+              ))}
+              {pendingVehicleTickets.length > 50 && (
+                <p className="text-slate-500 pt-1">…and {pendingVehicleTickets.length - 50} more</p>
+              )}
+            </div>
+
+            <AlertDialogFooter>
+              <AlertDialogCancel className="text-slate-400 text-xs">Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleReportAllPending}
+                className="bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs"
+              >
+                <SendHorizonal className="w-3.5 h-3.5 mr-1.5" /> Report {pendingVehicleTickets.length} Vehicles
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </main>
     </div>
   );

@@ -43,9 +43,11 @@ import {
   BarChart3,
   ClipboardList,
   ScrollText,
+  CalendarClock,
 } from "lucide-react";
 import { toast } from "sonner";
 import { PhotoIntakeCard } from "@/components/photo-intake/PhotoIntakeCard";
+import { getNmvtisStatus, isNmvtisBannerActive } from "@/utils/complianceUtils";
 
 export default function DashboardPage() {
   const [tickets, setTickets] = useState<Ticket[]>([]);
@@ -442,6 +444,46 @@ export default function DashboardPage() {
         )}
 
         <PhotoIntakeCard />
+
+        {/* NMVTIS cadence alert tile — amber when due soon, rose when overdue */}
+        {(() => {
+          const nmvtisStatus = getNmvtisStatus(storageService.getNMVTISLogs(), settings);
+          if (!isNmvtisBannerActive(nmvtisStatus)) return null;
+          const nmvtisPending = tickets.filter(
+            (t) =>
+              t.ticketType === "CAR_SALVAGE" &&
+              t.carRecord &&
+              !(t.complianceCaptures?.nmvtisReported || t.carRecord.complianceCaptures?.nmvtisReported),
+          ).length;
+          return (
+            <Link
+              to="/compliance"
+              className={`flex items-center justify-between gap-4 rounded-2xl border p-4 transition-colors ${
+                nmvtisStatus.isOverdue
+                  ? "border-rose-500/40 bg-rose-500/10 hover:bg-rose-500/20"
+                  : "border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20"
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <CalendarClock
+                  className={`w-5 h-5 shrink-0 ${nmvtisStatus.isOverdue ? "text-rose-400 animate-pulse" : "text-amber-400"}`}
+                />
+                <div>
+                  <p className={`text-sm font-bold ${nmvtisStatus.isOverdue ? "text-rose-300" : "text-amber-200"}`}>
+                    NMVTIS report due {nmvtisStatus.dueDate.toLocaleDateString()} — {nmvtisPending} vehicle
+                    {nmvtisPending === 1 ? "" : "s"} pending
+                  </p>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    {nmvtisStatus.isOverdue
+                      ? `Overdue by ${Math.abs(nmvtisStatus.daysUntilDue)} day${Math.abs(nmvtisStatus.daysUntilDue) === 1 ? "" : "s"} — federal reporting requirement`
+                      : "Open the compliance hub to report the pending batch"}
+                  </p>
+                </div>
+              </div>
+              <ChevronRight className="w-5 h-5 text-slate-500 shrink-0" />
+            </Link>
+          );
+        })()}
 
         {/* Top KPI Cards Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

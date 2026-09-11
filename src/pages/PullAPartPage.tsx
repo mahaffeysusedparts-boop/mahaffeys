@@ -7,6 +7,8 @@ import {
   AdmissionPass,
   PullYardVehicleStatus,
 } from "@/types/scrap";
+import { useAuth } from "@/context/AuthContext";
+import { holdStatus, isCrushLocked, HoldOptions } from "@/utils/holdUtils";
 import { analyzeVinImage } from "@/services/aiVisionService";
 import { decodeVin, VinDecodeResult } from "@/services/vinService";
 import { PartsInterchangeModal } from "@/components/inventory/PartsInterchangeModal";
@@ -29,6 +31,16 @@ import {
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Wrench,
   Car,
@@ -53,6 +65,7 @@ import {
   Ban,
   Layers3,
   Sparkles,
+  Lock,
 } from "lucide-react";
 import { BulkVehicleUploadModal } from "@/components/inventory/BulkVehicleUploadModal";
 import { toast } from "sonner";
@@ -101,6 +114,19 @@ export default function PullAPartPage() {
 
   // Delete Confirmation Modal
   const [deletingVehicle, setDeletingVehicle] = useState<PullYardVehicle | null>(null);
+
+  // Crush-hold override dialog
+  const [crushOverrideVehicle, setCrushOverrideVehicle] = useState<PullYardVehicle | null>(null);
+  const [crushOverrideReason, setCrushOverrideReason] = useState("");
+  const { user: authUser, isAdmin } = useAuth();
+
+  const holdOptions = (): HoldOptions => {
+    const settings = storageService.getSettings();
+    return {
+      enabled: settings.crushHoldEnabled !== false,
+      crushHoldDays: settings.crushHoldDays ?? 30,
+    };
+  };
 
   // Print Pass Modal
   const [selectedVehForTicket, setSelectedVehForTicket] = useState<PullYardVehicle | null>(null);
@@ -249,13 +275,65 @@ export default function PullAPartPage() {
       },
     };
 
+    // Crushing inside the title-hold window requires an admin override reason.
+    if (
+      vehObj.status === "CRUSHED" &&
+      isCrushLocked(
+        { holdUntil: vehObj.holdUntil, startDateFallback: vehObj.dateSetInYard },
+        new Date(),
+        holdOptions(),
+        editingVeh?.holdOverride
+      )
+    ) {
+      setCrushOverrideVehicle(vehObj);
+      setCrushOverrideReason("");
+      return;
+    }
+
     storageService.savePullYardVehicle(vehObj);
     loadData();
     setVehModalOpen(false);
     toast.success(`${editingVeh ? "Updated" : "Added"} ${vehYear} ${vehMake} ${vehModel}`);
   };
 
+  const handleConfirmCrushOverride = () => {
+    if (!crushOverrideVehicle) return;
+    const reason = crushOverrideReason.trim();
+    if (!reason) {
+      toast.error("An override reason is required for the audit record");
+      return;
+    }
+    storageService.savePullYardVehicle({
+      ...crushOverrideVehicle,
+      status: "CRUSHED",
+      holdOverride: {
+        by: authUser?.fullName || storageService.getSettings().operatorName,
+        at: new Date().toISOString(),
+        reason,
+      },
+    });
+    loadData();
+    setCrushOverrideVehicle(null);
+    setVehModalOpen(false);
+    toast.success(`${crushOverrideVehicle.year} ${crushOverrideVehicle.make} ${crushOverrideVehicle.model} marked as CRUSHED`, {
+      description: "Admin override recorded on the vehicle record.",
+    });
+  };
+
   const handleStatusChange = (vehicle: PullYardVehicle, status: PullYardVehicleStatus) => {
+    if (
+      status === "CRUSHED" &&
+      isCrushLocked(
+        { holdUntil: vehicle.holdUntil, startDateFallback: vehicle.dateSetInYard },
+        new Date(),
+        holdOptions(),
+        vehicle.holdOverride
+      )
+    ) {
+      setCrushOverrideVehicle(vehicle);
+      setCrushOverrideReason("");
+      return;
+    }
     storageService.savePullYardVehicle({ ...vehicle, status });
     loadData();
     toast.success(`${vehicle.year} ${vehicle.make} ${vehicle.model} marked as ${status}`);
@@ -658,6 +736,28 @@ export default function PullAPartPage() {
                           <TableCell className="font-sans">
                             <span className="font-bold text-white block">{v.year} {v.make} {v.model}</span>
                             <span className="text-[10px] text-slate-400 font-mono">{v.vin}</span>
+                            {(() => {
+                              const hold = holdStatus(
+                                { holdUntil: v.holdUntil, startDateFallback: v.dateSetInYard },
+                                new Date(),
+                                holdOptions()
+                              );
+                              if (hold.status === "HOLD_ACTIVE") {
+                                return (
+                                  <Badge className="mt-1 bg-amber-500/15 text-amber-300 border border-amber-500/40 text-[9px] font-mono gap-1">
+                                    <Lock className="w-2.5 h-2.5" /> HOLD · {hold.daysLeft}d LEFT
+                                  </Badge>
+                                );
+                              }
+                              if (hold.status === "HOLD_EXPIRED" && v.status !== "CRUSHED") {
+                                return (
+                                  <Badge className="mt-1 bg-emerald-500/15 text-emerald-300 border border-emerald-500/40 text-[9px] font-mono">
+                                    HOLD EXPIRED
+                                  </Badge>
+                                );
+                              }
+                              return null;
+                            })()}
                           </TableCell>
 
                           {/* Payout & Origin */}
@@ -1160,12 +1260,77 @@ export default function PullAPartPage() {
         </DialogContent>
       </Dialog>
 
+      {/* Crush-hold override — admin reason required to crush inside the hold window */}
+      <AlertDialog
+        open={Boolean(crushOverrideVehicle)}
+        onOpenChange={(open) => { if (!open) setCrushOverrideVehicle(null); }}
+      >
+        <AlertDialogContent className="border-amber-500/50 bg-slate-950 text-slate-100 sm:max-w-[480px]">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-amber-300">
+              <Lock className="h-5 w-5" /> Crush hold active — admin override required
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-slate-400 text-xs leading-relaxed">
+              {crushOverrideVehicle ? (
+                <>
+                  The {crushOverrideVehicle.year} {crushOverrideVehicle.make} {crushOverrideVehicle.model} is still
+                  inside its title/crush hold window ({" "}
+                  {(() => {
+                    const hold = holdStatus(
+                      { holdUntil: crushOverrideVehicle.holdUntil, startDateFallback: crushOverrideVehicle.dateSetInYard },
+                      new Date(),
+                      holdOptions()
+                    );
+                    return hold.status === "HOLD_ACTIVE" ? `${hold.daysLeft} day${hold.daysLeft === 1 ? "" : "s"} left` : "hold active";
+                  })()}
+                  ). Crushing early requires an admin override reason — it is stamped on the vehicle record for the
+                  audit trail. Check your state's requirement before proceeding.
+                </>
+              ) : (
+                "Crushing inside the hold window requires an admin override reason."
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          <div className="space-y-2 py-1">
+            <Label className="text-slate-300 text-xs">Override reason (required)</Label>
+            <Textarea
+              value={crushOverrideReason}
+              onChange={(e) => setCrushOverrideReason(e.target.value)}
+              rows={3}
+              placeholder="e.g. Title verified with county; owner-provided affidavit on file"
+              className="bg-slate-900 border-slate-800 text-white text-xs"
+            />
+            {!isAdmin && (
+              <p className="text-[11px] text-rose-400">
+                Only admins can authorize an early crush — ask an administrator to enter their approval.
+              </p>
+            )}
+          </div>
+
+          <AlertDialogFooter>
+            <AlertDialogCancel className="border-slate-700 bg-slate-800 text-slate-200 hover:bg-slate-700 text-xs">
+              Keep Hold
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={!isAdmin || !crushOverrideReason.trim()}
+              onClick={(e) => {
+                e.preventDefault();
+                handleConfirmCrushOverride();
+              }}
+              className="bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs"
+            >
+              <Lock className="w-3.5 h-3.5 mr-1.5" /> Override &amp; Crush
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {/* Parts Interchange Search Modal */}
       <PartsInterchangeModal
         isOpen={interchangeModalOpen}
         onClose={() => setInterchangeModalOpen(false)}
       />
-
       {/* Bulk Spreadsheet Upload Modal */}
       <BulkVehicleUploadModal
         isOpen={bulkUploadOpen}
