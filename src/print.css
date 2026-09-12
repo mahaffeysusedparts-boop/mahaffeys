@@ -1,4 +1,6 @@
 @media print {
+  /* ── Named page geometries ──────────────────────────────────────────── */
+
   @page vehicle-sticker {
     size: 4in 6in;
     margin: 0;
@@ -7,6 +9,23 @@
   @page check-sheet-page {
     size: letter portrait;
     margin: 0.5in;
+  }
+
+  /* Shared compact table cells for all letter sheets. */
+  .check-sheet table td,
+  .check-sheet table th,
+  .z-report-sheet table td,
+  .z-report-sheet table th,
+  .custom-report-sheet table td,
+  .custom-report-sheet table th {
+    padding-top: 1px !important;
+    padding-bottom: 1px !important;
+  }
+
+  /* Repeat table headers when a report table flows across pages. */
+  .z-report-sheet thead,
+  .custom-report-sheet thead {
+    display: table-header-group !important;
   }
 
   /* Voucher check: one letter page. The app chrome is hidden by the shared
@@ -46,6 +65,79 @@
     print-color-adjust: exact;
     -webkit-print-color-adjust: exact;
   }
+
+  /* Custom printable report: same letter geometry, flows across pages,
+     repeating <thead> on each page. */
+  .custom-report-sheet {
+    page: check-sheet-page;
+    width: 7.5in !important;
+    max-width: 7.5in !important;
+    margin: 0 auto !important;
+    padding: 0.3in 0.35in !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    border: 1px solid #000000 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    break-inside: auto;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  /* Keep report rows atomic — a row never splits across a page break. */
+  .custom-report-sheet tr,
+  .z-report-sheet tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* ── Dual payout vouchers: one 8.5×11 page per copy ───────────────────
+     The card markup uses generous screen spacing (space-y-4, print:p-8)
+     which alone overflows the 10in live area. These overrides compact the
+     vertical rhythm so EVERY section — photos, table, certification and
+     both signature blocks — fits a single letter page per copy. */
+  .printable-receipt-card {
+    width: 7.5in !important;
+    max-width: 7.5in !important;
+    min-height: 10in !important;
+    margin: 0 auto !important;
+    padding: 0.26in 0.32in !important;
+    background-color: #ffffff !important;
+    color: #000000 !important;
+    border: 1px solid #000000 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    break-inside: avoid;
+    page-break-inside: avoid;
+    line-height: 1.3 !important;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  /* Compact the space-y-4 rhythm (1rem gaps) down to print density. */
+  .printable-receipt-card > * + * {
+    margin-top: 0.32rem !important;
+  }
+
+  .printable-receipt-card table td,
+  .printable-receipt-card table th {
+    padding-top: 1px !important;
+    padding-bottom: 1px !important;
+  }
+
+  /* Compliance photo gallery: keep thumbnails tall enough to verify, but
+     never tall enough to push signatures off the page. */
+  .printable-receipt-card .aspect-square {
+    aspect-ratio: 1 / 1 !important;
+    max-height: 0.95in !important;
+  }
+
+  /* Signature rules print at exact ink density. */
+  .printable-receipt-card .border-slate-900 {
+    border-color: #000000 !important;
+  }
+
+  /* ── Vehicle sticker (4×6) ─────────────────────────────────────────── */
 
   body {
     margin: 0 !important;
