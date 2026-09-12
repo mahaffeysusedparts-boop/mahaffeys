@@ -9,6 +9,7 @@ import { ProtectedRoute } from "./components/auth/ProtectedRoute";
 import { LoadingSpinner } from "./components/layout/LoadingSpinner";
 import { AppErrorBoundary } from "./components/common/AppErrorBoundary";
 import { OfflineBanner } from "./components/layout/OfflineBanner";
+import { MobileQuickActions } from "./components/layout/MobileQuickActions";
 import "./print.css";
 
 const DashboardPage = lazy(() => import("./pages/DashboardPage"));
@@ -100,6 +101,7 @@ const App = () => (
               <Route path="*" element={<NotFound />} />
             </Routes>
           </Suspense>
+          <MobileQuickActions />
         </BrowserRouter>
       </TooltipProvider>
     </AuthProvider>

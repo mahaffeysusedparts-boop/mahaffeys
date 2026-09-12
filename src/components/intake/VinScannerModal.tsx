@@ -169,6 +169,8 @@ export function VinScannerModal({ open, onOpenChange, onConfirm }: VinScannerMod
   const captureFromCamera = async () => {
     const video = videoRef.current;
     if (!video || !video.videoWidth) return;
+    // Haptic confirmation for handheld yard use.
+    navigator.vibrate?.(30);
     const canvas = document.createElement("canvas");
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
