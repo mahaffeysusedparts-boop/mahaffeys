@@ -1,6 +1,7 @@
 import { defineHandler } from "nitro";
 import { createError, getRequestHeaders, getRequestURL, readBody } from "nitro/h3";
 import { requireAdmin } from "../../../../utils/auth";
+import { auditFor, recordAudit } from "../../../../utils/audit";
 import { getStoplightConfig, isValidStoplightConfig, isValidUrlTemplate, isStoplightPreset, saveStoplightConfig, type StoplightConfig } from "../../../../utils/stoplightConfig";
 import { getStoplightStatus, probeStoplight } from "../../../../utils/stoplight";
 
@@ -92,6 +93,12 @@ export default defineHandler(async (event) => {
   }
 
   const config = await saveStoplightConfig(candidate, user.id);
+
+  await recordAudit(auditFor(user, {
+    action: "admin.stoplight_config",
+    entity: "stoplight",
+    detail: { preset: config.preset, host: config.host, redChannel: config.redChannel, greenChannel: config.greenChannel },
+  }));
 
   return {
     configured: true,

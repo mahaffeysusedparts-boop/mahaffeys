@@ -1,6 +1,7 @@
 import { defineHandler } from "nitro";
 import { createError, getRouterParam, readBody } from "nitro/h3";
 import { requireUser } from "../../../utils/auth";
+import { auditFor, recordAudit } from "../../../utils/audit";
 import { query } from "../../../utils/db";
 
 const ALLOWED_KEYS = new Set([
@@ -19,9 +20,16 @@ export default defineHandler(async (event) => {
   const body = await readBody<{ value?: unknown }>(event, { limit: 500 * 1024 * 1024 });
   if (!("value" in body)) throw createError({ statusCode: 400, statusMessage: "A value is required" });
   const now = new Date();
+  const serialized = JSON.stringify(body.value);
   await query(`
     INSERT INTO app_state (key, value, updated_at, updated_by) VALUES ($1, $2::jsonb, $3, $4)
     ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at, updated_by = EXCLUDED.updated_by
-  `, [key, JSON.stringify(body.value), now, user.id]);
+  `, [key, serialized, now, user.id]);
+  await recordAudit(auditFor(user, {
+    action: "state.write",
+    entity: "app_state",
+    entityId: key,
+    detail: { sizeBytes: serialized.length, workstation: user.username },
+  }));
   return { ok: true, updatedAt: now.toISOString() };
 });

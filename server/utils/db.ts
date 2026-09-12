@@ -61,6 +61,20 @@ async function initializeSchema() {
     );
     CREATE INDEX IF NOT EXISTS state_upload_chunks_created_at_idx ON state_upload_chunks(created_at);
 
+    CREATE TABLE IF NOT EXISTS audit_log (
+      id TEXT PRIMARY KEY,
+      user_id TEXT,
+      user_name TEXT NOT NULL,
+      action TEXT NOT NULL,
+      entity TEXT NOT NULL,
+      entity_id TEXT,
+      detail JSONB,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS audit_log_created_at_idx ON audit_log(created_at DESC);
+    CREATE INDEX IF NOT EXISTS audit_log_action_idx ON audit_log(action);
+    CREATE INDEX IF NOT EXISTS audit_log_entity_idx ON audit_log(entity);
+
     CREATE TABLE IF NOT EXISTS media_uploads (
       id UUID PRIMARY KEY,
       file_name TEXT NOT NULL,

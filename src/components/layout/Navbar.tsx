@@ -8,6 +8,7 @@ import { ScaleConfigModal } from '../scale/ScaleConfigModal';
 import { ScaleQuickSwitcher } from '../scale/ScaleQuickSwitcher';
 import { QuickSearchButton } from './QuickSearch';
 import { SyncStatusIndicator } from './SyncStatusIndicator';
+import { hasPageAccess, PATH_TO_PAGE_KEY } from '@/utils/pageAccess';
 import {
   Sheet,
   SheetContent,
@@ -60,7 +61,7 @@ export const Navbar: React.FC = () => {
   const navigate = useNavigate();
   const { user, isAdmin, pendingUsersCount, logout } = useAuth();
   const [scaleStatus, setScaleStatus] = useState<ScaleStatus>(scaleService.getStatus());
-  const [settings] = useState<YardSettings>(storageService.getSettings());
+  const [settings, setSettings] = useState<YardSettings>(storageService.getSettings());
   const [configOpen, setConfigOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [mobileNavQuery, setMobileNavQuery] = useState('');
@@ -69,8 +70,18 @@ export const Navbar: React.FC = () => {
     const unsubscribe = scaleService.subscribe((status) => {
       setScaleStatus(status);
     });
-    return () => unsubscribe();
+    // Role page access is edited in Settings on any workstation — keep nav in sync.
+    const settingsUnsub = storageService.subscribe('mahaffeys_settings', () => {
+      setSettings(storageService.getSettings());
+    });
+    return () => {
+      unsubscribe();
+      settingsUnsub();
+    };
   }, []);
+
+  const canOpen = (path: string) =>
+    user ? hasPageAccess(user.role, PATH_TO_PAGE_KEY[path] ?? 'dashboard', settings.rolePageAccess) : false;
 
   const handleSignOut = async () => {
     await logout();
@@ -100,7 +111,7 @@ export const Navbar: React.FC = () => {
       { label: 'Settings', path: '/settings', icon: Settings },
     ] : []),
     { label: 'System Status', path: '/system-status', icon: Server },
-  ];
+  ].filter((item) => isAdmin || canOpen(item.path));
 
   const mobileNavItems = navItems.filter((item) =>
     item.label.toLowerCase().includes(mobileNavQuery.trim().toLowerCase()),

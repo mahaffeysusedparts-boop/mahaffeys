@@ -18,6 +18,11 @@ import { Switch } from '@/components/ui/switch';
 import { SCALE_ACCENT_COLORS } from '@/types/scrap';
 import { scaleAccent } from '@/components/scale/scaleAccent';
 import {
+  PAGE_KEYS,
+  PAGE_LABELS,
+  type PageKey,
+} from '@/utils/pageAccess';
+import {
   Settings,
   Save,
   Scale,
@@ -821,6 +826,73 @@ export default function SettingsPage() {
                 </div>
               </div>
             </div>
+          </CardContent>
+        </Card>
+
+        {/* Section 3.5: Role Page Access (Admin-only) */}
+        <Card className="bg-slate-900 border-slate-800 text-white shadow-lg">
+          <CardHeader className="py-3 px-4 bg-slate-950/60 border-b border-slate-800">
+            <CardTitle className="text-sm font-bold tracking-wide uppercase text-slate-300 flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4 text-emerald-400" /> Role Page Access
+            </CardTitle>
+          </CardHeader>
+
+          <CardContent className="p-4 space-y-4">
+            <p className="text-xs text-slate-400 leading-relaxed">
+              Admins can override which pages each role can open. Defaults ship conservative; admins always have
+              access to everything and cannot be locked out. Changes are persisted to the synced yard settings.
+            </p>
+
+            <div className="space-y-3">
+              {(['admin', 'yard_manager', 'scale_operator', 'yard_employee'] as const).map((role) => {
+                const current = settings.rolePageAccess?.[role] || [];
+                const allPages = PAGE_KEYS.filter((key) => {
+                  if (role === 'admin') return true;
+                  if (role === 'yard_manager') return true;
+                  if (role === 'scale_operator') return ['dashboard', 'intake', 'scale-log', 'tickets', 'cash-drawer', 'customers', 'cameras'].includes(key);
+                  if (role === 'yard_employee') return ['dashboard', 'yard-map', 'pull-a-part', 'containers', 'public-inventory'].includes(key);
+                  return false;
+                });
+                return (
+                  <div key={role} className="rounded-xl border border-slate-800 bg-slate-950 p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-bold text-white capitalize">{role.replace('_', ' ')}</p>
+                      <Badge variant="outline" className="text-[10px] border-slate-700 text-slate-400">
+                        {current.length} page{current.length !== 1 ? 's' : ''} selected
+                      </Badge>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                      {allPages.map((page) => {
+                        const isSelected = current.includes(page);
+                        return (
+                          <button
+                            key={page}
+                            type="button"
+                            onClick={() => {
+                              const next = isSelected
+                                ? current.filter((p) => p !== page)
+                                : [...current, page];
+                              handleChange('rolePageAccess', { ...settings.rolePageAccess, [role]: next });
+                            }}
+                            className={`p-2 rounded-lg border text-[10px] font-medium transition-all ${isSelected
+                                ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
+                                : 'bg-slate-900 border-slate-800 text-slate-400 hover:border-slate-700 hover:text-slate-300'
+                              }`}
+                          >
+                            {PAGE_LABELS[page]}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <p className="text-[10px] text-slate-500 pt-2 border-t border-slate-800">
+              Role page access is used by the Navbar to hide links a role cannot open, and by ProtectedRoute to
+              deny access with a friendly screen when a user tries to open a page they lack permission for.
+            </p>
           </CardContent>
         </Card>
 

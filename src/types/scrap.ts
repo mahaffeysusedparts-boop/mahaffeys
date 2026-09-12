@@ -493,6 +493,9 @@ export interface YardSettings {
   /** Title/crush hold applied to salvage vehicles at intake. */
   crushHoldEnabled?: boolean;         // default: on
   crushHoldDays?: number;             // default: 30
+
+  /** Per-role page access overrides (page keys from utils/pageAccess). */
+  rolePageAccess?: Partial<Record<UserRole, string[]>>;
 }
 
 export type ShipmentStatus = 'STAGED' | 'IN_TRANSIT' | 'DELIVERED' | 'SETTLED' | 'DISCREPANCY';

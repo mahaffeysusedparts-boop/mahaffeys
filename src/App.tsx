@@ -8,6 +8,7 @@ import { AuthProvider } from "./context/AuthContext";
 import { ProtectedRoute } from "./components/auth/ProtectedRoute";
 import { LoadingSpinner } from "./components/layout/LoadingSpinner";
 import { AppErrorBoundary } from "./components/common/AppErrorBoundary";
+import { OfflineBanner } from "./components/layout/OfflineBanner";
 import "./print.css";
 
 const DashboardPage = lazy(() => import("./pages/DashboardPage"));
@@ -41,12 +42,24 @@ const NotFound = lazy(() => import("./pages/NotFound"));
 
 const queryClient = new QueryClient();
 
+/** Wraps a page in the error boundary + role-aware protected route. */
+function guarded(page: React.ReactNode, pageKey: Parameters<typeof ProtectedRoute>[0]["page"], requireAdmin = false) {
+  return (
+    <AppErrorBoundary>
+      <ProtectedRoute page={pageKey} requireAdmin={requireAdmin}>
+        {page}
+      </ProtectedRoute>
+    </AppErrorBoundary>
+  );
+}
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <AuthProvider>
       <TooltipProvider>
         <Toaster />
         <Sonner position="top-right" />
+        <OfflineBanner />
         <BrowserRouter>
           <Suspense fallback={<LoadingSpinner />}>
             <Routes>
@@ -61,171 +74,27 @@ const App = () => (
               <Route path="/vehicles" element={<PublicVehicleInventoryPage />} />
 
               {/* PROTECTED WORKSTATION ROUTES - Wrapped with Error Boundary */}
-              <Route
-                path="/"
-                element={
-                  <AppErrorBoundary>
-                    <ProtectedRoute>
-                      <DashboardPage />
-                    </ProtectedRoute>
-                  </AppErrorBoundary>
-                }
-              />
-              <Route
-                path="/dashboard"
-                element={
-                  <AppErrorBoundary>
-                    <ProtectedRoute>
-                      <DashboardPage />
-                    </ProtectedRoute>
-                  </AppErrorBoundary>
-                }
-              />
-              <Route
-                path="/intake"
-                element={
-                  <AppErrorBoundary>
-                    <ProtectedRoute>
-                      <IntakePage />
-                    </ProtectedRoute>
-                  </AppErrorBoundary>
-                }
-              />
-              <Route
-                path="/pull-a-part"
-                element={
-                  <AppErrorBoundary>
-                    <ProtectedRoute>
-                      <PullAPartPage />
-                    </ProtectedRoute>
-                  </AppErrorBoundary>
-                }
-              />
-              <Route
-                path="/compliance"
-                element={
-                  <AppErrorBoundary>
-                    <ProtectedRoute>
-                      <CompliancePage />
-                    </ProtectedRoute>
-                  </AppErrorBoundary>
-                }
-              />
-              <Route
-                path="/cameras"
-                element={
-                  <AppErrorBoundary>
-                    <ProtectedRoute>
-                      <CamerasPage />
-                    </ProtectedRoute>
-                  </AppErrorBoundary>
-                }
-              />
-              <Route
-                path="/tickets"
-                element={
-                  <AppErrorBoundary>
-                    <ProtectedRoute>
-                      <TicketsPage />
-                    </ProtectedRoute>
-                  </AppErrorBoundary>
-                }
-              />
-              <Route
-                path="/pricing"
-                element={
-                  <AppErrorBoundary>
-                    <ProtectedRoute>
-                      <PricingPage />
-                    </ProtectedRoute>
-                  </AppErrorBoundary>
-                }
-              />
-              <Route
-                path="/containers"
-                element={
-                  <AppErrorBoundary>
-                    <ProtectedRoute>
-                      <ContainersPage />
-                    </ProtectedRoute>
-                  </AppErrorBoundary>
-                }
-              />
-              <Route
-                path="/cash-drawer"
-                element={
-                  <AppErrorBoundary>
-                    <ProtectedRoute>
-                      <CashDrawerPage />
-                    </ProtectedRoute>
-                  </AppErrorBoundary>
-                }
-              />
-              <Route
-                path="/yard-map"
-                element={
-                  <AppErrorBoundary>
-                    <ProtectedRoute>
-                      <YardMapPage />
-                    </ProtectedRoute>
-                  </AppErrorBoundary>
-                }
-              />
-              <Route
-                path="/customers"
-                element={
-                  <AppErrorBoundary>
-                    <ProtectedRoute>
-                      <CustomersPage />
-                    </ProtectedRoute>
-                  </AppErrorBoundary>
-                }
-              />
-              <Route
-                path="/users"
-                element={
-                  <AppErrorBoundary>
-                    <ProtectedRoute requireAdmin>
-                      <UserManagementPage />
-                    </ProtectedRoute>
-                  </AppErrorBoundary>
-                }
-              />
-              <Route
-                path="/system-status"
-                element={
-                  <AppErrorBoundary>
-                    <ProtectedRoute>
-                      <SystemHealthPage />
-                    </ProtectedRoute>
-                  </AppErrorBoundary>
-                }
-              />
-              <Route
-                path="/server-admin"
-                element={
-                  <AppErrorBoundary>
-                    <ProtectedRoute requireAdmin>
-                      <ServerAdminPage />
-                    </ProtectedRoute>
-                  </AppErrorBoundary>
-                }
-              />
-              <Route path="/reports" element={<AppErrorBoundary><ProtectedRoute><ReportsPage /></ProtectedRoute></AppErrorBoundary>} />
-              <Route path="/scale-log" element={<AppErrorBoundary><ProtectedRoute><ScaleLogPage /></ProtectedRoute></AppErrorBoundary>} />
-              <Route path="/operations" element={<AppErrorBoundary><ProtectedRoute><OperationsPage /></ProtectedRoute></AppErrorBoundary>} />
-              <Route path="/shipments" element={<AppErrorBoundary><ProtectedRoute><ShipmentsPage /></ProtectedRoute></AppErrorBoundary>} />
-              <Route path="/team" element={<AppErrorBoundary><ProtectedRoute><TeamOpsPage /></ProtectedRoute></AppErrorBoundary>} />
-              <Route
-                path="/settings"
-                element={
-                  <AppErrorBoundary>
-                    <ProtectedRoute requireAdmin>
-                      <SettingsPage />
-                    </ProtectedRoute>
-                  </AppErrorBoundary>
-                }
-              />
+              <Route path="/" element={guarded(<DashboardPage />, "dashboard")} />
+              <Route path="/dashboard" element={guarded(<DashboardPage />, "dashboard")} />
+              <Route path="/intake" element={guarded(<IntakePage />, "intake")} />
+              <Route path="/pull-a-part" element={guarded(<PullAPartPage />, "pull-a-part")} />
+              <Route path="/compliance" element={guarded(<CompliancePage />, "compliance")} />
+              <Route path="/cameras" element={guarded(<CamerasPage />, "cameras")} />
+              <Route path="/tickets" element={guarded(<TicketsPage />, "tickets")} />
+              <Route path="/pricing" element={guarded(<PricingPage />, "pricing")} />
+              <Route path="/containers" element={guarded(<ContainersPage />, "containers")} />
+              <Route path="/cash-drawer" element={guarded(<CashDrawerPage />, "cash-drawer")} />
+              <Route path="/yard-map" element={guarded(<YardMapPage />, "yard-map")} />
+              <Route path="/customers" element={guarded(<CustomersPage />, "customers")} />
+              <Route path="/users" element={guarded(<UserManagementPage />, "users", true)} />
+              <Route path="/system-status" element={guarded(<SystemHealthPage />, "system-status")} />
+              <Route path="/server-admin" element={guarded(<ServerAdminPage />, "server-admin", true)} />
+              <Route path="/reports" element={guarded(<ReportsPage />, "reports")} />
+              <Route path="/scale-log" element={guarded(<ScaleLogPage />, "scale-log")} />
+              <Route path="/operations" element={guarded(<OperationsPage />, "operations")} />
+              <Route path="/shipments" element={guarded(<ShipmentsPage />, "shipments")} />
+              <Route path="/team" element={guarded(<TeamOpsPage />, "team")} />
+              <Route path="/settings" element={guarded(<SettingsPage />, "settings", true)} />
 
               {/* CATCH-ALL 404 */}
               <Route path="*" element={<NotFound />} />

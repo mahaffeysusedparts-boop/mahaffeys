@@ -1,6 +1,7 @@
 import { defineHandler } from "nitro";
 import { createError, getRequestHeaders, getRequestURL, readBody } from "nitro/h3";
 import { requireAdmin } from "../../../../utils/auth";
+import { auditFor, recordAudit } from "../../../../utils/audit";
 import { listSerialPorts, probeTcpScale, serverScale } from "../../../../utils/scale";
 import { saveScaleConfig, type ScaleConfig } from "../../../../utils/scaleConfig";
 
@@ -61,6 +62,12 @@ export default defineHandler(async (event) => {
   }
 
   await serverScale.start(config);
+
+  await recordAudit(auditFor(user, {
+    action: "admin.scale_config",
+    entity: "scale",
+    detail: { type: config.type, host: "host" in config ? config.host : undefined, path: "path" in config ? config.path : undefined },
+  }));
 
   return {
     configured: true,

@@ -1,6 +1,7 @@
 import { defineHandler } from "nitro";
 import { createError, getRouterParam, readBody } from "nitro/h3";
 import { isRole, isStatus, requireAdmin, toPublicUser, type UserRow } from "../../../utils/auth";
+import { auditFor, recordAudit } from "../../../utils/audit";
 import { query, withTransaction } from "../../../utils/db";
 
 export default defineHandler(async (event) => {
@@ -44,5 +45,18 @@ export default defineHandler(async (event) => {
   });
 
   if (updated.status !== "approved") await query("DELETE FROM sessions WHERE user_id = $1", [updated.id]);
+
+  await recordAudit(auditFor(admin, {
+    action: "user.update",
+    entity: "users",
+    entityId: updated.id,
+    detail: {
+      username: updated.username,
+      roleFrom: current.role,
+      roleTo: role,
+      statusFrom: current.status,
+      statusTo: status,
+    },
+  }));
   return { user: toPublicUser(updated) };
 });
