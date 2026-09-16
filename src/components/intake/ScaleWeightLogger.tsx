@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { MetalGrade, ScaleStatus, ScrapTicketLine, Ticket, WeightTransaction, ScaleConfig } from '@/types/scrap';
 import { scaleService } from '@/services/scaleService';
 import { storageService } from '@/services/storageService';
@@ -36,6 +36,7 @@ import {
   LogOut,
   PackagePlus,
   Plus,
+  Radar,
   RefreshCw,
   RotateCcw,
   Scale,
@@ -47,6 +48,11 @@ import {
 import { toast } from 'sonner';
 
 const MAX_ACTIVE_LOADS = 10;
+
+// Auto-capture tuning: a reading only fires after it stays stable this long,
+// and must exceed this floor so idle platform drift never auto-logs.
+const AUTO_CAPTURE_SETTLE_MS = 1500;
+const AUTO_CAPTURE_MIN_LBS = 20;
 
 interface ScaleWeightLoggerProps {
   onBack: () => void;
@@ -90,6 +96,14 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
   const [selectedMetalId, setSelectedMetalId] = useState(metals[0]?.id ?? '');
   const [deductionPercent, setDeductionPercent] = useState(0);
   const [manualWeight, setManualWeight] = useState('');
+
+  // Hands-free logging: when armed, the next stable reading auto-commits as
+  // the IN (or OUT) weight after the settle window elapses.
+  const [autoCapture, setAutoCapture] = useState(false);
+  const stableSinceRef = useRef<number | null>(null);
+  // Manual capture attempted while the reading was still in MOTION — parked
+  // here until the operator confirms or waits for stability.
+  const [pendingUnstable, setPendingUnstable] = useState<{ direction: 'IN' | 'OUT'; lbs: number } | null>(null);
 
   const [payoutMethod, setPayoutMethod] = useState<'Cash' | 'Check'>('Cash');
   const [checkNumber, setCheckNumber] = useState(`CHK-${Math.floor(1000 + Math.random() * 9000)}`);
@@ -138,12 +152,25 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
     requestScaleSwitch(next.id);
   };
 
-  // Alt+S cycles platforms at the intake station.
+  // Scale-desk shortcuts: Alt+S cycles platforms, Alt+I / Alt+O capture the
+  // current IN / OUT reading (guarded by the same checks as the buttons).
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.altKey && (e.key === 's' || e.key === 'S')) {
+      if (!e.altKey) return;
+      const key = e.key.toLowerCase();
+      if (key === 's') {
         e.preventDefault();
         cycleActiveScale();
+      } else if (key === 'i') {
+        if (weighState === 'AWAITING_IN') {
+          e.preventDefault();
+          handleLogIn();
+        }
+      } else if (key === 'o') {
+        if (weighState === 'AWAITING_OUT') {
+          e.preventDefault();
+          handleLogOut();
+        }
       }
     };
     window.addEventListener('keydown', onKeyDown);
@@ -306,11 +333,19 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
 
   const handleLogIn = () => {
     if (!assertScaleReady()) return;
+    if (!scale.isStable) {
+      setPendingUnstable({ direction: 'IN', lbs: currentLbs });
+      return;
+    }
     commitInWeight(currentLbs);
   };
 
   const handleLogOut = () => {
     if (!assertScaleReady()) return;
+    if (!scale.isStable) {
+      setPendingUnstable({ direction: 'OUT', lbs: currentLbs });
+      return;
+    }
     commitOutWeight(currentLbs);
   };
 
@@ -351,6 +386,48 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
     setDeductionPercent(0);
     toast.info('Open weighing cleared');
   };
+
+  // ---- Auto-capture engine -----------------------------------------------------
+  // Watches the live poll: once a reading holds stable (and above the floor)
+  // for the settle window, it commits itself as the armed IN/OUT weight.
+  useEffect(() => {
+    if (!autoCapture || !activeTicket) return;
+    if (!scale.connected || !scale.isStable || currentLbs <= AUTO_CAPTURE_MIN_LBS) {
+      stableSinceRef.current = null;
+      return;
+    }
+    if (stableSinceRef.current === null) {
+      stableSinceRef.current = Date.now();
+      return;
+    }
+    if (Date.now() - stableSinceRef.current < AUTO_CAPTURE_SETTLE_MS) return;
+
+    // Stable long enough — fire and disarm.
+    stableSinceRef.current = null;
+    setAutoCapture(false);
+    navigator.vibrate?.(40);
+
+    if (weighState === 'AWAITING_IN') {
+      commitInWeight(currentLbs);
+    } else if (weighState === 'AWAITING_OUT') {
+      const grossIn = activeTicket.scaleGrossInWeight ?? 0;
+      const net = grossIn - currentLbs;
+      if (net < AUTO_CAPTURE_MIN_LBS) {
+        toast.error('Auto-capture cancelled', {
+          description: `Stable reading ${fmtLbs(currentLbs)} LBS nets only ${fmtLbs(Math.max(0, net))} LBS against the ${fmtLbs(grossIn)} LBS IN weight — confirm the load was actually dumped, then re-arm.`,
+        });
+        return;
+      }
+      commitOutWeight(currentLbs);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scale, currentLbs, autoCapture, activeTicket, weighState]);
+
+  // Any transition (ticket switch, step change, cleared weighing) disarms.
+  useEffect(() => {
+    setAutoCapture(false);
+    stableSinceRef.current = null;
+  }, [activeTicket?.id, weighState]);
 
   // ---- Grade commit -----------------------------------------------------------
   const pendingNet = activeTicket && weighState === 'PENDING_GRADE'
@@ -584,6 +661,25 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
         </Select>
       </div>
     </div>
+  );
+
+  // Hands-free capture arm — used in both the IN and OUT steps.
+  const autoCaptureToggle = (
+    <button
+      type="button"
+      onClick={() => setAutoCapture((v) => !v)}
+      disabled={!scale.connected}
+      className={`flex w-full items-center justify-center gap-2 rounded-xl border px-4 py-2.5 text-xs font-bold transition-all active:scale-[0.99] ${
+        autoCapture
+          ? 'border-emerald-500 bg-emerald-950/80 text-emerald-300 ring-1 ring-emerald-500/40'
+          : 'border-dashed border-slate-700 bg-slate-950 text-slate-400 hover:border-slate-500 hover:text-slate-200 disabled:opacity-40'
+      }`}
+    >
+      <Radar className={`h-4 w-4 ${autoCapture ? 'animate-pulse' : ''}`} />
+      {autoCapture
+        ? `AUTO-CAPTURE ARMED — logs when stable (${AUTO_CAPTURE_SETTLE_MS / 1000}s)`
+        : 'Arm Auto-Capture (logs when the reading settles)'}
+    </button>
   );
 
   // Typed-weight fallback row for the current step (IN or OUT).
@@ -954,9 +1050,11 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
                         <LogIn className="h-6 w-6" />
                         LOG IN WEIGHT · {fmtLbs(currentLbs)} LBS
                       </Button>
+                      {autoCaptureToggle}
                       <p className="text-center text-[11px] text-slate-400">
                         Vehicle drives ON with the load. The IN weight is saved to this intake instantly — switch to another
                         transaction and come back later to log the OUT.
+                        <span className="ml-1 whitespace-nowrap rounded border border-slate-700 bg-slate-900 px-1.5 py-0.5 font-mono text-[9px] text-slate-300">Alt+I</span>
                       </p>
                       {manualEntryRow('IN')}
                     </div>
@@ -969,6 +1067,11 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
                           <span className="block text-[10px] uppercase tracking-wide text-slate-400">IN (Gross) Logged</span>
                           <span className="text-lg font-bold text-emerald-400">{fmtLbs(activeTicket.scaleGrossInWeight)} LBS</span>
                         </div>
+                        {activeTicket.scaleGrossInAt && (
+                          <Badge className="border border-amber-500/40 bg-amber-500/10 font-mono text-[9px] text-amber-300">
+                            ON YARD {Math.max(0, Math.round((Date.now() - new Date(activeTicket.scaleGrossInAt).getTime()) / 60000))} MIN
+                          </Badge>
+                        )}
                         <span className="text-[10px] text-slate-500">@ {fmtTime(activeTicket.scaleGrossInAt)}</span>
                         <Button
                           size="sm"
@@ -987,8 +1090,10 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
                         <LogOut className="h-6 w-6" />
                         LOG OUT WEIGHT · {fmtLbs(currentLbs)} LBS
                       </Button>
+                      {autoCaptureToggle}
                       <p className="text-center text-[11px] text-slate-400">
                         After the load is dumped, the empty vehicle drives back ON. Net = IN − OUT.
+                        <span className="ml-1 whitespace-nowrap rounded border border-slate-700 bg-slate-900 px-1.5 py-0.5 font-mono text-[9px] text-slate-300">Alt+O</span>
                       </p>
                       {manualEntryRow('OUT')}
                       {gradeSelector}
@@ -1122,6 +1227,54 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
                   )}
                 </CardContent>
               </Card>
+
+              {/* Weighing audit trail — platform + operator stamps for every captured reading */}
+              {(activeTicket.weightTransactions?.length ?? 0) > 0 && (
+                <Card className="overflow-hidden border-slate-800 bg-slate-900 text-white shadow-lg">
+                  <CardHeader className="border-b border-slate-800 bg-slate-950/60 px-4 py-3">
+                    <CardTitle className="flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-slate-300">
+                      <ShieldCheck className="h-4 w-4 text-sky-400" /> Weighing Audit Trail
+                      <Badge className="border border-slate-700 bg-slate-950 font-mono text-[9px] text-slate-400">
+                        {activeTicket.weightTransactions!.length} READINGS
+                      </Badge>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="p-0">
+                    <div className="divide-y divide-slate-800/80">
+                      {[...activeTicket.weightTransactions!].reverse().map((tx) => (
+                        <div key={tx.id} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-4 py-2 font-mono text-[11px]">
+                          <div className="flex items-center gap-2.5">
+                            <Badge
+                              className={`font-mono text-[9px] font-bold ${
+                                tx.type === 'SCALE_IN'
+                                  ? 'border border-emerald-500/40 bg-emerald-500/15 text-emerald-300'
+                                  : 'border border-amber-500/40 bg-amber-500/15 text-amber-300'
+                              }`}
+                            >
+                              {tx.type === 'SCALE_IN' ? 'IN' : 'OUT'}
+                            </Badge>
+                            <span className="font-bold text-white">{fmtLbs(tx.weightLbs)} LBS</span>
+                            <span className="text-slate-400">{tx.scaleName || 'Unstamped platform'}</span>
+                          </div>
+                          <span className="text-slate-500">
+                            {tx.operatorName || '—'} ·{' '}
+                            {new Date(tx.recordedAt).toLocaleString([], {
+                              month: 'numeric',
+                              day: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                              second: '2-digit',
+                            })}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                    <p className="border-t border-slate-800 px-4 py-2 text-[10px] text-slate-500">
+                      Readings are never deleted — clearing or re-weighing keeps every audit row for compliance review.
+                    </p>
+                  </CardContent>
+                </Card>
+              )}
             </div>
 
             {/* Right: payout */}
@@ -1292,6 +1445,45 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
               className="bg-amber-600 font-bold text-white hover:bg-amber-500"
             >
               Switch Platform
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Unstable-reading capture guard */}
+      <AlertDialog
+        open={pendingUnstable !== null}
+        onOpenChange={(open) => { if (!open) setPendingUnstable(null); }}
+      >
+        <AlertDialogContent className="rounded-2xl border-slate-700 bg-slate-900 text-white">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-white">
+              <AlertTriangle className="h-5 w-5 text-amber-400" />
+              Weight is still in motion
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-slate-300">
+              The platform hasn't settled yet. Current reading:{' '}
+              <span className="font-mono font-bold text-amber-300">{fmtLbs(pendingUnstable?.lbs)} LBS</span> for the{' '}
+              <span className="font-bold text-white">{pendingUnstable?.direction === 'IN' ? 'IN (gross)' : 'OUT (tare)'}</span>{' '}
+              weight. Capturing now may log an inaccurate weight — or wait a moment for the{' '}
+              <span className="font-mono font-bold text-emerald-400">STABLE</span> indicator.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="border-slate-700 bg-slate-800 text-slate-200 hover:bg-slate-700 hover:text-white">
+              Wait for Stable
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (pendingUnstable) {
+                  if (pendingUnstable.direction === 'IN') commitInWeight(pendingUnstable.lbs);
+                  else commitOutWeight(pendingUnstable.lbs);
+                }
+                setPendingUnstable(null);
+              }}
+              className="bg-amber-600 font-bold text-white hover:bg-amber-500"
+            >
+              Capture {pendingUnstable?.direction === 'IN' ? 'IN' : 'OUT'} Anyway
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
