@@ -181,7 +181,14 @@ export const CheckPrintModal: React.FC<CheckPrintModalProps> = ({ ticket, open, 
             <div className="flex items-end justify-between gap-6 pt-6">
               <div className="text-[10px]">
                 <span className="font-bold text-slate-700">MEMO </span>
-                <span className="font-mono text-slate-900">Ticket #{ticket.id}</span>
+                <span className="font-mono text-slate-900">
+                  Ticket #{ticket.id}
+                  {ticket.ticketType === 'CAR_SALVAGE' && ticket.carRecord
+                    ? ` · ${ticket.carRecord.vehicleWeightLbs.toLocaleString()} lb vehicle`
+                    : ticket.scrapLines?.length
+                      ? ` · ${ticket.scrapLines.reduce((acc, l) => acc + l.billableWeight, 0).toLocaleString()} lb scrap`
+                      : ''}
+                </span>
               </div>
               <div className="text-center min-w-[220px]">
                 <div className="border-b border-slate-500 h-8" />

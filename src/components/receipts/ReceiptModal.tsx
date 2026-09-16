@@ -131,6 +131,8 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ ticket, open, onOpen
               <thead>
                 <tr className="border-b border-slate-900 font-bold">
                   <th className="py-1">GRADE / MATERIAL</th>
+                  <th className="py-1 text-right">IN (GROSS)</th>
+                  <th className="py-1 text-right">OUT (TARE)</th>
                   <th className="py-1 text-right">NET LBS</th>
                   <th className="py-1 text-right">RATE/LB</th>
                   <th className="py-1 text-right">TOTAL</th>
@@ -140,16 +142,45 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ ticket, open, onOpen
                 {ticket.scrapLines.map((line) => (
                   <tr key={line.id} className="border-b border-slate-200">
                     <td className="py-1 font-bold">
-                      {line.metalName}
-                      <span className="block text-[8px] text-slate-500 font-normal">{line.metalCategory}</span>
+                      <span className="text-slate-500">#{line.loadNumber ?? '—'}</span> {line.metalName}
+                      <span className="block text-[8px] text-slate-500 font-normal">
+                        {line.metalCategory}
+                        {line.deductionPercent > 0 && (
+                          <span className="text-red-600">
+                            {' '}· net {line.netWeight.toLocaleString()} lb − {line.deductionPercent}% ({line.deductionLbs.toLocaleString()} lb)
+                          </span>
+                        )}
+                      </span>
                     </td>
-                    <td className="py-1 text-right">{line.billableWeight} lbs</td>
+                    <td className="py-1 text-right">{line.grossWeight.toLocaleString()} lb</td>
+                    <td className="py-1 text-right">{line.tareWeight.toLocaleString()} lb</td>
+                    <td className="py-1 text-right font-bold">{line.billableWeight.toLocaleString()} lb</td>
                     <td className="py-1 text-right">${line.ratePerLb.toFixed(2)}</td>
                     <td className="py-1 text-right font-bold">${line.lineTotal.toFixed(2)}</td>
                   </tr>
                 ))}
+                <tr className="border-b border-slate-900 font-black">
+                  <td className="py-1 uppercase">Totals</td>
+                  <td className="py-1 text-right">
+                    {ticket.scrapLines.reduce((acc, l) => acc + l.grossWeight, 0).toLocaleString()} lb
+                  </td>
+                  <td className="py-1 text-right">
+                    {ticket.scrapLines.reduce((acc, l) => acc + l.tareWeight, 0).toLocaleString()} lb
+                  </td>
+                  <td className="py-1 text-right">
+                    {ticket.scrapLines.reduce((acc, l) => acc + l.billableWeight, 0).toLocaleString()} lb
+                  </td>
+                  <td className="py-1" />
+                  <td className="py-1 text-right">
+                    ${ticket.scrapLines.reduce((acc, l) => acc + l.lineTotal, 0).toFixed(2)}
+                  </td>
+                </tr>
               </tbody>
             </table>
+            <p className="text-[8px] text-slate-500">
+              IN (gross) and OUT (tare) are certified platform-scale readings captured at weigh-in and weigh-out.
+              NET is the billable weight after any contamination deduction.
+            </p>
           </div>
         )}
 

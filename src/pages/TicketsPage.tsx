@@ -272,7 +272,10 @@ export default function TicketsPage() {
                             <div>
                               <span>{t.scrapLines?.length || 0} Scrap Item(s)</span>
                               <span className="block text-[10px] text-slate-400 font-mono">
-                                {t.scrapLines?.reduce((acc, l) => acc + l.billableWeight, 0)} lbs total
+                                IN {t.scrapLines?.reduce((acc, l) => acc + l.grossWeight, 0).toLocaleString() || 0} / OUT {t.scrapLines?.reduce((acc, l) => acc + l.tareWeight, 0).toLocaleString() || 0} lb
+                              </span>
+                              <span className="block text-[10px] text-slate-300 font-mono">
+                                {t.scrapLines?.reduce((acc, l) => acc + l.billableWeight, 0).toLocaleString() || 0} lb billable
                               </span>
                             </div>
                           )}
