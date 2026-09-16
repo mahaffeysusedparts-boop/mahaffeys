@@ -53,6 +53,12 @@ class ScaleService {
   // event is emitted when a stable reading crosses the configured threshold.
   private baselineGrossLbs: number | null = null;
 
+  // Glitch shield — a threshold-crossing reading becomes a candidate and only
+  // logs as a journal event once the NEXT poll still agrees with it. A stale
+  // candidate (weight never settled) expires instead of firing.
+  private journalCandidate: { grossLbs: number; seenAt: number } | null = null;
+  private readonly JOURNAL_CANDIDATE_TTL_MS = 30000;
+
   // All-scales registry mirrored from the server poll for the Scale Wall.
   private registry: ScaleRegistryEntry[] = [];
 
@@ -147,6 +153,7 @@ class ScaleService {
 
     // Cross-platform deltas must never emit phantom journal events.
     this.baselineGrossLbs = null;
+    this.journalCandidate = null;
 
     this.persistCurrentScale();
     this.updateWeights(this.status.grossWeight);
@@ -252,6 +259,7 @@ class ScaleService {
       this.status.mode = 'SERVER';
       this.status.tareWeight = 0;
       this.baselineGrossLbs = null;
+      this.journalCandidate = null;
     }
     this.persistCurrentScale();
     this.notify();
@@ -528,6 +536,7 @@ class ScaleService {
     const settings = storageService.getSettings();
     if (settings.scaleEventLoggingEnabled === false) {
       this.baselineGrossLbs = grossLbs; // keep tracking silently while paused
+      this.journalCandidate = null;
       return;
     }
     const thresholdLbs = settings.scaleEventThresholdLbs && settings.scaleEventThresholdLbs > 0
@@ -536,16 +545,29 @@ class ScaleService {
 
     if (this.baselineGrossLbs === null) {
       this.baselineGrossLbs = grossLbs;
+      this.journalCandidate = null;
       return;
     }
 
     const delta = grossLbs - this.baselineGrossLbs;
     if (Math.abs(delta) < thresholdLbs) {
+      this.journalCandidate = null;
       // Silently re-baseline idle near-zero readings so sub-threshold drift
       // can never accumulate into a phantom event later.
       if (Math.abs(grossLbs) < thresholdLbs) {
         this.baselineGrossLbs = grossLbs;
       }
+      return;
+    }
+
+    // Glitch shield: only log once a follow-up poll confirms the platform is
+    // still at the crossed weight. A candidate whose weight keeps moving
+    // never fires; one that sits unsettled past the TTL restarts instead.
+    const candidate = this.journalCandidate;
+    const expired = candidate !== null && Date.now() - candidate.seenAt > this.JOURNAL_CANDIDATE_TTL_MS;
+    const confirmed = candidate !== null && !expired && Math.abs(candidate.grossLbs - grossLbs) < thresholdLbs;
+    if (!confirmed) {
+      this.journalCandidate = { grossLbs, seenAt: Date.now() };
       return;
     }
 
@@ -560,6 +582,7 @@ class ScaleService {
     };
     storageService.addScaleEvent(event);
     this.baselineGrossLbs = grossLbs;
+    this.journalCandidate = null;
   }
 
   private notify() {
