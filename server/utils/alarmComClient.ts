@@ -193,6 +193,33 @@ export function parseIdentityResponse(json: unknown): AdcIdentityProbe {
   return probe;
 }
 
+function responseContentType(response: Response): string {
+  return (response.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
+}
+
+/**
+ * Explain a failed alarm.com auth call truthfully instead of always blaming
+ * the password. The real-world failure modes:
+ *  - JSON error (HTTP 400/401) → alarm.com's own message ("Invalid username
+ *    or password", SSO-only account, locked out, …)
+ *  - HTML page (HTTP 403/429/503) → Cloudflare bot protection blocked this
+ *    server — a CORRECT password still looks "rejected"
+ *  - anything else → keep the HTTP status visible so endpoint drift is
+ *    diagnosable straight from the admin UI banner
+ */
+export function authFailureMessage(response: Response, json: unknown, fallback: string): string {
+  if (responseContentType(response).includes("text/html")) {
+    if (response.status === 403 || response.status === 429 || response.status === 503) {
+      return `Alarm.com's bot protection blocked this server's connection (Cloudflare, HTTP ${response.status}) — wait a few minutes and try again, or attempt the sign-in from the yard's network`;
+    }
+    return `Alarm.com answered with a web page instead of its API (HTTP ${response.status}) — the bridge endpoints may have moved`;
+  }
+  const parsed = parseIdentityResponse(json).message;
+  if (parsed) return parsed;
+  if (response.status === 429) return "Alarm.com is rate limiting this server — wait a few minutes and try again";
+  return `${fallback} (HTTP ${response.status})`;
+}
+
 export interface AdcCameraDevice {
   deviceId: string;
   name: string;
@@ -333,8 +360,12 @@ async function adcFetch(
   const headers: Record<string, string> = {
     "User-Agent": ADC_USER_AGENT,
     Accept: options.accept ?? "application/json, text/plain, */*",
+    "Accept-Language": "en-US,en;q=0.9",
     Origin: ADC_WEB_BASE,
-    Referer: `${ADC_WEB_BASE}/`,
+    Referer: `${ADC_WEB_BASE}/web/login`,
+    "Sec-Fetch-Dest": "empty",
+    "Sec-Fetch-Mode": "cors",
+    "Sec-Fetch-Site": "same-origin",
   };
   if (options.body !== undefined) headers["Content-Type"] = "application/json; charset=UTF-8";
   const cookie = cookieHeader(options.jar);
@@ -353,6 +384,23 @@ async function adcFetch(
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     throw new AdcError("ADC_UNAVAILABLE", "Could not reach alarm.com", detail);
+  }
+}
+
+/**
+ * Load the login page once before authenticating — exactly what a browser
+ * does — so alarm.com's edge hands out its afg / Cloudflare cookies before
+ * any API call. A raw API POST without those cookies is the classic way a
+ * CORRECT password gets "rejected". Best-effort: failure never blocks login.
+ */
+async function primeWebSession(jar: AdcCookieJar): Promise<void> {
+  try {
+    await adcFetch(`${ADC_WEB_BASE}/web/login`, {
+      jar,
+      accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    });
+  } catch {
+    /* best-effort */
   }
 }
 
@@ -440,6 +488,9 @@ export async function loginAlarmCom(username: string, password: string): Promise
   const connection: AdcConnection = { status: "NEEDS_LOGIN", username, cookies: {} };
   const jar = connection.cookies;
 
+  // Seed browser cookies first — the edge expects them on later API calls.
+  await primeWebSession(jar);
+
   const { response, json } = await postJson(ADC_ENDPOINTS.identity, jar, { username, password });
   const probe = parseIdentityResponse(json);
 
@@ -448,9 +499,9 @@ export async function loginAlarmCom(username: string, password: string): Promise
     throw new AdcError("NEEDS_LOGIN", "Alarm.com requested a CAPTCHA challenge — wait a few minutes and try again");
   }
   if (!response.ok) {
-    const message = probe.message || "Alarm.com rejected the username or password";
+    const message = authFailureMessage(response, json, "Alarm.com rejected the sign-in");
     await saveAdcConnection({ ...connection, status: "NEEDS_LOGIN", errorMessage: message });
-    throw new AdcError("NEEDS_LOGIN", message);
+    throw new AdcError("NEEDS_LOGIN", message, `identity check → HTTP ${response.status} (${responseContentType(response)})`);
   }
   if (probe.requiresTwoFactor) {
     // Ask ADC to text/e-mail the one-time code. Accounts that auto-send (or
@@ -477,11 +528,15 @@ export async function loginAlarmCom(username: string, password: string): Promise
 
 /** Final login call after any 2FA step; verifies the session on success. */
 async function completeLogin(username: string, password: string, jar: AdcCookieJar): Promise<AdcConnection> {
-  const { response, json } = await postJson(ADC_ENDPOINTS.login, jar, { username, password });
+  const { response, json } = await postJson(ADC_ENDPOINTS.login, jar, {
+    username,
+    password,
+    isConsumer: true, // mirrors the web client payload (consumer accounts); ignored otherwise
+  });
   if (response.status === 400 || response.status === 401 || response.status === 403) {
-    const message = parseIdentityResponse(json).message || "Alarm.com rejected the sign-in";
+    const message = authFailureMessage(response, json, "Alarm.com rejected the sign-in");
     await saveAdcConnection({ status: "NEEDS_LOGIN", username, cookies: jar, errorMessage: message });
-    throw new AdcError("NEEDS_LOGIN", message);
+    throw new AdcError("NEEDS_LOGIN", message, `login → HTTP ${response.status} (${responseContentType(response)})`);
   }
   if (!response.ok) {
     throw new AdcError("ADC_UNAVAILABLE", `Alarm.com login failed (HTTP ${response.status})`);
@@ -521,8 +576,8 @@ export async function submitAdcOtp(code: string): Promise<AdcConnection> {
     ...(connection.twoFactorDeviceId ? { deviceId: connection.twoFactorDeviceId } : {}),
   });
   if (response.status === 400 || response.status === 401 || response.status === 403) {
-    const message = parseIdentityResponse(json).message || "Alarm.com rejected that verification code";
-    throw new AdcError("NEEDS_OTP", message);
+    const message = authFailureMessage(response, json, "Alarm.com rejected that verification code");
+    throw new AdcError("NEEDS_OTP", message, `twoFactor/authenticate → HTTP ${response.status} (${responseContentType(response)})`);
   }
   if (!response.ok) {
     throw new AdcError("ADC_UNAVAILABLE", `Alarm.com two-factor check failed (HTTP ${response.status})`);

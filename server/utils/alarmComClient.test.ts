@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   applySetCookieLine,
   applySetCookieLines,
+  authFailureMessage,
   cookieHeader,
   parseCamerasResponse,
   parseClipsResponse,
@@ -142,5 +143,37 @@ describe("alarm.com clips parsing", () => {
   it("ignores items without an http(s) video url", () => {
     const clips = parseClipsResponse([{ id: "no-url" }, { id: "bad", url: "javascript:alert(1)" }]);
     expect(clips).toEqual([]);
+  });
+});
+
+describe("alarm.com auth failure explanations", () => {
+  it("surfaces alarm.com's own JSON error message verbatim", () => {
+    const json = { errors: [{ message: "Invalid username or password." }] };
+    const response = new Response(JSON.stringify(json), {
+      status: 400,
+      headers: { "content-type": "application/json; charset=utf-8" },
+    });
+    expect(authFailureMessage(response, json, "Alarm.com rejected the sign-in")).toBe("Invalid username or password.");
+  });
+
+  it("blames Cloudflare bot protection for HTML 403 instead of the password", () => {
+    const response = new Response("<html><title>Just a moment…</title></html>", {
+      status: 403,
+      headers: { "content-type": "text/html; charset=utf-8" },
+    });
+    const message = authFailureMessage(response, null, "Alarm.com rejected the sign-in");
+    expect(message).toContain("bot protection");
+    expect(message).toContain("403");
+    expect(message).not.toContain("password");
+  });
+
+  it("keeps the HTTP status visible when the API returns no message (endpoint drift)", () => {
+    const response = new Response("{}", { status: 404, headers: { "content-type": "application/json" } });
+    expect(authFailureMessage(response, {}, "Alarm.com rejected the sign-in")).toBe("Alarm.com rejected the sign-in (HTTP 404)");
+  });
+
+  it("explains rate limiting on a bare 429", () => {
+    const response = new Response("{}", { status: 429, headers: { "content-type": "application/json" } });
+    expect(authFailureMessage(response, {}, "Alarm.com rejected the sign-in")).toContain("rate limiting");
   });
 });
