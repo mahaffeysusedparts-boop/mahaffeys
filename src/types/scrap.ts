@@ -11,6 +11,8 @@ export type AccountStatus = 'pending' | 'approved' | 'rejected' | 'disabled';
 export type IpCameraType = 'MJPEG' | 'SNAPSHOT' | 'HLS' | 'RTSP_STREAM';
 export type IpCameraAssignment = 'SCALE_DESK' | 'SELLER_FACE' | 'LICENSE_PLATE' | 'CARGO_BAY' | 'YARD_OVERVIEW' | 'OTHER';
 
+export type IpCameraProvider = 'LOCAL' | 'ALARM_COM';
+
 export interface IpCamera {
   id: string;
   name: string;
@@ -25,6 +27,9 @@ export interface IpCamera {
   isActive: boolean;
   notes?: string;
   createdAt: string;
+  provider?: IpCameraProvider; // LOCAL (default, manually configured LAN cams) or ALARM_COM (cloud bridge cams)
+  adcDeviceId?: string; // alarm.com device id when provider === 'ALARM_COM'
+  adcLocation?: string; // alarm.com camera location description (building front, lobby, scale…)
 }
 
 export interface UserAccount {

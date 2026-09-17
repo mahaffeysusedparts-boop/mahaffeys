@@ -2,6 +2,8 @@ import { defineHandler } from "nitro";
 import { createError } from "nitro/h3";
 import { requireUser } from "../../../utils/auth";
 import { query } from "../../../utils/db";
+import { getAdcSnapshot, isAdcError } from "../../../utils/alarmComClient";
+import { getAdcCameraConfigs } from "../../../utils/alarmComConfig";
 
 interface EntranceCamera {
   id: string;
@@ -28,15 +30,50 @@ function configuredHost(camera: EntranceCamera) {
   }
 }
 
+/** Serve a frame from the Alarm.com scale camera through the cloud bridge. */
+async function serveAlarmComEntrance(deviceId: string) {
+  try {
+    const frame = await getAdcSnapshot(deviceId); // freshest available frame, bypassing the tile cache
+    return new Response(frame.body, {
+      headers: {
+        "Content-Type": frame.contentType,
+        "Cache-Control": "no-store, private",
+        "X-Entrance-Camera-Id": `adc-${deviceId}`,
+        "X-Entrance-Camera-Provider": "ALARM_COM",
+      },
+    });
+  } catch (error) {
+    if (isAdcError(error)) {
+      throw createError({ statusCode: 503, statusMessage: `Alarm.com scale camera unavailable: ${error.message}` });
+    }
+    throw error;
+  }
+}
+
 export default defineHandler(async (event) => {
   await requireUser(event);
+
+  // Alarm.com cameras live server-side (mahaffeys_adc_cameras) rather than in
+  // the workstation-synced local camera list. A purpose-built local LAN camera
+  // always wins when both claim the LICENSE_PLATE assignment (lower latency);
+  // the cloud camera also covers the "local cam has no snapshot URL" case.
+  const adcCameras = await getAdcCameraConfigs();
+  const adcEntrance = adcCameras.find((camera) => camera.isActive && camera.assignment === "LICENSE_PLATE");
+
   const result = await query<CameraStateRow>("SELECT value FROM app_state WHERE key = 'mahaffeys_ip_cameras'");
   const cameras = Array.isArray(result.rows[0]?.value) ? result.rows[0].value as EntranceCamera[] : [];
   const camera = cameras.find((item) => item.isActive && item.assignment === "LICENSE_PLATE");
-  if (!camera) throw createError({ statusCode: 404, statusMessage: "No active scale entrance license plate camera is configured" });
+
+  if (!camera) {
+    if (adcEntrance) return serveAlarmComEntrance(adcEntrance.deviceId);
+    throw createError({ statusCode: 404, statusMessage: "No active scale entrance license plate camera is configured" });
+  }
 
   const source = camera.snapshotUrl || (camera.cameraType === "SNAPSHOT" ? camera.streamUrl : "");
-  if (!source) throw createError({ statusCode: 409, statusMessage: "The entrance camera needs an HTTP snapshot URL for automatic LPR" });
+  if (!source) {
+    if (adcEntrance) return serveAlarmComEntrance(adcEntrance.deviceId);
+    throw createError({ statusCode: 409, statusMessage: "The entrance camera needs an HTTP snapshot URL for automatic LPR" });
+  }
 
   let url: URL;
   try {
@@ -44,13 +81,15 @@ export default defineHandler(async (event) => {
   } catch {
     throw createError({ statusCode: 400, statusMessage: "The entrance camera snapshot URL is invalid" });
   }
-  if (!["http:", "https:"].includes(url.protocol) || url.hostname !== configuredHost(camera)) {
+  const allowedProtocols = ["http:", "https:"];
+  if (!allowedProtocols.includes(url.protocol) || url.hostname !== configuredHost(camera)) {
     throw createError({ statusCode: 400, statusMessage: "The snapshot URL must use the configured camera host" });
   }
 
   const headers: Record<string, string> = { Accept: "image/jpeg,image/png,image/webp" };
   if (camera.username) {
-    headers.Authorization = `Basic ${Buffer.from(`${camera.username}:${camera.password || ""}`).toString("base64")}`;
+    const credentials = `${camera.username}:${camera.password ?? ""}`;
+    headers.Authorization = `Basic ${Buffer.from(credentials).toString("base64")}`;
   }
 
   const response = await fetch(url, { headers, signal: AbortSignal.timeout(8_000) });
@@ -69,6 +108,7 @@ export default defineHandler(async (event) => {
       "Content-Type": contentType,
       "Cache-Control": "no-store, private",
       "X-Entrance-Camera-Id": camera.id,
+      "X-Entrance-Camera-Provider": "LOCAL",
     },
   });
 });

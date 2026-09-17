@@ -13,6 +13,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Camera,
+  Cloud,
   CreditCard,
   Car,
   Package,
@@ -29,6 +30,7 @@ import {
 } from "lucide-react";
 import { ComplianceCaptures, IpCamera } from "@/types/scrap";
 import { storageService } from "@/services/storageService";
+import { alarmComService } from "@/services/alarmComService";
 import { optimizeImageDataUrl, uploadDataUrl } from "@/services/mediaService";
 import { toast } from "sonner";
 
@@ -86,6 +88,16 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
     if (isOpen) {
       const activeCams = storageService.getIpCameras().filter((c) => c.isActive);
       setIpCameras(activeCams);
+      // Alarm.com cloud cameras come through the same-origin bridge proxy, so
+      // the existing canvas capture below works unchanged for them.
+      alarmComService.fetchCameras()
+        .then((response) => {
+          const adcCams = response.cameras.filter((c) => c.isActive);
+          if (adcCams.length > 0) setIpCameras([...activeCams, ...adcCams]);
+        })
+        .catch(() => {
+          /* bridge offline — local cameras remain usable */
+        });
     }
   }, [isOpen]);
 
@@ -114,7 +126,43 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
   // Capture snapshot directly from an IP Camera stream
   const handleCaptureFromIpCamera = async (cam: IpCamera, targetKey: keyof ComplianceCaptures) => {
     const snapUrl = cam.snapshotUrl || cam.streamUrl;
-    
+
+    // Alarm.com cameras are served by the same-origin bridge proxy, so fetch()
+    // carries the app session cookie and bridge errors surface as real errors
+    // instead of silently drawing the placeholder frame.
+    if (cam.provider === 'ALARM_COM') {
+      let objectUrl: string | null = null;
+      try {
+        const response = await fetch(`${snapUrl}?t=${Date.now()}`, { credentials: "include" });
+        if (!response.ok) {
+          const payload = await response.json().catch(() => null) as { statusMessage?: string } | null;
+          throw new Error(payload?.statusMessage || `Camera bridge error (${response.status})`);
+        }
+        const blob = await response.blob();
+        if (!blob.type.startsWith('image/')) throw new Error('The camera bridge returned a non-image response');
+        objectUrl = URL.createObjectURL(blob);
+        await new Promise<void>((resolve, reject) => {
+          const img = new Image();
+          img.onload = () => {
+            const canvas = document.createElement("canvas");
+            canvas.width = img.naturalWidth || 1280;
+            canvas.height = img.naturalHeight || 720;
+            canvas.getContext("2d")?.drawImage(img, 0, 0);
+            setCaptures((prev) => ({ ...prev, [targetKey]: canvas.toDataURL("image/jpeg", 0.85) }));
+            resolve();
+          };
+          img.onerror = () => reject(new Error("Could not decode the snapshot"));
+          img.src = objectUrl as string;
+        });
+        toast.success(`Captured snapshot from Alarm.com camera "${cam.name}"!`);
+      } catch (error) {
+        toast.error("Alarm.com snapshot failed", { description: error instanceof Error ? error.message : "Unknown error" });
+      } finally {
+        if (objectUrl) URL.revokeObjectURL(objectUrl);
+      }
+      return;
+    }
+
     // Create an image element to draw onto canvas to convert to base64
     const img = new Image();
     img.crossOrigin = "anonymous";
@@ -488,8 +536,10 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
                                 onClick={() => handleCaptureFromIpCamera(cam, 'idPhotoUrl')}
                                 className="w-full justify-start text-xs border-slate-800 bg-slate-900 text-slate-200 hover:text-white h-9"
                               >
-                                <Camera className="w-3.5 h-3.5 mr-2 text-sky-400" />
-                                <span className="truncate">{cam.name} ({cam.ipAddress})</span>
+                                {cam.provider === 'ALARM_COM'
+                                  ? <Cloud className="w-3.5 h-3.5 mr-2 text-sky-400" />
+                                  : <Camera className="w-3.5 h-3.5 mr-2 text-sky-400" />}
+                                <span className="truncate">{cam.name} ({cam.provider === 'ALARM_COM' ? 'Alarm.com' : cam.ipAddress})</span>
                               </Button>
                             ))}
                           </div>
@@ -575,8 +625,10 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
                               onClick={() => handleCaptureFromIpCamera(cam, 'personPhotoUrl')}
                               className="w-full justify-start text-xs border-slate-800 bg-slate-900 text-slate-200 hover:text-white h-9"
                             >
-                              <Camera className="w-3.5 h-3.5 mr-2 text-purple-400" />
-                              <span className="truncate">{cam.name} ({cam.ipAddress})</span>
+                              {cam.provider === 'ALARM_COM'
+                                ? <Cloud className="w-3.5 h-3.5 mr-2 text-purple-400" />
+                                : <Camera className="w-3.5 h-3.5 mr-2 text-purple-400" />}
+                              <span className="truncate">{cam.name} ({cam.provider === 'ALARM_COM' ? 'Alarm.com' : cam.ipAddress})</span>
                             </Button>
                           ))}
                         </div>
@@ -655,8 +707,10 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
                               onClick={() => handleCaptureFromIpCamera(cam, 'vehiclePhotoUrl')}
                               className="w-full justify-start text-xs border-slate-800 bg-slate-900 text-slate-200 hover:text-white h-9"
                             >
-                              <Camera className="w-3.5 h-3.5 mr-2 text-amber-400" />
-                              <span className="truncate">{cam.name} ({cam.ipAddress})</span>
+                              {cam.provider === 'ALARM_COM'
+                                ? <Cloud className="w-3.5 h-3.5 mr-2 text-amber-400" />
+                                : <Camera className="w-3.5 h-3.5 mr-2 text-amber-400" />}
+                              <span className="truncate">{cam.name} ({cam.provider === 'ALARM_COM' ? 'Alarm.com' : cam.ipAddress})</span>
                             </Button>
                           ))}
                         </div>
@@ -735,8 +789,10 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
                               onClick={() => handleCaptureFromIpCamera(cam, 'licensePlatePhotoUrl')}
                               className="w-full justify-start text-xs border-slate-800 bg-slate-900 text-slate-200 hover:text-white h-9"
                             >
-                              <FileText className="w-3.5 h-3.5 mr-2 text-sky-400" />
-                              <span className="truncate">{cam.name} ({cam.ipAddress})</span>
+                              {cam.provider === 'ALARM_COM'
+                                ? <Cloud className="w-3.5 h-3.5 mr-2 text-sky-400" />
+                                : <FileText className="w-3.5 h-3.5 mr-2 text-sky-400" />}
+                              <span className="truncate">{cam.name} ({cam.provider === 'ALARM_COM' ? 'Alarm.com' : cam.ipAddress})</span>
                             </Button>
                           ))}
                         </div>
@@ -815,8 +871,10 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
                               onClick={() => handleCaptureFromIpCamera(cam, 'loadPhotoUrl')}
                               className="w-full justify-start text-xs border-slate-800 bg-slate-900 text-slate-200 hover:text-white h-9"
                             >
-                              <Package className="w-3.5 h-3.5 mr-2 text-emerald-400" />
-                              <span className="truncate">{cam.name} ({cam.ipAddress})</span>
+                              {cam.provider === 'ALARM_COM'
+                                ? <Cloud className="w-3.5 h-3.5 mr-2 text-emerald-400" />
+                                : <Package className="w-3.5 h-3.5 mr-2 text-emerald-400" />}
+                              <span className="truncate">{cam.name} ({cam.provider === 'ALARM_COM' ? 'Alarm.com' : cam.ipAddress})</span>
                             </Button>
                           ))}
                         </div>

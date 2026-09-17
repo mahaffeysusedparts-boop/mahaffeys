@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Activity, Cpu, Database, HardDrive, RefreshCw, RotateCw, Server, Terminal, ShieldCheck, Download } from "lucide-react";
 import { Navbar } from "@/components/layout/Navbar";
+import { AlarmComManager } from "@/components/server/AlarmComManager";
 import { ScaleServerManager } from "@/components/server/ScaleServerManager";
 import { StoplightServerManager } from "@/components/server/StoplightServerManager";
 import { StorageBayManager } from "@/components/server/StorageBayManager";
@@ -310,6 +311,7 @@ export default function ServerAdminPage() {
               <TabsList className="bg-slate-900 border border-slate-800 p-1 rounded-xl">
                 <TabsTrigger value="backups" className="text-sm">Backups</TabsTrigger>
                 <TabsTrigger value="audit" className="text-sm">Audit Log</TabsTrigger>
+                <TabsTrigger value="alarmcom" className="text-sm">Alarm.com</TabsTrigger>
               </TabsList>
 
               <TabsContent value="backups" className="space-y-4">
@@ -551,6 +553,10 @@ export default function ServerAdminPage() {
                     </p>
                   </CardContent>
                 </Card>
+              </TabsContent>
+
+              <TabsContent value="alarmcom" className="space-y-4">
+                <AlarmComManager />
               </TabsContent>
             </Tabs>
 
