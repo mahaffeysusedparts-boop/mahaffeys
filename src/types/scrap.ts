@@ -230,6 +230,9 @@ export interface Customer {
   totalWeightLbs: number;
   idPhotoUrl?: string;
   capturedPlates?: string[];
+  isCommercial: boolean;
+  companyName?: string;
+  businessAddress?: string;
 }
 
 export interface ComplianceCaptures {

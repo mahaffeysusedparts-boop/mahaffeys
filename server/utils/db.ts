@@ -49,6 +49,34 @@ async function initializeSchema() {
       updated_by TEXT REFERENCES users(id) ON DELETE SET NULL
     );
 
+    CREATE TABLE IF NOT EXISTS customers (
+      id TEXT PRIMARY KEY,
+      full_name TEXT NOT NULL,
+      phone TEXT NOT NULL DEFAULT '',
+      id_type TEXT NOT NULL CHECK (id_type IN ('Driver License', 'State ID', 'Passport', 'Military ID')),
+      id_number TEXT NOT NULL,
+      id_state TEXT NOT NULL,
+      address TEXT NOT NULL DEFAULT '',
+      vehicle_license_plate TEXT,
+      vehicle_state TEXT,
+      notes TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      total_payouts NUMERIC(14, 2) NOT NULL DEFAULT 0,
+      total_weight_lbs BIGINT NOT NULL DEFAULT 0,
+      id_photo_url TEXT,
+      captured_plates JSONB NOT NULL DEFAULT '[]'::jsonb,
+      is_commercial BOOLEAN NOT NULL DEFAULT FALSE,
+      company_name TEXT,
+      business_address TEXT
+    );
+    CREATE INDEX IF NOT EXISTS customers_full_name_idx ON customers (LOWER(full_name));
+    CREATE INDEX IF NOT EXISTS customers_company_name_idx ON customers (LOWER(company_name)) WHERE company_name IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS customers_id_number_idx ON customers (LOWER(id_number));
+    CREATE INDEX IF NOT EXISTS customers_phone_idx ON customers (phone);
+    CREATE INDEX IF NOT EXISTS customers_plate_idx ON customers (LOWER(vehicle_license_plate)) WHERE vehicle_license_plate IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS customers_created_at_idx ON customers (created_at DESC);
+
     CREATE TABLE IF NOT EXISTS state_upload_chunks (
       upload_id UUID NOT NULL,
       state_key TEXT NOT NULL,
@@ -155,6 +183,45 @@ async function initializeSchema() {
       linked_record_id TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+  `);
+
+  await getPool().query(`
+    INSERT INTO customers (
+      id, full_name, phone, id_type, id_number, id_state, address,
+      vehicle_license_plate, vehicle_state, notes, created_at,
+      total_payouts, total_weight_lbs, id_photo_url, captured_plates,
+      is_commercial, company_name, business_address
+    )
+    SELECT
+      customer->>'id',
+      COALESCE(NULLIF(customer->>'fullName', ''), 'Unknown Customer'),
+      COALESCE(customer->>'phone', ''),
+      CASE WHEN customer->>'idType' IN ('Driver License', 'State ID', 'Passport', 'Military ID')
+        THEN customer->>'idType' ELSE 'Driver License' END,
+      COALESCE(customer->>'idNumber', ''),
+      COALESCE(NULLIF(customer->>'idState', ''), 'GA'),
+      COALESCE(customer->>'address', ''),
+      NULLIF(customer->>'vehicleLicensePlate', ''),
+      NULLIF(customer->>'vehicleState', ''),
+      NULLIF(customer->>'notes', ''),
+      CASE WHEN COALESCE(customer->>'createdAt', '') ~ '^\\d{4}-\\d{2}-\\d{2}T'
+        THEN (customer->>'createdAt')::timestamptz ELSE NOW() END,
+      CASE WHEN COALESCE(customer->>'totalPayouts', '') ~ '^\\d+(\\.\\d+)?$'
+        THEN (customer->>'totalPayouts')::numeric ELSE 0 END,
+      CASE WHEN COALESCE(customer->>'totalWeightLbs', '') ~ '^\\d+$'
+        THEN (customer->>'totalWeightLbs')::bigint ELSE 0 END,
+      NULLIF(customer->>'idPhotoUrl', ''),
+      CASE WHEN jsonb_typeof(customer->'capturedPlates') = 'array'
+        THEN customer->'capturedPlates' ELSE '[]'::jsonb END,
+      CASE WHEN LOWER(COALESCE(customer->>'isCommercial', 'false')) = 'true' THEN TRUE ELSE FALSE END,
+      NULLIF(customer->>'companyName', ''),
+      NULLIF(customer->>'businessAddress', '')
+    FROM app_state
+    CROSS JOIN LATERAL jsonb_array_elements(
+      CASE WHEN jsonb_typeof(value) = 'array' THEN value ELSE '[]'::jsonb END
+    ) AS customer
+    WHERE key = 'mahaffeys_customers' AND customer ? 'id'
+    ON CONFLICT (id) DO NOTHING
   `);
 }
 

@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ComplianceCaptures, Customer, Ticket } from '@/types/scrap';
 import { storageService } from '@/services/storageService';
+import { customerService } from '@/services/customerService';
 import { ComplianceCaptureModal } from '@/components/compliance/ComplianceCaptureModal';
 import { calculateComplianceScore } from '@/utils/complianceUtils';
 import { Button } from '@/components/ui/button';
@@ -8,14 +9,18 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import {
   ArrowLeft,
   ArrowRight,
   Camera,
+  Check,
   CheckCircle2,
+  ChevronsUpDown,
   CreditCard,
   Hash,
+  Loader2,
   Package,
   Phone,
   RefreshCw,
@@ -23,7 +28,6 @@ import {
   Scale,
   ShieldCheck,
   Truck,
-  User,
   UserCheck,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -44,10 +48,16 @@ const emptyCaptures: ComplianceCaptures = {
 };
 
 export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBack, onSaved }) => {
-  const [customers] = useState<Customer[]>(() => storageService.getCustomers());
   const [ticketNumber, setTicketNumber] = useState<string>(() => storageService.generateScrapReceiptNumber());
+  const [customerSearchOpen, setCustomerSearchOpen] = useState(false);
+  const [customerSearch, setCustomerSearch] = useState('');
+  const [customerResults, setCustomerResults] = useState<Customer[]>([]);
+  const [customerSearchLoading, setCustomerSearchLoading] = useState(false);
+  const [customerSearchError, setCustomerSearchError] = useState('');
+  const [saving, setSaving] = useState(false);
 
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
+  const [selectedCustomerLabel, setSelectedCustomerLabel] = useState('');
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [customerIdNumber, setCustomerIdNumber] = useState('');
@@ -59,26 +69,52 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
 
   const compliance = calculateComplianceScore(captures, 'SCRAP_METAL');
 
+  useEffect(() => {
+    if (!customerSearchOpen) return;
+    let active = true;
+    const timer = window.setTimeout(async () => {
+      setCustomerSearchLoading(true);
+      setCustomerSearchError('');
+      try {
+        const result = await customerService.list({ search: customerSearch.trim(), pageSize: 20 });
+        if (active) setCustomerResults(result.customers);
+      } catch (error) {
+        if (active) {
+          setCustomerResults([]);
+          setCustomerSearchError(error instanceof Error ? error.message : 'Unable to search customers');
+        }
+      } finally {
+        if (active) setCustomerSearchLoading(false);
+      }
+    }, 250);
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [customerSearch, customerSearchOpen]);
+
   const handleRegenerateNumber = () => {
     const next = storageService.generateScrapReceiptNumber();
     setTicketNumber(next);
     toast.info(`Generated receipt #${next}`);
   };
 
-  const handleCustomerSelect = (custId: string) => {
-    setSelectedCustomerId(custId);
-    const cust = customers.find((c) => c.id === custId);
-    if (!cust) return;
-    setCustomerName(cust.fullName);
-    setCustomerPhone(cust.phone || '');
-    setCustomerIdNumber(cust.idNumber);
-    if (cust.vehicleLicensePlate) setVehicleLicensePlate(cust.vehicleLicensePlate);
-    if (cust.idPhotoUrl) {
-      setCaptures((prev) => ({ ...prev, idPhotoUrl: cust.idPhotoUrl }));
+  const handleCustomerSelect = (customer: Customer) => {
+    setSelectedCustomerId(customer.id);
+    setSelectedCustomerLabel(customer.isCommercial && customer.companyName
+      ? `${customer.companyName} — ${customer.fullName}`
+      : customer.fullName);
+    setCustomerName(customer.fullName);
+    setCustomerPhone(customer.phone || '');
+    setCustomerIdNumber(customer.idNumber);
+    setVehicleLicensePlate(customer.vehicleLicensePlate || '');
+    if (customer.idPhotoUrl) {
+      setCaptures((prev) => ({ ...prev, idPhotoUrl: customer.idPhotoUrl }));
     }
+    setCustomerSearchOpen(false);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!customerName.trim()) {
       toast.error('Enter the seller name before saving this intake');
       return;
@@ -98,38 +134,66 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
       return;
     }
 
-    const ticket: Ticket = {
-      id: finalId,
-      ticketType: 'SCRAP_METAL',
-      createdAt: new Date().toISOString(),
-      status: 'PENDING',
-      customerId: selectedCustomerId || undefined,
-      customerName: customerName.trim(),
-      customerPhone: customerPhone.trim() || undefined,
-      customerIdNumber: customerIdNumber.trim() || undefined,
-      vehicleLicensePlate: vehicleLicensePlate.trim().toUpperCase() || undefined,
-      scrapLines: [],
-      complianceCaptures: captures,
-      grossTotal: 0,
-      totalDeductions: 0,
-      finalPayout: 0,
-      payoutMethod: 'Cash',
-      operatorName: storageService.getSettings().operatorName,
-      notes: notes.trim() || 'Seller info & photos collected — awaiting scale IN weighing.',
-    };
+    setSaving(true);
+    try {
+      let customerId = selectedCustomerId;
+      if (!customerId && customerIdNumber.trim()) {
+        const newCustomer = await customerService.create({
+          fullName: customerName.trim(),
+          phone: customerPhone.trim(),
+          idType: 'Driver License',
+          idNumber: customerIdNumber.trim(),
+          idState: 'GA',
+          address: '',
+          vehicleLicensePlate: vehicleLicensePlate.trim().toUpperCase(),
+          idPhotoUrl: captures.idPhotoUrl,
+          isCommercial: false,
+        });
+        customerId = newCustomer.id;
+        setSelectedCustomerId(newCustomer.id);
+        setSelectedCustomerLabel(newCustomer.fullName);
+        toast.success('New customer profile created automatically');
+      }
 
-    storageService.saveTicket(ticket);
+      const ticket: Ticket = {
+        id: finalId,
+        ticketType: 'SCRAP_METAL',
+        createdAt: new Date().toISOString(),
+        status: 'PENDING',
+        customerId: customerId || undefined,
+        customerName: customerName.trim(),
+        customerPhone: customerPhone.trim() || undefined,
+        customerIdNumber: customerIdNumber.trim() || undefined,
+        vehicleLicensePlate: vehicleLicensePlate.trim().toUpperCase() || undefined,
+        scrapLines: [],
+        complianceCaptures: captures,
+        grossTotal: 0,
+        totalDeductions: 0,
+        finalPayout: 0,
+        payoutMethod: 'Cash',
+        operatorName: storageService.getSettings().operatorName,
+        notes: notes.trim() || 'Seller info & photos collected — awaiting scale IN weighing.',
+      };
 
-    if (!customerPhone.trim() || !customerIdNumber.trim()) {
-      toast.warning('Phone or ID number is missing', {
-        description: 'Capture it before the final payout is issued.',
+      storageService.saveTicket(ticket);
+
+      if (!customerPhone.trim() || !customerIdNumber.trim()) {
+        toast.warning('Phone or ID number is missing', {
+          description: customerIdNumber.trim()
+            ? 'Capture the phone number before the final payout is issued.'
+            : 'An ID number is required to add this seller to the customer registry.',
+        });
+      }
+
+      toast.success(`Intake #${finalId} saved`, {
+        description: 'Seller details & photos stored. Continue to the scale to log the IN weight.',
       });
+      onSaved(finalId);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Unable to save this intake');
+    } finally {
+      setSaving(false);
     }
-
-    toast.success(`Intake #${finalId} saved`, {
-      description: 'Seller details & photos stored. Continue to the scale to log the IN weight.',
-    });
-    onSaved(finalId);
   };
 
   const photoSlots = [
@@ -201,33 +265,81 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
                 </CardTitle>
               </div>
               <Badge className="border border-slate-700 bg-slate-800 font-mono text-[10px] text-slate-300">
-                MANUAL ENTRY
+                SEARCH OR ADD NEW
               </Badge>
             </CardHeader>
 
             <CardContent className="space-y-4 p-4">
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
-                  <Label className="text-xs text-slate-300">Registered Customer</Label>
-                  <Select value={selectedCustomerId} onValueChange={handleCustomerSelect}>
-                    <SelectTrigger className="mt-1 h-11 border-slate-800 bg-slate-950 text-xs text-white">
-                      <SelectValue placeholder="-- Select existing --" />
-                    </SelectTrigger>
-                    <SelectContent className="border-slate-800 bg-slate-900 text-white">
-                      {customers.map((c) => (
-                        <SelectItem key={c.id} value={c.id} className="text-xs">
-                          {c.fullName} ({c.phone || c.idNumber || 'No Phone/ID'})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Label className="text-xs text-slate-300">Find Registered Customer</Label>
+                  <Popover open={customerSearchOpen} onOpenChange={setCustomerSearchOpen}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        role="combobox"
+                        aria-expanded={customerSearchOpen}
+                        className="mt-1 h-11 w-full justify-between rounded-xl border-slate-800 bg-slate-950 px-3 text-xs font-normal text-white hover:bg-slate-900"
+                      >
+                        <span className="truncate">{selectedCustomerLabel || 'Search existing customers...'}</span>
+                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 text-slate-500" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent align="start" className="w-[min(420px,calc(100vw-2rem))] rounded-xl border-slate-700 bg-slate-900 p-0 text-white shadow-2xl">
+                      <Command shouldFilter={false} className="rounded-xl bg-slate-900 text-white">
+                        <CommandInput
+                          value={customerSearch}
+                          onValueChange={setCustomerSearch}
+                          placeholder="Name, company, phone, ID, address..."
+                          className="text-xs text-white placeholder:text-slate-500"
+                        />
+                        <CommandList>
+                          {customerSearchLoading ? (
+                            <div className="flex items-center justify-center gap-2 py-8 text-xs text-slate-400"><Loader2 className="h-4 w-4 animate-spin text-emerald-400" /> Searching...</div>
+                          ) : customerSearchError ? (
+                            <div className="px-4 py-6 text-center text-xs text-rose-300">{customerSearchError}</div>
+                          ) : (
+                            <>
+                              <CommandEmpty>No matching customer found. Enter seller details to create one on save.</CommandEmpty>
+                              <CommandGroup heading="Customers">
+                                {customerResults.map((customer) => (
+                                  <CommandItem
+                                    key={customer.id}
+                                    value={customer.id}
+                                    onSelect={() => handleCustomerSelect(customer)}
+                                    className="items-start rounded-lg px-3 py-2.5 text-white data-[selected=true]:bg-emerald-950"
+                                  >
+                                    <Check className={`mr-2 mt-0.5 h-4 w-4 text-emerald-400 ${selectedCustomerId === customer.id ? 'opacity-100' : 'opacity-0'}`} />
+                                    <div className="min-w-0">
+                                      <div className="flex items-center gap-2">
+                                        <span className="truncate text-xs font-bold">{customer.isCommercial && customer.companyName ? customer.companyName : customer.fullName}</span>
+                                        {customer.isCommercial && <Badge className="rounded-full bg-cyan-950 text-[8px] text-cyan-300">Commercial</Badge>}
+                                      </div>
+                                      <p className="truncate text-[10px] text-slate-400">{customer.isCommercial ? `${customer.fullName} · ` : ''}{customer.phone || customer.idNumber}</p>
+                                    </div>
+                                  </CommandItem>
+                                ))}
+                              </CommandGroup>
+                            </>
+                          )}
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
                 </div>
 
                 <div>
                   <Label className="text-xs text-slate-300">Seller Name *</Label>
                   <Input
                     value={customerName}
-                    onChange={(e) => setCustomerName(e.target.value)}
+                    onChange={(e) => {
+                      setCustomerName(e.target.value);
+                      if (selectedCustomerId) {
+                        setSelectedCustomerId('');
+                        setSelectedCustomerLabel('');
+                      }
+                    }}
                     placeholder="e.g. Marcus Vance"
                     className="mt-1 h-11 border-slate-800 bg-slate-950 text-xs font-bold text-white"
                   />
@@ -379,11 +491,13 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
               </div>
 
               <Button
-                onClick={handleSave}
+                onClick={() => void handleSave()}
+                disabled={saving}
                 className="h-12 w-full gap-2 bg-emerald-600 text-sm font-extrabold text-white shadow-lg shadow-emerald-950 hover:bg-emerald-500"
               >
-                <Scale className="h-4 w-4" /> Save Intake &amp; Continue to Scale
-                <ArrowRight className="h-4 w-4" />
+                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Scale className="h-4 w-4" />}
+                {saving ? 'Saving Intake...' : 'Save Intake & Continue to Scale'}
+                {!saving && <ArrowRight className="h-4 w-4" />}
               </Button>
 
               <p className="flex items-start gap-2 text-[11px] leading-relaxed text-slate-400">
