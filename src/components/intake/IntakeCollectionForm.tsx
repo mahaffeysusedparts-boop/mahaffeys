@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { ComplianceCaptures, Customer, Ticket } from '@/types/scrap';
 import { storageService } from '@/services/storageService';
-import { customerService } from '@/services/customerService';
+import { customerService, type CustomerInput } from '@/services/customerService';
 import { ComplianceCaptureModal } from '@/components/compliance/ComplianceCaptureModal';
 import { calculateComplianceScore } from '@/utils/complianceUtils';
 import { Button } from '@/components/ui/button';
@@ -57,6 +57,7 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
   const [saving, setSaving] = useState(false);
 
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [selectedCustomerLabel, setSelectedCustomerLabel] = useState('');
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
@@ -101,6 +102,7 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
 
   const handleCustomerSelect = (customer: Customer) => {
     setSelectedCustomerId(customer.id);
+    setSelectedCustomer(customer);
     setSelectedCustomerLabel(customer.isCommercial && customer.companyName
       ? `${customer.companyName} — ${customer.fullName}`
       : customer.fullName);
@@ -137,22 +139,36 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
     setSaving(true);
     try {
       let customerId = selectedCustomerId;
-      if (!customerId && customerIdNumber.trim()) {
-        const newCustomer = await customerService.create({
-          fullName: customerName.trim(),
-          phone: customerPhone.trim(),
-          idType: 'Driver License',
-          idNumber: customerIdNumber.trim(),
-          idState: 'GA',
-          address: '',
-          vehicleLicensePlate: vehicleLicensePlate.trim().toUpperCase(),
-          idPhotoUrl: captures.idPhotoUrl,
-          isCommercial: false,
-        });
+      const customerInput: CustomerInput = {
+        fullName: customerName.trim(),
+        phone: customerPhone.trim(),
+        idType: selectedCustomer?.idType ?? 'Driver License',
+        idNumber: customerIdNumber.trim(),
+        idState: selectedCustomer?.idState ?? 'GA',
+        address: selectedCustomer?.address ?? '',
+        vehicleLicensePlate: vehicleLicensePlate.trim().toUpperCase(),
+        vehicleState: selectedCustomer?.vehicleState,
+        notes: selectedCustomer?.notes,
+        idPhotoUrl: captures.idPhotoUrl,
+        isCommercial: selectedCustomer?.isCommercial ?? false,
+        companyName: selectedCustomer?.companyName,
+        businessAddress: selectedCustomer?.businessAddress,
+      };
+
+      if (customerId) {
+        const updatedCustomer = await customerService.update(customerId, customerInput);
+        setSelectedCustomer(updatedCustomer);
+        setSelectedCustomerLabel(updatedCustomer.isCommercial && updatedCustomer.companyName
+          ? `${updatedCustomer.companyName} — ${updatedCustomer.fullName}`
+          : updatedCustomer.fullName);
+        toast.success('Customer profile updated');
+      } else if (customerIdNumber.trim()) {
+        const newCustomer = await customerService.create(customerInput);
         customerId = newCustomer.id;
         setSelectedCustomerId(newCustomer.id);
+        setSelectedCustomer(newCustomer);
         setSelectedCustomerLabel(newCustomer.fullName);
-        toast.success('New customer profile created automatically');
+        toast.success('New customer profile created');
       }
 
       const ticket: Ticket = {
@@ -333,13 +349,7 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
                   <Label className="text-xs text-slate-300">Seller Name *</Label>
                   <Input
                     value={customerName}
-                    onChange={(e) => {
-                      setCustomerName(e.target.value);
-                      if (selectedCustomerId) {
-                        setSelectedCustomerId('');
-                        setSelectedCustomerLabel('');
-                      }
-                    }}
+                    onChange={(e) => setCustomerName(e.target.value)}
                     placeholder="e.g. Marcus Vance"
                     className="mt-1 h-11 border-slate-800 bg-slate-950 text-xs font-bold text-white"
                   />
