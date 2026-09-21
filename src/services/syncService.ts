@@ -1,4 +1,5 @@
 import { apiRequest } from "./apiClient";
+import { authService } from "./authService";
 import { sharedStorage } from "./sharedStorage";
 import { storageService } from "./storageService";
 import { toast } from "sonner";
@@ -37,7 +38,6 @@ const SHARED_KEYS = [
   "mahaffeys_operations_summaries",
 ] as const;
 
-const LOCAL_USER_KEY = "mahaffeys_sync_user_id";
 const POLL_INTERVAL_MS = 2_000;
 const SLOW_POLL_INTERVAL_MS = 30_000;
 const HEARTBEAT_INTERVAL_MS = 30_000;
@@ -110,14 +110,18 @@ function mergeArrays(localValue: unknown, remoteValue: unknown): unknown {
   return [...mergedLocal, ...remoteRecords.filter((item) => !localIds.has(String(item.id)))];
 }
 
-function localUserId(): string {
-  if (typeof localStorage === "undefined") return "anonymous";
-  let id = localStorage.getItem(LOCAL_USER_KEY);
-  if (!id) {
-    id = `ws-${Math.random().toString(36).slice(2, 10)}`;
-    try { localStorage.setItem(LOCAL_USER_KEY, id); } catch { /* ignore */ }
+function readLocalValue(key: string): unknown {
+  const raw = localStorage.getItem(key);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch (error) {
+    diagnosticLogger.warn("SyncService", `Discarding corrupt local state for ${key}`, {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    localStorage.removeItem(key);
+    return null;
   }
-  return id;
 }
 
 class SyncService {
@@ -253,13 +257,12 @@ class SyncService {
       }
       params.set("limit", "2000");
       const response = await apiRequest<SinceResponse>(`/api/state/since?${params.toString()}`);
-      const me = localUserId();
+      const currentUserId = authService.getCurrentUser()?.id;
       let applied = 0;
       for (const entry of response.entries) {
         if (!(SHARED_KEYS as readonly string[]).includes(entry.key)) continue;
-        if (entry.updatedBy === me) continue; // we wrote it, skip
-        const localRaw = localStorage.getItem(entry.key);
-        const localValue = localRaw ? JSON.parse(localRaw) : null;
+        if (currentUserId && entry.updatedBy === currentUserId) continue;
+        const localValue = readLocalValue(entry.key);
         const merged = MERGE_KEYS.has(entry.key) && localValue
           ? mergeArrays(localValue, entry.value)
           : entry.value;
