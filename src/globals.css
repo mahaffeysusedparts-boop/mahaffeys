@@ -128,12 +128,13 @@
     color: #000000 !important;
   }
 
-  /* Hide the mounted app and print only the active receipt dialog. */
-  #root {
+  /* Hide the mounted app ONLY when a receipt/voucher dialog is open — other
+     print jobs (e.g. the yard map) must keep the app visible. */
+  body:has(.printable-receipt-container) #root {
     display: none !important;
   }
 
-  body > * {
+  body:has(.printable-receipt-container) > * {
     visibility: hidden !important;
   }
 
@@ -148,7 +149,8 @@
   }
 
   /* Reset Radix Dialog Overlay/Content for Print */
-  [role="dialog"], [data-state="open"] {
+  body:has(.printable-receipt-container) [role="dialog"],
+  body:has(.printable-receipt-container) [data-state="open"] {
     position: static !important;
     width: 100% !important;
     max-width: 100% !important;
@@ -176,7 +178,7 @@
     margin-top: 0 !important;
   }
 
-  /* Each voucher copy fills one 8.5x11 letter page (7.5in x 10in live area) */
+  /* Each voucher copy fills one upright 8.5x11 letter page (one page per copy) */
   .printable-receipt-card {
     background-color: #ffffff !important;
     color: #000000 !important;
