@@ -5,6 +5,7 @@ import { AlarmComManager } from "@/components/server/AlarmComManager";
 import { ScaleServerManager } from "@/components/server/ScaleServerManager";
 import { StoplightServerManager } from "@/components/server/StoplightServerManager";
 import { StorageBayManager } from "@/components/server/StorageBayManager";
+import { BusinessIntelligenceDashboard } from "@/components/admin/BusinessIntelligenceDashboard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -306,13 +307,20 @@ export default function ServerAdminPage() {
               <MetricCard icon={HardDrive} label="App disk" value={`${diskPercent}% used`} detail={`${formatBytes(snapshot.host.diskUsed)} of ${formatBytes(snapshot.host.diskTotal)}`} accent="amber" />
             </section>
 
-            {/* Audit & Backups tabs */}
-            <Tabs defaultValue="backups" className="w-full space-y-4">
-              <TabsList className="bg-slate-900 border border-slate-800 p-1 rounded-xl">
-                <TabsTrigger value="backups" className="text-sm">Backups</TabsTrigger>
-                <TabsTrigger value="audit" className="text-sm">Audit Log</TabsTrigger>
-                <TabsTrigger value="alarmcom" className="text-sm">Alarm.com</TabsTrigger>
-              </TabsList>
+            {/* Administration tabs */}
+            <Tabs defaultValue="business-intelligence" className="w-full space-y-4">
+              <div className="overflow-x-auto pb-1">
+                <TabsList className="h-auto min-w-max rounded-xl border border-slate-800 bg-slate-900 p-1">
+                  <TabsTrigger value="business-intelligence" className="text-sm">Business Intelligence</TabsTrigger>
+                  <TabsTrigger value="backups" className="text-sm">Backups</TabsTrigger>
+                  <TabsTrigger value="audit" className="text-sm">Audit Log</TabsTrigger>
+                  <TabsTrigger value="alarmcom" className="text-sm">Alarm.com</TabsTrigger>
+                </TabsList>
+              </div>
+
+              <TabsContent value="business-intelligence" className="space-y-4">
+                <BusinessIntelligenceDashboard />
+              </TabsContent>
 
               <TabsContent value="backups" className="space-y-4">
                 <Card className="bg-slate-900 border-slate-800 text-white shadow-lg">

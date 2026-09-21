@@ -26,6 +26,7 @@ import type {
   MaintenanceLogEntry,
   MetalRateChangeLog,
   ScaleWeightEvent,
+  YardMapItem,
 } from "@/types/scrap";
 import type {
   AlertRule,
@@ -292,6 +293,9 @@ export const storageService = {
   getYardBays: (): YardBayLocation[] => readCached("mahaffeys_yard_bays", []),
   saveYardBays: (bays: YardBayLocation[]) => patchCached("mahaffeys_yard_bays", bays),
 
+  getYardLayout: (): YardMapItem[] => readCached("mahaffeys_yard_layout", []),
+  saveYardLayout: (items: YardMapItem[]) => patchCached("mahaffeys_yard_layout", items),
+
   // ── Cash Drawer ────────────────────────────────────────────────────────────
   getCashDrawerLogs: (): CashDrawerLog[] => readCached("mahaffeys_cash_drawer", []),
   saveCashDrawerLog: (log: CashDrawerLog) => {
@@ -429,6 +433,7 @@ export const storageService = {
       "mahaffeys_admission_passes",
       "mahaffeys_container_drops",
       "mahaffeys_yard_bays",
+      "mahaffeys_yard_layout",
       "mahaffeys_cash_drawer",
       "mahaffeys_nmvtis_logs",
       "mahaffeys_ip_cameras",
