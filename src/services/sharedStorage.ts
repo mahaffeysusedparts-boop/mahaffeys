@@ -14,6 +14,7 @@ const SHARED_KEYS = [
   "mahaffeys_container_drops",
   "mahaffeys_cash_drawer",
   "mahaffeys_yard_bays",
+  "mahaffeys_yard_layout",
   "mahaffeys_pull_parts",
   "mahaffeys_pull_yard_vehicles",
   "mahaffeys_removed_inventory_vehicles",
@@ -67,6 +68,7 @@ const SCHEMA_DEFAULTS: Record<string, unknown> = {
   mahaffeys_container_drops: [],
   mahaffeys_cash_drawer: [],
   mahaffeys_yard_bays: [],
+  mahaffeys_yard_layout: [],
   mahaffeys_pull_parts: [],
   mahaffeys_pull_yard_vehicles: [],
   mahaffeys_removed_inventory_vehicles: [],
@@ -214,6 +216,13 @@ const GROWING_ARRAY_FIELDS = ["scrapLines", "weightTransactions"];
 const PENDING_WEIGH_FIELDS = ["scaleGrossInWeight", "scaleGrossInAt", "scaleTareOutWeight", "scaleTareOutAt"];
 
 function mergeRecord(localRecord: Record<string, unknown>, serverRecord: Record<string, unknown>) {
+  const localUpdatedAt = Date.parse(String(localRecord.updatedAt ?? "")) || 0;
+  const serverUpdatedAt = Date.parse(String(serverRecord.updatedAt ?? "")) || 0;
+  if (localUpdatedAt || serverUpdatedAt) {
+    return serverUpdatedAt > localUpdatedAt
+      ? { ...localRecord, ...serverRecord }
+      : { ...serverRecord, ...localRecord };
+  }
   const localRank = STATUS_RANK[String(localRecord.status ?? "")] ?? 0;
   const serverRank = STATUS_RANK[String(serverRecord.status ?? "")] ?? 0;
   const serverWins = serverRank > localRank;
@@ -379,6 +388,13 @@ if (typeof window !== "undefined") {
     retryTimer = null;
     void flushWrites();
   });
+
+  // Keep multiple tabs on the same workstation synchronized immediately.
+  window.addEventListener("storage", (event) => {
+    if (!event.key || !(SHARED_KEYS as readonly string[]).includes(event.key)) return;
+    notifyKey(event.key);
+    window.dispatchEvent(new CustomEvent("mahaffeys:remote-sync", { detail: { key: event.key } }));
+  });
 }
 
 function collectLocalState() {
@@ -430,7 +446,7 @@ export const sharedStorage = {
     const response = await apiRequest<{ state: Record<string, unknown> }>("/api/state");
     const entries = Object.entries(response.state);
     const serverKeys = new Set(entries.map(([key]) => key));
-    const mergeKeys = new Set(["mahaffeys_tickets", "mahaffeys_pull_yard_vehicles"]);
+    const mergeKeys = new Set(["mahaffeys_tickets", "mahaffeys_pull_yard_vehicles", "mahaffeys_yard_layout"]);
 
     for (const [key, serverValue] of entries) {
       if (!(SHARED_KEYS as readonly string[]).includes(key)) continue;

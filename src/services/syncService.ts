@@ -16,6 +16,7 @@ const SHARED_KEYS = [
   "mahaffeys_container_drops",
   "mahaffeys_cash_drawer",
   "mahaffeys_yard_bays",
+  "mahaffeys_yard_layout",
   "mahaffeys_pull_parts",
   "mahaffeys_pull_yard_vehicles",
   "mahaffeys_removed_inventory_vehicles",
@@ -37,10 +38,10 @@ const SHARED_KEYS = [
 ] as const;
 
 const LOCAL_USER_KEY = "mahaffeys_sync_user_id";
-const POLL_INTERVAL_MS = 10_000;
-const SLOW_POLL_INTERVAL_MS = 60_000;
+const POLL_INTERVAL_MS = 2_000;
+const SLOW_POLL_INTERVAL_MS = 30_000;
 const HEARTBEAT_INTERVAL_MS = 30_000;
-const MERGE_KEYS = new Set(["mahaffeys_tickets", "mahaffeys_pull_yard_vehicles"]);
+const MERGE_KEYS = new Set(["mahaffeys_tickets", "mahaffeys_pull_yard_vehicles", "mahaffeys_yard_layout"]);
 
 interface SinceEntry {
   key: string;
@@ -69,6 +70,11 @@ const GROWING_ARRAY_FIELDS = ["scrapLines", "weightTransactions"];
 const PENDING_WEIGH_FIELDS = ["scaleGrossInWeight", "scaleGrossInAt", "scaleTareOutWeight", "scaleTareOutAt"];
 
 function mergeRecord(local: Record<string, unknown>, remote: Record<string, unknown>) {
+  const localUpdatedAt = Date.parse(String(local.updatedAt ?? "")) || 0;
+  const remoteUpdatedAt = Date.parse(String(remote.updatedAt ?? "")) || 0;
+  if (localUpdatedAt || remoteUpdatedAt) {
+    return remoteUpdatedAt > localUpdatedAt ? { ...local, ...remote } : { ...remote, ...local };
+  }
   const localRank = STATUS_RANK[String(local.status ?? "")] ?? 0;
   const remoteRank = STATUS_RANK[String(remote.status ?? "")] ?? 0;
   const remoteWins = remoteRank > localRank;

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent, PointerEvent as ReactPointerEvent, WheelEvent } from "react";
 import type { MetalGrade, PullYardVehicle, YardBayLocation, YardMapItem, YardMapItemType } from "@/types/scrap";
 import { storageService } from "@/services/storageService";
+import { sharedStorage, type ConnectionStatus } from "@/services/sharedStorage";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ItemPropertiesPanel } from "./ItemPropertiesPanel";
@@ -10,7 +11,7 @@ import { YardItem } from "./YardItem";
 import { MapSearchFilter, type MapCategoryFilter } from "./MapSearchFilter";
 import { MapControls, type HeatmapMetric } from "./MapControls";
 import { TimeTravelSlider } from "./TimeTravelSlider";
-import { Crosshair, Eye, Maximize2, Minus, MousePointer2, Plus, RotateCcw, Save } from "lucide-react";
+import { CloudOff, Crosshair, Eye, Loader2, Maximize2, Minus, MousePointer2, Plus, RotateCcw, Save, Users } from "lucide-react";
 import { toast } from "sonner";
 
 const CANVAS_WIDTH = 2400;
@@ -32,7 +33,9 @@ interface InteractiveYardMapProps { bays: YardBayLocation[]; vehicles: PullYardV
 
 export function InteractiveYardMap({ bays, vehicles, metals }: InteractiveYardMapProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
+  const skipNextSaveRef = useRef(false);
   const [items, setItems] = useState<YardMapItem[]>(() => storageService.getYardLayout());
+  const [syncStatus, setSyncStatus] = useState<ConnectionStatus>(() => sharedStorage.getStatus());
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [scale, setScale] = useState(0.5);
   const [pan, setPan] = useState({ x: 24, y: 24 });
@@ -45,14 +48,21 @@ export function InteractiveYardMap({ bays, vehicles, metals }: InteractiveYardMa
   const [historyDates, setHistoryDates] = useState<string[]>(() => storageService.getYardLayoutSnapshotDates());
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
 
-  const displayItems = useMemo(() => selectedDate ? storageService.getYardLayoutSnapshot(selectedDate) : items, [items, selectedDate]);
-  const selectedItem = selectedDate ? null : items.find((item) => item.id === selectedId) ?? null;
+  const displayItems = useMemo(() => {
+    const source = selectedDate ? storageService.getYardLayoutSnapshot(selectedDate) : items;
+    return source.filter((item) => !item.deletedAt);
+  }, [items, selectedDate]);
+  const selectedItem = selectedDate ? null : items.find((item) => item.id === selectedId && !item.deletedAt) ?? null;
   const bayById = useMemo(() => new Map(bays.map((bay) => [bay.id, bay])), [bays]);
   const vehicleById = useMemo(() => new Map(vehicles.map((vehicle) => [vehicle.id, vehicle])), [vehicles]);
   const metalById = useMemo(() => new Map(metals.map((metal) => [metal.id, metal])), [metals]);
 
   useEffect(() => {
     if (selectedDate) return;
+    if (skipNextSaveRef.current) {
+      skipNextSaveRef.current = false;
+      return;
+    }
     const timer = window.setTimeout(() => {
       storageService.saveYardLayout(items);
       setHistoryDates(storageService.getYardLayoutSnapshotDates());
@@ -62,10 +72,42 @@ export function InteractiveYardMap({ bays, vehicles, metals }: InteractiveYardMa
   }, [items, selectedDate]);
 
   useEffect(() => {
+    const unsubscribeStatus = sharedStorage.subscribe(setSyncStatus);
+    const handleRemoteLayout = (event: Event) => {
+      const key = (event as CustomEvent<{ key?: string }>).detail?.key;
+      if (key !== "mahaffeys_yard_layout") return;
+      const incoming = storageService.getYardLayout();
+      setItems((current) => {
+        const merged = new Map(incoming.map((item) => [item.id, { ...item }]));
+        let preservedLocalEdit = false;
+        current.forEach((localItem) => {
+          const remoteItem = merged.get(localItem.id);
+          const localUpdatedAt = Date.parse(localItem.updatedAt ?? "") || 0;
+          const remoteUpdatedAt = Date.parse(remoteItem?.updatedAt ?? "") || 0;
+          if (!remoteItem || localUpdatedAt > remoteUpdatedAt) {
+            merged.set(localItem.id, localItem);
+            preservedLocalEdit = true;
+          }
+        });
+        skipNextSaveRef.current = !preservedLocalEdit;
+        return [...merged.values()];
+      });
+      setSaved(true);
+    };
+    window.addEventListener("mahaffeys:remote-sync", handleRemoteLayout);
+    return () => {
+      unsubscribeStatus();
+      window.removeEventListener("mahaffeys:remote-sync", handleRemoteLayout);
+    };
+  }, []);
+
+  useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
       if ((event.target as HTMLElement).matches("input, textarea, select, [role='combobox']")) return;
       if (!selectedDate && (event.key === "Delete" || event.key === "Backspace") && selectedId) {
-        setItems((current) => current.filter((item) => item.id !== selectedId)); setSelectedId(null);
+        const deletedAt = new Date().toISOString();
+        setItems((current) => current.map((item) => item.id === selectedId ? { ...item, deletedAt, updatedAt: deletedAt } : item));
+        setSelectedId(null);
       }
       if (event.key === "Escape") setSelectedId(null);
     };
@@ -76,7 +118,7 @@ export function InteractiveYardMap({ bays, vehicles, metals }: InteractiveYardMa
   const updateItem = (id: string, changes: Partial<YardMapItem>) => {
     if (selectedDate) return;
     setSaved(false);
-    setItems((current) => current.map((item) => item.id === id ? { ...item, ...changes } : item));
+    setItems((current) => current.map((item) => item.id === id ? { ...item, ...changes, updatedAt: new Date().toISOString() } : item));
   };
 
   const addItem = (type: YardMapItemType, point?: { x: number; y: number }) => {
@@ -88,7 +130,8 @@ export function InteractiveYardMap({ bays, vehicles, metals }: InteractiveYardMa
       id: `yard-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, type, ...defaults,
       x: Math.max(0, Math.min(CANVAS_WIDTH - defaults.width, center.x - defaults.width / 2)),
       y: Math.max(0, Math.min(CANVAS_HEIGHT - defaults.height, center.y - defaults.height / 2)), rotation: 0,
-      createdAt: new Date().toISOString(), noteText: type === "NOTE" ? "New task or safety reminder" : undefined,
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+      noteText: type === "NOTE" ? "New task or safety reminder" : undefined,
       currentLbs: type === "SCRAP_BIN" ? 0 : undefined,
       capacityLbs: type === "SCRAP_BIN" ? 20000 : undefined,
     };
@@ -155,13 +198,16 @@ export function InteractiveYardMap({ bays, vehicles, metals }: InteractiveYardMa
 
   const duplicateSelected = () => {
     if (!selectedItem) return;
-    const copy = { ...selectedItem, id: `yard-${Date.now()}`, label: `${selectedItem.label} copy`, x: selectedItem.x + 24, y: selectedItem.y + 24, createdAt: new Date().toISOString() };
+    const now = new Date().toISOString();
+    const copy = { ...selectedItem, id: `yard-${Date.now()}`, label: `${selectedItem.label} copy`, x: selectedItem.x + 24, y: selectedItem.y + 24, createdAt: now, updatedAt: now, deletedAt: undefined };
     setItems((current) => [...current, copy]); setSelectedId(copy.id); setSaved(false);
   };
 
   const resetLayout = () => {
-    if (items.length > 0 && !window.confirm("Clear every item from this yard layout?")) return;
-    setItems([]); setSelectedId(null); setSaved(false); toast.success("Yard map cleared");
+    if (displayItems.length > 0 && !window.confirm("Clear every item from this yard layout?")) return;
+    const deletedAt = new Date().toISOString();
+    setItems((current) => current.map((item) => ({ ...item, deletedAt, updatedAt: deletedAt })));
+    setSelectedId(null); setSaved(false); toast.success("Yard map cleared");
   };
 
   return (
@@ -175,8 +221,9 @@ export function InteractiveYardMap({ bays, vehicles, metals }: InteractiveYardMa
         <YardItemPalette onAdd={addItem} />
         <section className="yard-map-print-shell min-w-0 overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 shadow-2xl shadow-slate-950/50">
           <div className="yard-map-no-print flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 bg-slate-900/95 px-3 py-2.5">
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Badge className={`rounded-full ${selectedDate ? "border-violet-500/30 bg-violet-500/10 text-violet-300" : "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"}`}><Crosshair className="mr-1 h-3 w-3" /> {selectedDate ? "Historical" : "Live canvas"}</Badge>
+              {!selectedDate && <Badge className={`rounded-full ${syncStatus === "connected" ? "border-sky-500/30 bg-sky-500/10 text-sky-300" : syncStatus === "error" ? "border-rose-500/30 bg-rose-500/10 text-rose-300" : "border-slate-600 bg-slate-800 text-slate-300"}`}>{syncStatus === "connected" ? <Users className="mr-1 h-3 w-3" /> : syncStatus === "connecting" ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <CloudOff className="mr-1 h-3 w-3" />}{syncStatus === "connected" ? "Shared live" : syncStatus === "connecting" ? "Connecting" : syncStatus === "error" ? "Offline queue" : "Local only"}</Badge>}
               <span className="text-xs text-slate-500">{visibleItems.length} of {displayItems.length} visible</span>
               {!selectedDate && <span className={`flex items-center gap-1 text-[11px] ${saved ? "text-emerald-400" : "text-amber-400"}`}><Save className="h-3 w-3" /> {saved ? "Saved" : "Saving…"}</span>}
             </div>
@@ -191,7 +238,7 @@ export function InteractiveYardMap({ bays, vehicles, metals }: InteractiveYardMa
             </div>
           </div>
         </section>
-        <div className="yard-map-no-print lg:min-h-[620px]">{selectedItem ? <ItemPropertiesPanel item={selectedItem} bays={bays} vehicles={vehicles} metals={metals} onChange={(changes) => updateItem(selectedItem.id, changes)} onDuplicate={duplicateSelected} onDelete={() => { setItems((current) => current.filter((item) => item.id !== selectedItem.id)); setSelectedId(null); setSaved(false); }} onClose={() => setSelectedId(null)} /> : <aside className="rounded-2xl border border-slate-800 bg-slate-900/95 p-5 text-center shadow-2xl shadow-slate-950/40"><MousePointer2 className="mx-auto h-8 w-8 text-sky-400" /><h2 className="mt-3 text-base font-black text-white">{selectedDate ? "Historical snapshot" : "Select a map item"}</h2><p className="mt-2 text-xs leading-relaxed text-slate-400">{selectedDate ? "Past layouts are read-only. Move the timeline to Live layout to edit." : "Choose an item to edit its details, size, rotation, color, and inventory connection."}</p></aside>}</div>
+        <div className="yard-map-no-print lg:min-h-[620px]">{selectedItem ? <ItemPropertiesPanel item={selectedItem} bays={bays} vehicles={vehicles} metals={metals} onChange={(changes) => updateItem(selectedItem.id, changes)} onDuplicate={duplicateSelected} onDelete={() => { const deletedAt = new Date().toISOString(); setItems((current) => current.map((item) => item.id === selectedItem.id ? { ...item, deletedAt, updatedAt: deletedAt } : item)); setSelectedId(null); setSaved(false); }} onClose={() => setSelectedId(null)} /> : <aside className="rounded-2xl border border-slate-800 bg-slate-900/95 p-5 text-center shadow-2xl shadow-slate-950/40"><MousePointer2 className="mx-auto h-8 w-8 text-sky-400" /><h2 className="mt-3 text-base font-black text-white">{selectedDate ? "Historical snapshot" : "Select a map item"}</h2><p className="mt-2 text-xs leading-relaxed text-slate-400">{selectedDate ? "Past layouts are read-only. Move the timeline to Live layout to edit." : "Choose an item to edit its details, size, rotation, color, and inventory connection."}</p></aside>}</div>
       </div>
     </div>
   );
