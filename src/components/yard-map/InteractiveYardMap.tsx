@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent, PointerEvent as ReactPointerEvent, WheelEvent } from "react";
-import type { PullYardVehicle, YardBayLocation, YardMapItem, YardMapItemType } from "@/types/scrap";
+import type { MetalGrade, PullYardVehicle, YardBayLocation, YardMapItem, YardMapItemType } from "@/types/scrap";
 import { storageService } from "@/services/storageService";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -28,9 +28,9 @@ const itemDefaults: Record<YardMapItemType, Pick<YardMapItem, "label" | "width" 
   NOTE: { label: "Team note", width: 210, height: 145, color: "#eab308" },
 };
 
-interface InteractiveYardMapProps { bays: YardBayLocation[]; vehicles: PullYardVehicle[]; }
+interface InteractiveYardMapProps { bays: YardBayLocation[]; vehicles: PullYardVehicle[]; metals: MetalGrade[]; }
 
-export function InteractiveYardMap({ bays, vehicles }: InteractiveYardMapProps) {
+export function InteractiveYardMap({ bays, vehicles, metals }: InteractiveYardMapProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const [items, setItems] = useState<YardMapItem[]>(() => storageService.getYardLayout());
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -49,6 +49,7 @@ export function InteractiveYardMap({ bays, vehicles }: InteractiveYardMapProps) 
   const selectedItem = selectedDate ? null : items.find((item) => item.id === selectedId) ?? null;
   const bayById = useMemo(() => new Map(bays.map((bay) => [bay.id, bay])), [bays]);
   const vehicleById = useMemo(() => new Map(vehicles.map((vehicle) => [vehicle.id, vehicle])), [vehicles]);
+  const metalById = useMemo(() => new Map(metals.map((metal) => [metal.id, metal])), [metals]);
 
   useEffect(() => {
     if (selectedDate) return;
@@ -88,6 +89,8 @@ export function InteractiveYardMap({ bays, vehicles }: InteractiveYardMapProps) 
       x: Math.max(0, Math.min(CANVAS_WIDTH - defaults.width, center.x - defaults.width / 2)),
       y: Math.max(0, Math.min(CANVAS_HEIGHT - defaults.height, center.y - defaults.height / 2)), rotation: 0,
       createdAt: new Date().toISOString(), noteText: type === "NOTE" ? "New task or safety reminder" : undefined,
+      currentLbs: type === "SCRAP_BIN" ? 0 : undefined,
+      capacityLbs: type === "SCRAP_BIN" ? 20000 : undefined,
     };
     setSaved(false); setItems((current) => [...current, item]); setSelectedId(item.id);
   };
@@ -131,17 +134,19 @@ export function InteractiveYardMap({ bays, vehicles }: InteractiveYardMapProps) 
       if (!needle) return true;
       const bay = item.linkedEntityType === "YARD_BAY" ? bayById.get(item.linkedEntityId ?? "") : undefined;
       const vehicle = item.linkedEntityType === "VEHICLE" ? vehicleById.get(item.linkedEntityId ?? "") : undefined;
-      return [item.label, item.noteText, bay?.bayName, vehicle?.vin, vehicle?.make, vehicle?.model].some((value) => value?.toLowerCase().includes(needle));
+      const metal = metalById.get(item.materialGradeId ?? "");
+      return [item.label, item.noteText, bay?.bayName, metal?.name, metal?.code, vehicle?.vin, vehicle?.make, vehicle?.model].some((value) => value?.toLowerCase().includes(needle));
     });
-  }, [displayItems, category, query, bayById, vehicleById]);
+  }, [displayItems, category, query, bayById, vehicleById, metalById]);
 
   const getHeatColor = (item: YardMapItem) => {
     if (!heatmapEnabled) return undefined;
     const bay = item.linkedEntityType === "YARD_BAY" ? bayById.get(item.linkedEntityId ?? "") : undefined;
     const vehicle = item.linkedEntityType === "VEHICLE" ? vehicleById.get(item.linkedEntityId ?? "") : undefined;
+    const metal = metalById.get(item.materialGradeId ?? "");
     let score = 0;
-    if (heatmapMetric === "FILL" && bay) score = bay.currentLbs / Math.max(1, bay.capacityLbs);
-    if (heatmapMetric === "VALUE") score = bay ? bay.estValueUsd / 50000 : vehicle ? (vehicle.purchasePrice ?? 0) / 10000 : 0;
+    if (heatmapMetric === "FILL") score = bay ? bay.currentLbs / Math.max(1, bay.capacityLbs) : (item.currentLbs ?? 0) / Math.max(1, item.capacityLbs ?? 1);
+    if (heatmapMetric === "VALUE") score = bay ? bay.estValueUsd / 50000 : metal ? ((item.currentLbs ?? 0) * metal.ratePerLb) / 50000 : vehicle ? (vehicle.purchasePrice ?? 0) / 10000 : 0;
     if (heatmapMetric === "AGE") score = vehicle ? (Date.now() - new Date(vehicle.dateSetInYard).getTime()) / 86400000 / 120 : item.createdAt ? (Date.now() - new Date(item.createdAt).getTime()) / 86400000 / 120 : 0;
     const normalized = Math.max(0, Math.min(1, score));
     const hue = Math.round(120 - normalized * 120);
@@ -181,12 +186,12 @@ export function InteractiveYardMap({ bays, vehicles }: InteractiveYardMapProps) 
             <div className={`yard-map-canvas absolute origin-top-left overflow-hidden rounded-2xl border shadow-2xl ${nightMode ? "border-slate-700 bg-[#17251d]" : "border-emerald-200 bg-[#dbe8d4]"}`} style={{ width: CANVAS_WIDTH, height: CANVAS_HEIGHT, transform: `translate(${pan.x}px, ${pan.y}px) scale(${scale})` }} onPointerDown={(event) => { if (event.target === event.currentTarget) { setSelectedId(null); startPan(event as unknown as ReactPointerEvent<HTMLDivElement>); } }}>
               <div className="pointer-events-none absolute inset-0 opacity-25" style={{ backgroundImage: "linear-gradient(rgba(255,255,255,.2) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.2) 1px, transparent 1px)", backgroundSize: "40px 40px" }} />
               <div className="pointer-events-none absolute left-6 top-5 rounded-full border border-white/20 bg-slate-950/65 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.2em] text-white/75">North yard · 240 × 150 ft</div>
-              {visibleItems.map((item) => <YardItem key={item.id} item={item} selected={!selectedDate && item.id === selectedId} scale={scale} bay={item.linkedEntityType === "YARD_BAY" ? bayById.get(item.linkedEntityId ?? "") : undefined} vehicle={item.linkedEntityType === "VEHICLE" ? vehicleById.get(item.linkedEntityId ?? "") : undefined} heatColor={getHeatColor(item)} readOnly={Boolean(selectedDate)} onSelect={() => setSelectedId(item.id)} onChange={(changes) => updateItem(item.id, changes)} />)}
+              {visibleItems.map((item) => <YardItem key={item.id} item={item} selected={!selectedDate && item.id === selectedId} scale={scale} bay={item.linkedEntityType === "YARD_BAY" ? bayById.get(item.linkedEntityId ?? "") : undefined} vehicle={item.linkedEntityType === "VEHICLE" ? vehicleById.get(item.linkedEntityId ?? "") : undefined} metal={metalById.get(item.materialGradeId ?? "")} heatColor={getHeatColor(item)} readOnly={Boolean(selectedDate)} onSelect={() => setSelectedId(item.id)} onChange={(changes) => updateItem(item.id, changes)} />)}
               {visibleItems.length === 0 && <div className="pointer-events-none absolute inset-0 flex items-center justify-center"><div className="rounded-3xl border border-dashed border-white/25 bg-slate-950/65 px-10 py-8 text-center text-white shadow-xl">{displayItems.length ? <Eye className="mx-auto h-8 w-8 text-sky-400" /> : <MousePointer2 className="mx-auto h-8 w-8 text-emerald-400" />}<p className="mt-3 text-lg font-black">{displayItems.length ? "No matching map items" : "Your yard is ready to map"}</p><p className="mt-1 text-sm text-slate-300">{displayItems.length ? "Adjust the search or category filter." : "Drag an item from the left panel onto this canvas."}</p></div></div>}
             </div>
           </div>
         </section>
-        <div className="yard-map-no-print lg:min-h-[620px]">{selectedItem ? <ItemPropertiesPanel item={selectedItem} bays={bays} vehicles={vehicles} onChange={(changes) => updateItem(selectedItem.id, changes)} onDuplicate={duplicateSelected} onDelete={() => { setItems((current) => current.filter((item) => item.id !== selectedItem.id)); setSelectedId(null); setSaved(false); }} onClose={() => setSelectedId(null)} /> : <aside className="rounded-2xl border border-slate-800 bg-slate-900/95 p-5 text-center shadow-2xl shadow-slate-950/40"><MousePointer2 className="mx-auto h-8 w-8 text-sky-400" /><h2 className="mt-3 text-base font-black text-white">{selectedDate ? "Historical snapshot" : "Select a map item"}</h2><p className="mt-2 text-xs leading-relaxed text-slate-400">{selectedDate ? "Past layouts are read-only. Move the timeline to Live layout to edit." : "Choose an item to edit its details, size, rotation, color, and inventory connection."}</p></aside>}</div>
+        <div className="yard-map-no-print lg:min-h-[620px]">{selectedItem ? <ItemPropertiesPanel item={selectedItem} bays={bays} vehicles={vehicles} metals={metals} onChange={(changes) => updateItem(selectedItem.id, changes)} onDuplicate={duplicateSelected} onDelete={() => { setItems((current) => current.filter((item) => item.id !== selectedItem.id)); setSelectedId(null); setSaved(false); }} onClose={() => setSelectedId(null)} /> : <aside className="rounded-2xl border border-slate-800 bg-slate-900/95 p-5 text-center shadow-2xl shadow-slate-950/40"><MousePointer2 className="mx-auto h-8 w-8 text-sky-400" /><h2 className="mt-3 text-base font-black text-white">{selectedDate ? "Historical snapshot" : "Select a map item"}</h2><p className="mt-2 text-xs leading-relaxed text-slate-400">{selectedDate ? "Past layouts are read-only. Move the timeline to Live layout to edit." : "Choose an item to edit its details, size, rotation, color, and inventory connection."}</p></aside>}</div>
       </div>
     </div>
   );

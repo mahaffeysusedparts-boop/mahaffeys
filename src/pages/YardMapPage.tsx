@@ -3,24 +3,29 @@ import { Navbar } from "@/components/layout/Navbar";
 import { InteractiveYardMap } from "@/components/yard-map/InteractiveYardMap";
 import { WeatherWidget } from "@/components/yard-map/WeatherWidget";
 import { storageService } from "@/services/storageService";
-import type { PullYardVehicle, YardBayLocation } from "@/types/scrap";
+import type { MetalGrade, PullYardVehicle, YardBayLocation } from "@/types/scrap";
 import { Badge } from "@/components/ui/badge";
 import { AlertTriangle, CarFront, Map, PackageOpen, Sparkles } from "lucide-react";
 
 export default function YardMapPage() {
   const [bays, setBays] = useState<YardBayLocation[]>([]);
   const [vehicles, setVehicles] = useState<PullYardVehicle[]>([]);
+  const [metals, setMetals] = useState<MetalGrade[]>([]);
 
   useEffect(() => {
     const refreshBays = () => setBays([...storageService.getYardBays()]);
     const refreshVehicles = () => setVehicles(storageService.getPullYardVehicles().filter((vehicle) => vehicle.status !== "CRUSHED"));
+    const refreshMetals = () => setMetals([...storageService.getMetals()]);
     refreshBays();
     refreshVehicles();
+    refreshMetals();
     const unsubscribeBays = storageService.subscribe("mahaffeys_yard_bays", refreshBays);
     const unsubscribeVehicles = storageService.subscribe("mahaffeys_pull_yard_vehicles", refreshVehicles);
+    const unsubscribeMetals = storageService.subscribe("mahaffeys_metals", refreshMetals);
     return () => {
       unsubscribeBays();
       unsubscribeVehicles();
+      unsubscribeMetals();
     };
   }, []);
 
@@ -66,7 +71,7 @@ export default function YardMapPage() {
           </div>
         </header>
 
-        <InteractiveYardMap bays={bays} vehicles={vehicles} />
+        <InteractiveYardMap bays={bays} vehicles={vehicles} metals={metals} />
       </main>
     </div>
   );

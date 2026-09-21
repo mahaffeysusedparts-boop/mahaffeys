@@ -229,6 +229,9 @@ export interface YardMapItem {
   color: string;
   noteText?: string;
   createdAt?: string;
+  materialGradeId?: string;
+  currentLbs?: number;
+  capacityLbs?: number;
   linkedEntityType?: YardMapLinkType;
   linkedEntityId?: string;
 }

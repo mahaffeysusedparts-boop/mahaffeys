@@ -1,4 +1,4 @@
-import type { PullYardVehicle, YardBayLocation, YardMapItem } from "@/types/scrap";
+import type { MetalGrade, PullYardVehicle, YardBayLocation, YardMapItem } from "@/types/scrap";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,13 +12,14 @@ interface ItemPropertiesPanelProps {
   item: YardMapItem;
   bays: YardBayLocation[];
   vehicles: PullYardVehicle[];
+  metals: MetalGrade[];
   onChange: (changes: Partial<YardMapItem>) => void;
   onDuplicate: () => void;
   onDelete: () => void;
   onClose: () => void;
 }
 
-export function ItemPropertiesPanel({ item, bays, vehicles, onChange, onDuplicate, onDelete, onClose }: ItemPropertiesPanelProps) {
+export function ItemPropertiesPanel({ item, bays, vehicles, metals, onChange, onDuplicate, onDelete, onClose }: ItemPropertiesPanelProps) {
   const linkValue = item.linkedEntityType && item.linkedEntityId
     ? `${item.linkedEntityType}:${item.linkedEntityId}`
     : "none";
@@ -60,6 +61,26 @@ export function ItemPropertiesPanel({ item, bays, vehicles, onChange, onDuplicat
           </div>
         )}
 
+        {item.type === "SCRAP_BIN" && (
+          <div className="space-y-3 rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold text-emerald-300">Bin contents</Label>
+              <Select value={item.materialGradeId ?? "none"} onValueChange={(value) => onChange({ materialGradeId: value === "none" ? undefined : value })}>
+                <SelectTrigger className="rounded-xl border-slate-700 bg-slate-950 text-slate-200"><SelectValue placeholder="Select a material" /></SelectTrigger>
+                <SelectContent className="border-slate-700 bg-slate-900 text-slate-100">
+                  <SelectItem value="none">No material selected</SelectItem>
+                  {metals.map((metal) => <SelectItem key={metal.id} value={metal.id}>{metal.name} · ${metal.ratePerLb.toFixed(2)}/lb</SelectItem>)}
+                </SelectContent>
+              </Select>
+              {metals.length === 0 && <p className="text-[11px] leading-relaxed text-amber-300">Add materials on the Pricing page before connecting bin contents.</p>}
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1.5"><Label htmlFor="bin-current-weight" className="text-xs text-slate-300">Current lb</Label><Input id="bin-current-weight" type="number" min={0} value={item.currentLbs ?? 0} onChange={(event) => onChange({ currentLbs: Math.max(0, Number(event.target.value) || 0) })} className="rounded-xl border-slate-700 bg-slate-950 text-white" /></div>
+              <div className="space-y-1.5"><Label htmlFor="bin-capacity" className="text-xs text-slate-300">Capacity lb</Label><Input id="bin-capacity" type="number" min={1} value={item.capacityLbs ?? 20000} onChange={(event) => onChange({ capacityLbs: Math.max(1, Number(event.target.value) || 1) })} className="rounded-xl border-slate-700 bg-slate-950 text-white" /></div>
+            </div>
+          </div>
+        )}
+
         <div className="space-y-2">
           <Label className="text-xs text-slate-300">Marker color</Label>
           <div className="flex flex-wrap gap-2">
@@ -76,17 +97,15 @@ export function ItemPropertiesPanel({ item, bays, vehicles, onChange, onDuplicat
           </div>
         </div>
 
-        {item.type !== "NOTE" && (
+        {(item.type === "SCRAP_BIN" || item.type === "CAR") && (
           <div className="space-y-1.5">
-            <Label className="flex items-center gap-1.5 text-xs text-slate-300"><Link2 className="h-3.5 w-3.5" /> Inventory connection</Label>
+            <Label className="flex items-center gap-1.5 text-xs text-slate-300"><Link2 className="h-3.5 w-3.5" /> {item.type === "SCRAP_BIN" ? "Synced yard bay (optional)" : "Vehicle connection"}</Label>
             <Select value={linkValue} onValueChange={updateLink}>
-              <SelectTrigger className="rounded-xl border-slate-700 bg-slate-950 text-slate-200">
-                <SelectValue placeholder="No linked inventory" />
-              </SelectTrigger>
+              <SelectTrigger className="rounded-xl border-slate-700 bg-slate-950 text-slate-200"><SelectValue placeholder="No linked inventory" /></SelectTrigger>
               <SelectContent className="border-slate-700 bg-slate-900 text-slate-100">
                 <SelectItem value="none">No linked inventory</SelectItem>
-                {bays.map((bay) => <SelectItem key={bay.id} value={`YARD_BAY:${bay.id}`}>Bin · {bay.bayName}</SelectItem>)}
-                {vehicles.map((vehicle) => <SelectItem key={vehicle.id} value={`VEHICLE:${vehicle.id}`}>{vehicle.year} {vehicle.make} {vehicle.model} · {vehicle.vin.slice(-6)}</SelectItem>)}
+                {item.type === "SCRAP_BIN" && bays.map((bay) => <SelectItem key={bay.id} value={`YARD_BAY:${bay.id}`}>Bin · {bay.bayName}</SelectItem>)}
+                {item.type === "CAR" && vehicles.map((vehicle) => <SelectItem key={vehicle.id} value={`VEHICLE:${vehicle.id}`}>{vehicle.year} {vehicle.make} {vehicle.model} · {vehicle.vin.slice(-6)}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
