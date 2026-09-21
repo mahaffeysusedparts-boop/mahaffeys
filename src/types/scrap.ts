@@ -214,7 +214,7 @@ export interface YardBayLocation {
   lastUpdated: string;
 }
 
-export type YardMapItemType = 'CAR' | 'SCRAP_BIN' | 'BUILDING' | 'ZONE';
+export type YardMapItemType = 'CAR' | 'SCRAP_BIN' | 'BUILDING' | 'ZONE' | 'ROAD' | 'WALL' | 'FENCE' | 'CREEK' | 'NOTE';
 export type YardMapLinkType = 'YARD_BAY' | 'VEHICLE';
 
 export interface YardMapItem {
@@ -227,6 +227,8 @@ export interface YardMapItem {
   height: number;
   rotation: number;
   color: string;
+  noteText?: string;
+  createdAt?: string;
   linkedEntityType?: YardMapLinkType;
   linkedEntityId?: string;
 }

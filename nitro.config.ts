@@ -5,5 +5,6 @@ export default defineConfig({
   runtimeConfig: {
     scaleSerialPort: "",
     scaleSerialBaudRate: 2400,
+    weatherApiKey: "",
   },
 });

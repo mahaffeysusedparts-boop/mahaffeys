@@ -294,7 +294,18 @@ export const storageService = {
   saveYardBays: (bays: YardBayLocation[]) => patchCached("mahaffeys_yard_bays", bays),
 
   getYardLayout: (): YardMapItem[] => readCached("mahaffeys_yard_layout", []),
-  saveYardLayout: (items: YardMapItem[]) => patchCached("mahaffeys_yard_layout", items),
+  saveYardLayout: (items: YardMapItem[]) => {
+    const date = new Date().toISOString().slice(0, 10);
+    const historyKey = `mahaffeys_yard_layout_history_${date}`;
+    const dates = readCached<string[]>("mahaffeys_yard_layout_history_dates", []);
+    if (!dates.includes(date)) {
+      patchCached(historyKey, items.map((item) => ({ ...item })));
+      patchCached("mahaffeys_yard_layout_history_dates", [...dates, date].sort());
+    }
+    patchCached("mahaffeys_yard_layout", items);
+  },
+  getYardLayoutSnapshotDates: (): string[] => readCached<string[]>("mahaffeys_yard_layout_history_dates", []),
+  getYardLayoutSnapshot: (date: string): YardMapItem[] => readCached<YardMapItem[]>(`mahaffeys_yard_layout_history_${date}`, []),
 
   // ── Cash Drawer ────────────────────────────────────────────────────────────
   getCashDrawerLogs: (): CashDrawerLog[] => readCached("mahaffeys_cash_drawer", []),

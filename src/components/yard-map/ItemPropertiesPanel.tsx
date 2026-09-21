@@ -2,6 +2,7 @@ import type { PullYardVehicle, YardBayLocation, YardMapItem } from "@/types/scra
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Copy, Link2, RotateCw, Trash2, X } from "lucide-react";
 
@@ -52,6 +53,13 @@ export function ItemPropertiesPanel({ item, bays, vehicles, onChange, onDuplicat
           <Input id="yard-item-label" value={item.label} onChange={(event) => onChange({ label: event.target.value })} className="rounded-xl border-slate-700 bg-slate-950 text-white" />
         </div>
 
+        {item.type === "NOTE" && (
+          <div className="space-y-1.5">
+            <Label htmlFor="yard-note-text" className="text-xs text-slate-300">Note or task details</Label>
+            <Textarea id="yard-note-text" value={item.noteText ?? ""} onChange={(event) => onChange({ noteText: event.target.value })} placeholder="Add instructions, a reminder, or a safety warning…" className="min-h-28 rounded-xl border-slate-700 bg-slate-950 text-white placeholder:text-slate-600" />
+          </div>
+        )}
+
         <div className="space-y-2">
           <Label className="text-xs text-slate-300">Marker color</Label>
           <div className="flex flex-wrap gap-2">
@@ -68,19 +76,21 @@ export function ItemPropertiesPanel({ item, bays, vehicles, onChange, onDuplicat
           </div>
         </div>
 
-        <div className="space-y-1.5">
-          <Label className="flex items-center gap-1.5 text-xs text-slate-300"><Link2 className="h-3.5 w-3.5" /> Inventory connection</Label>
-          <Select value={linkValue} onValueChange={updateLink}>
-            <SelectTrigger className="rounded-xl border-slate-700 bg-slate-950 text-slate-200">
-              <SelectValue placeholder="No linked inventory" />
-            </SelectTrigger>
-            <SelectContent className="border-slate-700 bg-slate-900 text-slate-100">
-              <SelectItem value="none">No linked inventory</SelectItem>
-              {bays.map((bay) => <SelectItem key={bay.id} value={`YARD_BAY:${bay.id}`}>Bin · {bay.bayName}</SelectItem>)}
-              {vehicles.map((vehicle) => <SelectItem key={vehicle.id} value={`VEHICLE:${vehicle.id}`}>{vehicle.year} {vehicle.make} {vehicle.model} · {vehicle.vin.slice(-6)}</SelectItem>)}
-            </SelectContent>
-          </Select>
-        </div>
+        {item.type !== "NOTE" && (
+          <div className="space-y-1.5">
+            <Label className="flex items-center gap-1.5 text-xs text-slate-300"><Link2 className="h-3.5 w-3.5" /> Inventory connection</Label>
+            <Select value={linkValue} onValueChange={updateLink}>
+              <SelectTrigger className="rounded-xl border-slate-700 bg-slate-950 text-slate-200">
+                <SelectValue placeholder="No linked inventory" />
+              </SelectTrigger>
+              <SelectContent className="border-slate-700 bg-slate-900 text-slate-100">
+                <SelectItem value="none">No linked inventory</SelectItem>
+                {bays.map((bay) => <SelectItem key={bay.id} value={`YARD_BAY:${bay.id}`}>Bin · {bay.bayName}</SelectItem>)}
+                {vehicles.map((vehicle) => <SelectItem key={vehicle.id} value={`VEHICLE:${vehicle.id}`}>{vehicle.year} {vehicle.make} {vehicle.model} · {vehicle.vin.slice(-6)}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
 
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
