@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { storageService } from "@/services/storageService";
-import { CashDrawerLog, ScaleWeightEvent, Ticket } from "@/types/scrap";
+import { CashDrawerLog, PullYardVehicle, ScaleWeightEvent, Ticket, YardBayLocation } from "@/types/scrap";
 import {
   Dialog,
   DialogContent,
@@ -21,7 +21,15 @@ import {
 } from "@/components/ui/select";
 import { FileText, Printer, ScrollText } from "lucide-react";
 
-type ReportType = "ticket-ledger" | "material-summary" | "scale-activity" | "cash-drawer";
+type ReportType =
+  | "ticket-ledger"
+  | "material-summary"
+  | "scale-activity"
+  | "cash-drawer"
+  | "top-sellers"
+  | "grade-profitability"
+  | "vehicle-aging"
+  | "bay-status";
 type RangeKey = "1" | "7" | "30" | "365" | "all";
 
 interface CustomReportModalProps {
@@ -34,6 +42,10 @@ const REPORT_TYPES: Array<{ value: ReportType; label: string; defaultTitle: stri
   { value: "material-summary", label: "Material & Payout Summary", defaultTitle: "Material & Payout Summary" },
   { value: "scale-activity", label: "Scale Traffic Journal", defaultTitle: "Scale Traffic Journal" },
   { value: "cash-drawer", label: "Cash Drawer Ledger", defaultTitle: "Cash Drawer Ledger Report" },
+  { value: "top-sellers", label: "Top Sellers Leaderboard", defaultTitle: "Top Sellers Leaderboard" },
+  { value: "grade-profitability", label: "Grade Profitability ($/lb)", defaultTitle: "Grade Profitability Report" },
+  { value: "vehicle-aging", label: "Vehicle Inventory Aging", defaultTitle: "Pull-a-Part Inventory Aging" },
+  { value: "bay-status", label: "Yard Bay Fill Status", defaultTitle: "Yard Bay Fill Status Report" },
 ];
 
 const RANGE_LABELS: Record<RangeKey, string> = {
@@ -87,7 +99,15 @@ export const CustomReportModal: React.FC<CustomReportModalProps> = ({ open, onOp
       .getCashDrawerLogs()
       .filter((l: CashDrawerLog) => inRange(l.timestamp, since))
       .sort((a, b) => b.timestamp.localeCompare(a.timestamp));
-    return { tickets, events, cashLogs };
+    const vehicles = storageService
+      .getPullYardVehicles()
+      .filter((v: PullYardVehicle) => v.status !== "CRUSHED" && inRange(v.dateSetInYard, since))
+      .sort((a, b) => a.dateSetInYard.localeCompare(b.dateSetInYard));
+    const bays = storageService
+      .getYardBays()
+      .slice()
+      .sort((a: YardBayLocation, b: YardBayLocation) => (b.currentLbs / Math.max(1, b.capacityLbs)) - (a.currentLbs / Math.max(1, a.capacityLbs)));
+    return { tickets, events, cashLogs, vehicles, bays };
   }, [since, open]);
 
   if (!open) return null;
@@ -168,30 +188,106 @@ export const CustomReportModal: React.FC<CustomReportModalProps> = ({ open, onOp
     ? data.cashLogs[data.cashLogs.length - 1].balanceAfter
     : 0;
 
-  const kpis =
-    type === "ticket-ledger"
-      ? [
-          { label: "Tickets", value: String(ledgerRows.length) },
-          { label: "Total payout", value: money(ledgerTotals.payout) },
-          { label: "Total weight", value: lbsFmt(ledgerTotals.lbs) },
-        ]
-      : type === "material-summary"
-        ? [
-            { label: "Materials", value: String(materialList.length) },
-            { label: "Payout", value: money(materialTotals.payout) },
-            { label: "Billable weight", value: lbsFmt(materialTotals.lbs) },
-          ]
-        : type === "scale-activity"
-          ? [
-              { label: "Journal events", value: String(data.events.length) },
-              { label: "LBS on", value: lbsFmt(scaleAdded) },
-              { label: "LBS off", value: lbsFmt(scaleRemoved) },
-            ]
-          : [
-              { label: "Ledger entries", value: String(data.cashLogs.length) },
-              { label: "Cash payouts", value: money(cashPayouts) },
-              { label: "Current balance", value: money(closingBalance) },
-            ];
+  /* Top sellers — relationship value ranked by total payout. */
+  const sellerList = data.tickets
+    .reduce<Record<string, { name: string; tickets: number; lbs: number; payout: number; last: string }>>(
+      (result, ticket) => {
+        const name = ticket.customerName || "Unknown seller";
+        const entry = result[name] || { name, tickets: 0, lbs: 0, payout: 0, last: ticket.createdAt };
+        entry.tickets += 1;
+        entry.lbs += ticketLbs(ticket);
+        entry.payout += ticket.finalPayout;
+        if (ticket.createdAt > entry.last) entry.last = ticket.createdAt;
+        result[name] = entry;
+        return result;
+      },
+      {},
+    );
+  const sellers = Object.values(sellerList).sort((a, b) => b.payout - a.payout);
+  const sellerTotals = sellers.reduce(
+    (acc, seller) => ({ tickets: acc.tickets + seller.tickets, lbs: acc.lbs + seller.lbs, payout: acc.payout + seller.payout }),
+    { tickets: 0, lbs: 0, payout: 0 },
+  );
+
+  /* Grade profitability — $/lb per grade off the material rollup. */
+  const gradeList = materialList
+    .map((material) => ({ ...material, perLb: material.lbs > 0 ? material.payout / material.lbs : 0 }))
+    .sort((a, b) => b.payout - a.payout);
+
+  /* Vehicle aging — days on yard plus hold buckets. */
+  const vehicleRows = data.vehicles.map((vehicle) => ({
+    vehicle,
+    daysOnYard: Math.max(0, Math.floor((Date.now() - new Date(vehicle.dateSetInYard).getTime()) / 86400000)),
+  }));
+  const agingBuckets = vehicleRows.reduce(
+    (acc, row) => {
+      if (row.daysOnYard <= 30) acc.to30 += 1;
+      else if (row.daysOnYard <= 60) acc.to60 += 1;
+      else if (row.daysOnYard <= 90) acc.to90 += 1;
+      else acc.over90 += 1;
+      return acc;
+    },
+    { to30: 0, to60: 0, to90: 0, over90: 0 },
+  );
+  const avgDaysOnYard = vehicleRows.length
+    ? Math.round(vehicleRows.reduce((total, row) => total + row.daysOnYard, 0) / vehicleRows.length)
+    : 0;
+
+  /* Yard bay fill snapshot. */
+  const bayTotals = data.bays.reduce(
+    (acc, bay) => ({
+      capacity: acc.capacity + bay.capacityLbs,
+      current: acc.current + bay.currentLbs,
+      value: acc.value + bay.estValueUsd,
+    }),
+    { capacity: 0, current: 0, value: 0 },
+  );
+  const criticalBays = data.bays.filter((bay) => bay.status === "CRITICAL_FULL").length;
+
+  const kpiSets: Record<ReportType, Array<{ label: string; value: string }>> = {
+    "ticket-ledger": [
+      { label: "Tickets", value: String(ledgerRows.length) },
+      { label: "Total payout", value: money(ledgerTotals.payout) },
+      { label: "Total weight", value: lbsFmt(ledgerTotals.lbs) },
+    ],
+    "material-summary": [
+      { label: "Materials", value: String(materialList.length) },
+      { label: "Payout", value: money(materialTotals.payout) },
+      { label: "Billable weight", value: lbsFmt(materialTotals.lbs) },
+    ],
+    "scale-activity": [
+      { label: "Journal events", value: String(data.events.length) },
+      { label: "LBS on", value: lbsFmt(scaleAdded) },
+      { label: "LBS off", value: lbsFmt(scaleRemoved) },
+    ],
+    "cash-drawer": [
+      { label: "Ledger entries", value: String(data.cashLogs.length) },
+      { label: "Cash payouts", value: money(cashPayouts) },
+      { label: "Current balance", value: money(closingBalance) },
+    ],
+    "top-sellers": [
+      { label: "Sellers", value: String(sellers.length) },
+      { label: "Combined payout", value: money(sellerTotals.payout) },
+      { label: "Tickets", value: String(sellerTotals.tickets) },
+    ],
+    "grade-profitability": [
+      { label: "Grades", value: String(gradeList.length) },
+      { label: "Payout", value: money(materialTotals.payout) },
+      { label: "Avg $/lb", value: materialTotals.lbs > 0 ? `$${(materialTotals.payout / materialTotals.lbs).toFixed(3)}` : "—" },
+    ],
+    "vehicle-aging": [
+      { label: "Vehicles on yard", value: String(vehicleRows.length) },
+      { label: "Avg days on yard", value: String(avgDaysOnYard) },
+      { label: "Over 60 days", value: String(agingBuckets.to90 + agingBuckets.over90) },
+    ],
+    "bay-status": [
+      { label: "Bays", value: String(data.bays.length) },
+      { label: "Est. value", value: money(bayTotals.value) },
+      { label: "Critical full", value: String(criticalBays) },
+    ],
+  };
+
+  const kpis = kpiSets[type];
 
   const cashTypeLabels: Record<CashDrawerLog["type"], string> = {
     OPENING_FLOAT: "Opening float",
@@ -577,6 +673,239 @@ export const CustomReportModal: React.FC<CustomReportModalProps> = ({ open, onOp
                   </div>
                 </section>
               </>
+            )}
+
+            {/* Top sellers leaderboard */}
+            {type === "top-sellers" && (
+              <section>
+                <p className="font-black uppercase border-b border-slate-400 pb-0.5 mb-1">
+                  Top Sellers (ranked by payout)
+                </p>
+                <table className="w-full text-[9px]">
+                  <thead>
+                    <tr className="border-b border-slate-400 text-left">
+                      <th className="py-0.5">#</th>
+                      <th className="py-0.5">Seller</th>
+                      <th className="py-0.5 text-right">Tickets</th>
+                      <th className="py-0.5 text-right">Total LBS</th>
+                      <th className="py-0.5 text-right">Payout</th>
+                      <th className="py-0.5 text-right">Last Visit</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sellers.length === 0 && (
+                      <tr>
+                        <td className="py-1 text-slate-500" colSpan={6}>
+                          No completed tickets recorded in this period.
+                        </td>
+                      </tr>
+                    )}
+                    {sellers.slice(0, 60).map((seller, index) => (
+                      <tr key={seller.name} className="border-b border-slate-200">
+                        <td className="py-0.5 font-black">{index + 1}</td>
+                        <td className="py-0.5 font-bold truncate max-w-[2.2in]">{seller.name}</td>
+                        <td className="py-0.5 text-right">{seller.tickets}</td>
+                        <td className="py-0.5 text-right">{Math.round(seller.lbs).toLocaleString()}</td>
+                        <td className="py-0.5 text-right font-bold">{money(seller.payout)}</td>
+                        <td className="py-0.5 text-right">{new Date(seller.last).toLocaleDateString()}</td>
+                      </tr>
+                    ))}
+                    {sellers.length > 60 && (
+                      <tr className="text-slate-600">
+                        <td className="py-1" colSpan={6}>
+                          … {sellers.length - 60} additional seller(s) omitted from this sheet.
+                        </td>
+                      </tr>
+                    )}
+                    {sellers.length > 0 && (
+                      <tr className="font-black border-t border-slate-400">
+                        <td className="py-1" colSpan={2}>TOTAL — {sellers.length} seller(s)</td>
+                        <td className="py-1 text-right">{sellerTotals.tickets}</td>
+                        <td className="py-1 text-right">{Math.round(sellerTotals.lbs).toLocaleString()}</td>
+                        <td className="py-1 text-right">{money(sellerTotals.payout)}</td>
+                        <td />
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </section>
+            )}
+
+            {/* Grade profitability */}
+            {type === "grade-profitability" && (
+              <section>
+                <p className="font-black uppercase border-b border-slate-400 pb-0.5 mb-1">
+                  Grade Profitability
+                </p>
+                <table className="w-full text-[9px]">
+                  <thead>
+                    <tr className="border-b border-slate-400 text-left">
+                      <th className="py-0.5">Category</th>
+                      <th className="py-0.5">Grade</th>
+                      <th className="py-0.5 text-right">Billable LBS</th>
+                      <th className="py-0.5 text-right">Payout</th>
+                      <th className="py-0.5 text-right">$ / LBS</th>
+                      <th className="py-0.5 text-right">Share</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {gradeList.length === 0 && (
+                      <tr>
+                        <td className="py-1 text-slate-500" colSpan={6}>
+                          No weighed material lines recorded in this period.
+                        </td>
+                      </tr>
+                    )}
+                    {gradeList.map((grade) => (
+                      <tr key={`${grade.category}-${grade.name}`} className="border-b border-slate-200">
+                        <td className="py-0.5">{grade.category}</td>
+                        <td className="py-0.5 font-bold">{grade.name}</td>
+                        <td className="py-0.5 text-right">{grade.lbs.toLocaleString()}</td>
+                        <td className="py-0.5 text-right font-bold">{money(grade.payout)}</td>
+                        <td className="py-0.5 text-right font-black">${grade.perLb.toFixed(3)}</td>
+                        <td className="py-0.5 text-right">
+                          {materialTotals.payout > 0 ? `${((grade.payout / materialTotals.payout) * 100).toFixed(1)}%` : "—"}
+                        </td>
+                      </tr>
+                    ))}
+                    {gradeList.length > 0 && (
+                      <tr className="font-black border-t border-slate-400">
+                        <td className="py-1" colSpan={2}>TOTAL — {gradeList.length} grade(s)</td>
+                        <td className="py-1 text-right">{materialTotals.lbs.toLocaleString()}</td>
+                        <td className="py-1 text-right">{money(materialTotals.payout)}</td>
+                        <td className="py-1 text-right">
+                          {materialTotals.lbs > 0 ? `$${(materialTotals.payout / materialTotals.lbs).toFixed(3)}` : "—"}
+                        </td>
+                        <td className="py-1 text-right">100%</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </section>
+            )}
+
+            {/* Vehicle inventory aging */}
+            {type === "vehicle-aging" && (
+              <>
+                <section className="grid grid-cols-4 gap-2 text-center">
+                  <div className="border border-slate-300 rounded p-1.5">
+                    <p className="text-slate-600 text-[8px] uppercase tracking-wide">0–30 days</p>
+                    <p className="font-black text-[13px]">{agingBuckets.to30}</p>
+                  </div>
+                  <div className="border border-slate-300 rounded p-1.5">
+                    <p className="text-slate-600 text-[8px] uppercase tracking-wide">31–60 days</p>
+                    <p className="font-black text-[13px]">{agingBuckets.to60}</p>
+                  </div>
+                  <div className="border border-slate-300 rounded p-1.5">
+                    <p className="text-slate-600 text-[8px] uppercase tracking-wide">61–90 days</p>
+                    <p className="font-black text-[13px]">{agingBuckets.to90}</p>
+                  </div>
+                  <div className="border border-slate-300 rounded p-1.5">
+                    <p className="text-slate-600 text-[8px] uppercase tracking-wide">90+ days</p>
+                    <p className="font-black text-[13px]">{agingBuckets.over90}</p>
+                  </div>
+                </section>
+                <section>
+                  <p className="font-black uppercase border-b border-slate-400 pb-0.5 mb-1">
+                    Vehicles On Yard (oldest first)
+                  </p>
+                  <table className="w-full text-[9px]">
+                    <thead>
+                      <tr className="border-b border-slate-400 text-left">
+                        <th className="py-0.5">Set In Yard</th>
+                        <th className="py-0.5">Days</th>
+                        <th className="py-0.5">Vehicle</th>
+                        <th className="py-0.5">VIN (tail)</th>
+                        <th className="py-0.5">Section / Row</th>
+                        <th className="py-0.5">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {vehicleRows.length === 0 && (
+                        <tr>
+                          <td className="py-1 text-slate-500" colSpan={6}>
+                            No vehicles set in the yard in this period.
+                          </td>
+                        </tr>
+                      )}
+                      {vehicleRows.slice(0, 200).map(({ vehicle, daysOnYard }) => (
+                        <tr key={vehicle.id} className="border-b border-slate-200">
+                          <td className="py-0.5">{new Date(vehicle.dateSetInYard).toLocaleDateString()}</td>
+                          <td className={`py-0.5 text-right font-bold ${daysOnYard > 60 ? "text-black underline" : ""}`}>{daysOnYard}</td>
+                          <td className="py-0.5 font-bold truncate max-w-[1.8in]">{vehicle.year} {vehicle.make} {vehicle.model}</td>
+                          <td className="py-0.5">…{vehicle.vin.slice(-6)}</td>
+                          <td className="py-0.5 truncate max-w-[1.4in]">{vehicle.section}{vehicle.rowNumber ? ` / ${vehicle.rowNumber}` : ""}</td>
+                          <td className="py-0.5 font-bold">{vehicle.status.replace("_", " ")}</td>
+                        </tr>
+                      ))}
+                      {vehicleRows.length > 200 && (
+                        <tr className="text-slate-600">
+                          <td className="py-1" colSpan={6}>
+                            … {vehicleRows.length - 200} additional vehicle(s) omitted from this sheet.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </section>
+              </>
+            )}
+
+            {/* Yard bay fill status */}
+            {type === "bay-status" && (
+              <section>
+                <p className="font-black uppercase border-b border-slate-400 pb-0.5 mb-1">
+                  Yard Bay Fill Status (live snapshot)
+                </p>
+                <table className="w-full text-[9px]">
+                  <thead>
+                    <tr className="border-b border-slate-400 text-left">
+                      <th className="py-0.5">Bay</th>
+                      <th className="py-0.5">Type</th>
+                      <th className="py-0.5 text-right">Capacity LBS</th>
+                      <th className="py-0.5 text-right">Current LBS</th>
+                      <th className="py-0.5 text-right">Fill</th>
+                      <th className="py-0.5 text-right">Est. Value</th>
+                      <th className="py-0.5">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.bays.length === 0 && (
+                      <tr>
+                        <td className="py-1 text-slate-500" colSpan={7}>
+                          No yard bays configured yet.
+                        </td>
+                      </tr>
+                    )}
+                    {data.bays.map((bay) => {
+                      const fill = bay.capacityLbs > 0 ? Math.min(100, Math.round((bay.currentLbs / bay.capacityLbs) * 100)) : 0;
+                      return (
+                        <tr key={bay.id} className="border-b border-slate-200">
+                          <td className="py-0.5 font-bold">{bay.bayName}</td>
+                          <td className="py-0.5">{bay.categoryType.replace(/_/g, " ")}</td>
+                          <td className="py-0.5 text-right">{bay.capacityLbs.toLocaleString()}</td>
+                          <td className="py-0.5 text-right">{bay.currentLbs.toLocaleString()}</td>
+                          <td className="py-0.5 text-right font-bold">{fill}%</td>
+                          <td className="py-0.5 text-right">{money(bay.estValueUsd)}</td>
+                          <td className="py-0.5 font-bold">{bay.status.replace("_", " ")}</td>
+                        </tr>
+                      );
+                    })}
+                    {data.bays.length > 0 && (
+                      <tr className="font-black border-t border-slate-400">
+                        <td className="py-1" colSpan={2}>TOTAL — {data.bays.length} bay(s)</td>
+                        <td className="py-1 text-right">{bayTotals.capacity.toLocaleString()}</td>
+                        <td className="py-1 text-right">{bayTotals.current.toLocaleString()}</td>
+                        <td className="py-1 text-right">
+                          {bayTotals.capacity > 0 ? `${Math.round((bayTotals.current / bayTotals.capacity) * 100)}%` : "—"}
+                        </td>
+                        <td className="py-1 text-right">{money(bayTotals.value)}</td>
+                        <td />
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </section>
             )}
 
             {/* Notes block */}

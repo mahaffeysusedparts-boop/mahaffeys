@@ -1,0 +1,17 @@
+[Unit]
+Description=Mahaffeys Paymaster - auto-recovery service (GitHub update + server)
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Adjust the path and user to your deployment.
+WorkingDirectory=/opt/mahaffeys
+ExecStart=/bin/bash /opt/mahaffeys/scripts/auto-recover.sh
+Restart=always
+RestartSec=5
+User=mahaffeys
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target
