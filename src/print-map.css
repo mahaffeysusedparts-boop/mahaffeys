@@ -13,4 +13,6 @@
   .yard-map-viewport { height: 7in !important; min-height: 0 !important; overflow: hidden !important; background: white !important; border: 1px solid #94a3b8 !important; }
   .yard-map-canvas { left: 50% !important; top: 50% !important; transform: translate(-50%, -50%) scale(0.36) !important; box-shadow: none !important; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
   .yard-map-item-controls { display: none !important; }
+  /* Measurement overlays and alignment guides never appear on paper. */
+  .yard-map-transient { display: none !important; }
 }
