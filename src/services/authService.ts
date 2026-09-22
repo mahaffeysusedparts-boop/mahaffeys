@@ -68,6 +68,16 @@ export const authService = {
     return response.user;
   },
 
+  /** Admin-created account: approved immediately, no session switch. */
+  async createUser(data: { fullName: string; username: string; password: string; role: UserRole; email?: string }) {
+    const response = await apiRequest<{ user: UserAccount }>("/api/users", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+    await this.refreshUsers();
+    return response.user;
+  },
+
   async login(username: string, password: string) {
     const response = await apiRequest<{ user: UserAccount }>("/api/auth/login", {
       method: "POST",

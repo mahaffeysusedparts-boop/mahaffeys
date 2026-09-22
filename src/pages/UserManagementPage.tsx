@@ -1,6 +1,9 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { Navbar } from "@/components/layout/Navbar";
 import { useAuth } from "@/context/AuthContext";
+import { authService } from "@/services/authService";
+import { storageService } from "@/services/storageService";
+import { effectivePageAccess, PAGE_LABELS } from "@/utils/pageAccess";
 import { UserAccount, UserRole, AccountStatus } from "@/types/scrap";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -8,6 +11,8 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   Users,
   ShieldCheck,
@@ -28,9 +33,12 @@ import {
 import { toast } from "sonner";
 
 export default function UserManagementPage() {
-  const { allUsers, approveUser, rejectUser, updateUserStatus, updateUserRole, deleteUser, user: currentUser } = useAuth();
+  const { allUsers, approveUser, rejectUser, updateUserStatus, updateUserRole, deleteUser, refreshUsers, user: currentUser } = useAuth();
   const [searchTerm, setSearchTerm] = useState("");
   const [roleEdits, setRoleEdits] = useState<Record<string, UserRole>>({});
+  const [createOpen, setCreateOpen] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [createForm, setCreateForm] = useState({ fullName: "", username: "", email: "", password: "", role: "scale_operator" as UserRole });
 
   const pendingUsers = allUsers.filter((u) => u.status === "pending");
   const activeUsers = allUsers.filter((u) => u.status !== "pending");
@@ -98,6 +106,45 @@ export default function UserManagementPage() {
     yard_employee: "Yard Employee",
   };
 
+  const roleDescriptions: Record<UserRole, string> = {
+    admin: "Everything — users, settings, server admin, and all operations.",
+    yard_manager: "Full operations oversight; page access can be trimmed in Settings.",
+    scale_operator: "Scale desk: intake, tickets, cash drawer, customers, cameras.",
+    yard_employee: "Yard floor: dashboard, yard map, pull-a-part, containers.",
+  };
+
+  // At-a-glance effective permissions per role (respects Settings overrides).
+  const rolePermissions = useMemo(() => {
+    const overrides = storageService.getSettings().rolePageAccess;
+    return (Object.keys(roleLabels) as UserRole[]).map((role) => ({
+      role,
+      label: roleLabels[role],
+      description: roleDescriptions[role],
+      pages: effectivePageAccess(role, overrides),
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleCreateAccount = async () => {
+    const { fullName, username, password, email, role } = createForm;
+    if (!fullName.trim() || !username.trim() || password.length < 8) {
+      toast.error("Full name, username, and an 8-character password are required");
+      return;
+    }
+    setCreating(true);
+    try {
+      await authService.createUser({ fullName: fullName.trim(), username: username.trim(), password, role, email: email.trim() || undefined });
+      await refreshUsers();
+      toast.success(`${roleLabels[role]} account created`, { description: `${username.trim()} is approved and ready to sign in.` });
+      setCreateOpen(false);
+      setCreateForm({ fullName: "", username: "", email: "", password: "", role: "scale_operator" });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to create account");
+    } finally {
+      setCreating(false);
+    }
+  };
+
   const adminCount = allUsers.filter((u) => u.role === "admin" && u.status === "approved").length;
   const managerCount = allUsers.filter((u) => u.role === "yard_manager" && u.status === "approved").length;
   const operatorCount = allUsers.filter((u) => u.role === "scale_operator" && u.status === "approved").length;
@@ -130,6 +177,12 @@ export default function UserManagementPage() {
           </div>
 
           <div className="flex items-center gap-2">
+            <Button
+              onClick={() => setCreateOpen(true)}
+              className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold gap-1.5"
+            >
+              <UserPlus className="w-4 h-4" /> Create Account
+            </Button>
             <Badge variant="outline" className="border-slate-700 bg-slate-950 text-slate-300 text-xs px-3 py-1 font-mono">
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 mr-1.5 inline" /> Primary Admin Lock Active
             </Badge>
@@ -192,6 +245,46 @@ export default function UserManagementPage() {
             </CardContent>
           </Card>
         </div>
+
+        {/* SECTION 0: Role Permission Reference */}
+        <Card className="bg-slate-900 border-slate-800 text-white shadow-xl">
+          <CardHeader className="py-4 px-6 bg-slate-950/80 border-b border-slate-800">
+            <div className="flex items-center gap-2">
+              <KeyRound className="w-5 h-5 text-sky-400" />
+              <div>
+                <CardTitle className="text-base font-bold text-white">Role Permission Reference</CardTitle>
+                <CardDescription className="text-xs text-slate-400">
+                  What each role can open today — assign with confidence below, or fine-tune in Settings → Role Page Access
+                </CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="p-4 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+            {rolePermissions.map(({ role, label, description, pages }) => (
+              <div key={role} className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-black text-white">{label}</p>
+                  <Badge variant="outline" className="border-slate-700 text-slate-400 text-[10px] font-mono shrink-0">
+                    {pages.length} PAGES
+                  </Badge>
+                </div>
+                <p className="mt-1.5 text-[11px] leading-relaxed text-slate-400">{description}</p>
+                <div className="mt-3 flex flex-wrap gap-1">
+                  {pages.slice(0, 8).map((page) => (
+                    <span key={page} className="rounded-md bg-slate-800 px-1.5 py-0.5 text-[10px] font-semibold text-slate-300">
+                      {PAGE_LABELS[page]}
+                    </span>
+                  ))}
+                  {pages.length > 8 && (
+                    <span className="rounded-md bg-slate-800 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-400">
+                      +{pages.length - 8} more
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
 
         {/* SECTION 1: Pending Approval Queue */}
         <Card className="bg-slate-900 border-2 border-amber-500/40 text-white shadow-xl overflow-hidden">
@@ -400,6 +493,60 @@ export default function UserManagementPage() {
           </CardContent>
         </Card>
 
+        {/* Create Account Dialog */}
+        <Dialog open={createOpen} onOpenChange={(open) => { setCreateOpen(open); if (!open) setCreating(false); }}>
+          <DialogContent className="bg-slate-900 border-slate-800 text-slate-100 sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-white">
+                <UserPlus className="w-5 h-5 text-emerald-400" /> Create Staff Account
+              </DialogTitle>
+              <DialogDescription className="text-xs text-slate-400">
+                The account is created approved and ready to sign in immediately — no pending queue.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-3.5 py-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="new-full-name" className="text-xs text-slate-300">Full name</Label>
+                <Input id="new-full-name" value={createForm.fullName} onChange={(e) => setCreateForm({ ...createForm, fullName: e.target.value })} placeholder="Jane Operator" className="bg-slate-950 border-slate-700 text-white text-sm" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="new-username" className="text-xs text-slate-300">Username</Label>
+                  <Input id="new-username" value={createForm.username} onChange={(e) => setCreateForm({ ...createForm, username: e.target.value })} placeholder="joperator" className="bg-slate-950 border-slate-700 text-white text-sm" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="new-email" className="text-xs text-slate-300">Email (optional)</Label>
+                  <Input id="new-email" type="email" value={createForm.email} onChange={(e) => setCreateForm({ ...createForm, email: e.target.value })} placeholder="jane@yard.com" className="bg-slate-950 border-slate-700 text-white text-sm" />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="new-password" className="text-xs text-slate-300">Temporary password (min 8 characters)</Label>
+                <Input id="new-password" type="password" value={createForm.password} onChange={(e) => setCreateForm({ ...createForm, password: e.target.value })} placeholder="••••••••" className="bg-slate-950 border-slate-700 text-white text-sm" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-slate-300">Role &amp; permissions</Label>
+                <Select value={createForm.role} onValueChange={(value) => setCreateForm({ ...createForm, role: value as UserRole })}>
+                  <SelectTrigger className="bg-slate-950 border-slate-700 text-white text-sm"><SelectValue /></SelectTrigger>
+                  <SelectContent className="bg-slate-900 border-slate-800 text-white text-sm">
+                    {(Object.keys(roleLabels) as UserRole[]).map((role) => (
+                      <SelectItem key={role} value={role}>
+                        {roleLabels[role]} — {roleDescriptions[role]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <DialogFooter className="gap-2">
+              <Button variant="outline" onClick={() => setCreateOpen(false)} className="border-slate-700 bg-slate-950 text-slate-300 hover:bg-slate-800 text-xs">Cancel</Button>
+              <Button onClick={handleCreateAccount} disabled={creating} className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold gap-1.5">
+                <UserCheck className="w-4 h-4" /> {creating ? "Creating…" : "Create Account"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </main>
     </div>
   );

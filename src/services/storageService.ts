@@ -420,7 +420,20 @@ export const storageService = {
 
   addScaleEvent: (event: ScaleWeightEvent): ScaleWeightEvent => {
     const existing = storageService.getScaleEvents();
-    patchCached("mahaffeys_scale_events", [event, ...existing].slice(0, MAX_SCALE_EVENTS));
+    // One truck crossing = one journal row. Multiple tabs / poll loops on the
+    // same workstation detect the same plateau independently; drop a reading
+    // that matches a just-recorded event on the same platform.
+    const DUPLICATE_WINDOW_MS = 15000;
+    const duplicate = existing.some((prior) =>
+      prior.scaleId === event.scaleId &&
+      prior.direction === event.direction &&
+      Math.abs(prior.deltaLbs - event.deltaLbs) <= 5 &&
+      Math.abs(prior.grossAfterLbs - event.grossAfterLbs) <= 25 &&
+      Math.abs(new Date(prior.detectedAt).getTime() - new Date(event.detectedAt).getTime()) <= DUPLICATE_WINDOW_MS
+    );
+    if (!duplicate) {
+      patchCached("mahaffeys_scale_events", [event, ...existing].slice(0, MAX_SCALE_EVENTS));
+    }
     return event;
   },
 

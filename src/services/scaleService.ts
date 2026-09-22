@@ -59,6 +59,11 @@ class ScaleService {
   private journalCandidate: { grossLbs: number; seenAt: number } | null = null;
   private readonly JOURNAL_CANDIDATE_TTL_MS = 30000;
 
+  // Anti-flutter cooldown — a platform cannot log two crossings within this
+  // window, so jitter around the threshold can never machine-gun the journal.
+  private lastJournalEventAt = 0;
+  private readonly JOURNAL_EVENT_COOLDOWN_MS = 5000;
+
   // All-scales registry mirrored from the server poll for the Scale Wall.
   private registry: ScaleRegistryEntry[] = [];
 
@@ -560,6 +565,10 @@ class ScaleService {
       return;
     }
 
+    // Cooldown: leave the baseline untouched so a crossing during the window
+    // still logs once the platform settles — just never twice.
+    if (Date.now() - this.lastJournalEventAt < this.JOURNAL_EVENT_COOLDOWN_MS) return;
+
     // Glitch shield: only log once a follow-up poll confirms the platform is
     // still at the crossed weight. A candidate whose weight keeps moving
     // never fires; one that sits unsettled past the TTL restarts instead.
@@ -583,6 +592,7 @@ class ScaleService {
     storageService.addScaleEvent(event);
     this.baselineGrossLbs = grossLbs;
     this.journalCandidate = null;
+    this.lastJournalEventAt = Date.now();
   }
 
   private notify() {
