@@ -24,6 +24,8 @@ import type {
   YardTask,
   EquipmentItem,
   MaintenanceLogEntry,
+  ToolItem,
+  ToolCheckout,
   MetalRateChangeLog,
   ScaleWeightEvent,
   YardMapItem,
@@ -161,6 +163,8 @@ const DEFAULT_ALERT_RULES: AlertRule[] = [
   { id: "r5", key: "COMPLIANCE_GAP", enabled: true, threshold: 1, escalationMinutes: 60 },
   { id: "r6", key: "SHIPMENT_EXCEPTION", enabled: true, threshold: 1, escalationMinutes: 30 },
   { id: "r7", key: "MARGIN_LOW", enabled: true, threshold: 0, escalationMinutes: 120 },
+  { id: "r8", key: "EQUIPMENT_SERVICE_DUE", enabled: true, threshold: 7, escalationMinutes: 120 },
+  { id: "r9", key: "TOOL_CHECKOUT_OVERDUE", enabled: true, threshold: 1, escalationMinutes: 60 },
 ];
 
 // ---------------------------------------------------------------------------
@@ -402,10 +406,29 @@ export const storageService = {
   },
 
   getMaintenanceLogs: (): MaintenanceLogEntry[] => readCached("mahaffeys_maintenance_logs", []),
-  saveMaintenanceLog: (log: MaintenanceLogEntry) => {
-    const existing = storageService.getMaintenanceLogs();
-    patchCached("mahaffeys_maintenance_logs", upsertItem("mahaffeys_maintenance_logs", log, existing));
-  },
+    saveMaintenanceLog: (log: MaintenanceLogEntry) => {
+      const existing = storageService.getMaintenanceLogs();
+      patchCached("mahaffeys_maintenance_logs", upsertItem("mahaffeys_maintenance_logs", log, existing));
+    },
+  
+    // ── Tools & Tool Checkouts ────────────────────────────────────────────────
+    getTools: (): ToolItem[] => readCached("mahaffeys_tools", []),
+    saveTool: (tool: ToolItem) => {
+      const existing = storageService.getTools();
+      patchCached("mahaffeys_tools", upsertItem("mahaffeys_tools", tool, existing));
+    },
+    removeTool: (id: string) => {
+      patchCached("mahaffeys_tools", removeItem("mahaffeys_tools", id, storageService.getTools()));
+    },
+  
+    getToolCheckouts: (): ToolCheckout[] => readCached("mahaffeys_tool_checkouts", []),
+    saveToolCheckout: (checkout: ToolCheckout) => {
+      const existing = storageService.getToolCheckouts();
+      patchCached("mahaffeys_tool_checkouts", upsertItem("mahaffeys_tool_checkouts", checkout, existing));
+    },
+    removeToolCheckout: (id: string) => {
+      patchCached("mahaffeys_tool_checkouts", removeItem("mahaffeys_tool_checkouts", id, storageService.getToolCheckouts()));
+    },
 
   getRateHistory: (): MetalRateChangeLog[] => readCached("mahaffeys_rate_history", []),
   saveRateHistory: (log: MetalRateChangeLog) => {
@@ -470,6 +493,8 @@ export const storageService = {
       "mahaffeys_maintenance_logs",
       "mahaffeys_rate_history",
       "mahaffeys_scale_events",
+      "mahaffeys_tools",
+      "mahaffeys_tool_checkouts",
       "mahaffeys_removed_inventory_vehicles",
       "mahaffeys_operations_goals",
       "mahaffeys_operations_alert_rules",

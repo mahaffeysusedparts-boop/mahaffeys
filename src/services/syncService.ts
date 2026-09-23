@@ -32,6 +32,8 @@ const SHARED_KEYS = [
   "mahaffeys_equipment",
   "mahaffeys_maintenance_logs",
   "mahaffeys_rate_history",
+  "mahaffeys_tools",
+  "mahaffeys_tool_checkouts",
   "mahaffeys_operations_goals",
   "mahaffeys_operations_alert_rules",
   "mahaffeys_operations_alerts",
@@ -41,7 +43,7 @@ const SHARED_KEYS = [
 const POLL_INTERVAL_MS = 2_000;
 const SLOW_POLL_INTERVAL_MS = 30_000;
 const HEARTBEAT_INTERVAL_MS = 30_000;
-const MERGE_KEYS = new Set(["mahaffeys_tickets", "mahaffeys_pull_yard_vehicles", "mahaffeys_yard_layout"]);
+const MERGE_KEYS = new Set(["mahaffeys_tickets", "mahaffeys_pull_yard_vehicles", "mahaffeys_yard_layout", "mahaffeys_tools", "mahaffeys_tool_checkouts"]);
 
 interface SinceEntry {
   key: string;

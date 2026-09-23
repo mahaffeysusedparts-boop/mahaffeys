@@ -596,5 +596,68 @@ export type TaskStatus = 'TODO' | 'IN_PROGRESS' | 'DONE';
 export type TaskPriority = 'LOW' | 'NORMAL' | 'HIGH';
 export interface YardTask { id: string; title: string; assigneeName?: string; priority: TaskPriority; status: TaskStatus; dueDate?: string; createdAt: string; }
 
-export interface EquipmentItem { id: string; name: string; assetType: string; meterLabel: string; meterReading: number; lastServiceDate?: string; nextServiceDue: string; }
-export interface MaintenanceLogEntry { id: string; equipmentId: string; completedAt: string; notes: string; meterReading?: number; }
+export interface EquipmentItem {
+  id: string;
+  name: string;
+  assetType: string;
+  meterLabel: string;
+  meterReading: number;
+  lastServiceDate?: string;
+  nextServiceDue: string;
+  // New optional fields for Fleet & Tools
+  category?: 'Loader' | 'Forklift' | 'Tow Truck' | 'Crusher' | 'Other';
+  make?: string;
+  model?: string;
+  year?: number;
+  serialOrVin?: string;
+  plate?: string;
+  status?: 'Active' | 'Down for service' | 'Retired';
+  serviceIntervalHours?: number;
+  serviceIntervalDays?: number;
+  notes?: string;
+}
+
+export interface MaintenanceLogEntry {
+  id: string;
+  equipmentId: string;
+  completedAt: string;
+  notes: string;
+  meterReading?: number;
+  // New optional fields
+  performedBy?: string;
+  taskType?: 'Oil change' | 'Filter' | 'Inspection' | 'Repair' | 'Other';
+  cost?: number;
+  vendor?: string;
+  downtimeHours?: number;
+}
+
+export type ToolStatus = 'Available' | 'Out' | 'Missing' | 'Retired';
+
+export interface ToolItem {
+  id: string;
+  code: string; // short code for QR label (e.g., "IW-01")
+  name: string;
+  category: string; // e.g., "Impact Wrench", "Jack Stand", "Battery Pack"
+  status: ToolStatus;
+  homeLocation: string; // e.g., "Tool Crib A", "Bay 3"
+  conditionNotes?: string;
+  serialNumber?: string;
+  purchaseDate?: string;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ToolCheckout {
+  id: string;
+  toolId: string;
+  checkedOutBy: string; // employee name
+  checkedOutById?: string; // user id if available
+  checkedOutAt: string;
+  dueBackAt?: string; // ISO string, optional
+  checkedInAt?: string;
+  checkedInBy?: string;
+  conditionOnCheckout?: string;
+  conditionOnCheckin?: string;
+  notes?: string;
+}
