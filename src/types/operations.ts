@@ -1,7 +1,7 @@
 export type OperationsHealth = 'ON_TARGET' | 'ATTENTION' | 'CRITICAL';
 export type OperationsAlertSeverity = 'INFO' | 'ATTENTION' | 'URGENT';
 export type OperationsAlertStatus = 'OPEN' | 'ACKNOWLEDGED' | 'SNOOZED' | 'RESOLVED';
-export type OperationsQueueType = 'INTAKE' | 'VEHICLE' | 'SHIPMENT' | 'CONTAINER' | 'COMPLIANCE';
+export type OperationsQueueType = 'INTAKE' | 'VEHICLE' | 'SHIPMENT' | 'CONTAINER' | 'COMPLIANCE' | 'FLEET';
 
 export interface ShiftGoals {
   id: string;
@@ -16,7 +16,7 @@ export interface ShiftGoals {
 
 export interface AlertRule {
   id: string;
-  key: 'QUEUE_BACKLOG' | 'TICKET_AGE' | 'VEHICLE_AGE' | 'BAY_CAPACITY' | 'COMPLIANCE_GAP' | 'SHIPMENT_EXCEPTION' | 'MARGIN_LOW';
+  key: 'QUEUE_BACKLOG' | 'TICKET_AGE' | 'VEHICLE_AGE' | 'BAY_CAPACITY' | 'COMPLIANCE_GAP' | 'SHIPMENT_EXCEPTION' | 'MARGIN_LOW' | 'EQUIPMENT_SERVICE_DUE' | 'TOOL_CHECKOUT_OVERDUE';
   enabled: boolean;
   threshold: number;
   escalationMinutes: number;

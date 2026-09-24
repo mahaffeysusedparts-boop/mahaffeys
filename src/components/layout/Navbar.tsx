@@ -104,6 +104,7 @@ export const Navbar: React.FC = () => {
     { label: 'Mill Shipments', path: '/shipments', icon: Truck },
     { label: 'Reports', path: '/reports', icon: BarChart3 },
     { label: 'Team Ops', path: '/team', icon: ClipboardList },
+    { label: 'Fleet & Tools', path: '/fleet', icon: Wrench },
     { label: 'Customers', path: '/customers', icon: Users },
     ...(isAdmin ? [
       { label: 'User Access', path: '/users', icon: Shield, badge: pendingUsersCount },

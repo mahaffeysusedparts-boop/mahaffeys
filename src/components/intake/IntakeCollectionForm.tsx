@@ -110,8 +110,11 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
     setCustomerPhone(customer.phone || '');
     setCustomerIdNumber(customer.idNumber);
     setVehicleLicensePlate(customer.vehicleLicensePlate || '');
+    // The selected customer's registry photo always wins — freshly retaking it
+    // in the compliance studio below will overwrite this again.
+    setCaptures((prev) => ({ ...prev, idPhotoUrl: customer.idPhotoUrl }));
     if (customer.idPhotoUrl) {
-      setCaptures((prev) => ({ ...prev, idPhotoUrl: customer.idPhotoUrl }));
+      toast.success('ID photo pulled from their customer record');
     }
     setCustomerSearchOpen(false);
   };

@@ -39,6 +39,7 @@ const ScaleLogPage = lazy(() => import("./pages/ScaleLogPage"));
 const ShipmentsPage = lazy(() => import("./pages/ShipmentsPage"));
 const TeamOpsPage = lazy(() => import("./pages/TeamOpsPage"));
 const OperationsPage = lazy(() => import("./pages/OperationsPage"));
+const FleetPage = lazy(() => import("./pages/FleetPage"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 const queryClient = new QueryClient();
@@ -95,7 +96,8 @@ const App = () => (
               <Route path="/operations" element={guarded(<OperationsPage />, "operations")} />
               <Route path="/shipments" element={guarded(<ShipmentsPage />, "shipments")} />
               <Route path="/team" element={guarded(<TeamOpsPage />, "team")} />
-              <Route path="/settings" element={guarded(<SettingsPage />, "settings", true)} />
+                            <Route path="/fleet" element={guarded(<FleetPage />, "fleet")} />
+                            <Route path="/settings" element={guarded(<SettingsPage />, "settings", true)} />
 
               {/* CATCH-ALL 404 */}
               <Route path="*" element={<NotFound />} />

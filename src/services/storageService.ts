@@ -400,16 +400,22 @@ export const storageService = {
   },
 
   getEquipment: (): EquipmentItem[] => readCached("mahaffeys_equipment", []),
-  saveEquipment: (item: EquipmentItem) => {
-    const existing = storageService.getEquipment();
-    patchCached("mahaffeys_equipment", upsertItem("mahaffeys_equipment", item, existing));
-  },
+    saveEquipment: (item: EquipmentItem) => {
+      const existing = storageService.getEquipment();
+      patchCached("mahaffeys_equipment", upsertItem("mahaffeys_equipment", item, existing));
+    },
+    removeEquipment: (id: string) => {
+      patchCached("mahaffeys_equipment", removeItem("mahaffeys_equipment", id, storageService.getEquipment()));
+    },
 
   getMaintenanceLogs: (): MaintenanceLogEntry[] => readCached("mahaffeys_maintenance_logs", []),
-    saveMaintenanceLog: (log: MaintenanceLogEntry) => {
-      const existing = storageService.getMaintenanceLogs();
-      patchCached("mahaffeys_maintenance_logs", upsertItem("mahaffeys_maintenance_logs", log, existing));
-    },
+      saveMaintenanceLog: (log: MaintenanceLogEntry) => {
+        const existing = storageService.getMaintenanceLogs();
+        patchCached("mahaffeys_maintenance_logs", upsertItem("mahaffeys_maintenance_logs", log, existing));
+      },
+      removeMaintenanceLog: (id: string) => {
+        patchCached("mahaffeys_maintenance_logs", removeItem("mahaffeys_maintenance_logs", id, storageService.getMaintenanceLogs()));
+      },
   
     // ── Tools & Tool Checkouts ────────────────────────────────────────────────
     getTools: (): ToolItem[] => readCached("mahaffeys_tools", []),
@@ -508,7 +514,13 @@ export const storageService = {
   getOperationsGoals: (): ShiftGoals => readCached("mahaffeys_operations_goals", DEFAULT_GOALS),
   saveOperationsGoals: (goals: ShiftGoals) => patchCached("mahaffeys_operations_goals", goals),
 
-  getOperationsAlertRules: (): AlertRule[] => readCached("mahaffeys_operations_alert_rules", DEFAULT_ALERT_RULES),
+  getOperationsAlertRules: (): AlertRule[] => {
+    // Backfill newly introduced default rules so existing workstations pick them up.
+    const saved = readCached<AlertRule[]>("mahaffeys_operations_alert_rules", DEFAULT_ALERT_RULES);
+    if (!Array.isArray(saved) || saved.length === 0) return DEFAULT_ALERT_RULES;
+    const missing = DEFAULT_ALERT_RULES.filter((rule) => !saved.some((existing) => existing.key === rule.key));
+    return missing.length ? [...saved, ...missing] : saved;
+  },
   saveOperationsAlertRules: (rules: AlertRule[]) => patchCached("mahaffeys_operations_alert_rules", rules),
 
   getOperationsAlerts: (): OperationsAlert[] => readCached("mahaffeys_operations_alerts", []),

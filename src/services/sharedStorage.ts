@@ -29,6 +29,8 @@ const SHARED_KEYS = [
   "mahaffeys_equipment",
   "mahaffeys_maintenance_logs",
   "mahaffeys_rate_history",
+  "mahaffeys_tools",
+  "mahaffeys_tool_checkouts",
   "mahaffeys_operations_goals",
   "mahaffeys_operations_alert_rules",
   "mahaffeys_operations_alerts",
@@ -83,6 +85,8 @@ const SCHEMA_DEFAULTS: Record<string, unknown> = {
   mahaffeys_equipment: [],
   mahaffeys_maintenance_logs: [],
   mahaffeys_rate_history: [],
+  mahaffeys_tools: [],
+  mahaffeys_tool_checkouts: [],
   mahaffeys_operations_goals: {},
   mahaffeys_operations_alert_rules: [],
   mahaffeys_operations_alerts: [],
@@ -446,7 +450,7 @@ export const sharedStorage = {
     const response = await apiRequest<{ state: Record<string, unknown> }>("/api/state");
     const entries = Object.entries(response.state);
     const serverKeys = new Set(entries.map(([key]) => key));
-    const mergeKeys = new Set(["mahaffeys_tickets", "mahaffeys_pull_yard_vehicles", "mahaffeys_yard_layout"]);
+    const mergeKeys = new Set(["mahaffeys_tickets", "mahaffeys_pull_yard_vehicles", "mahaffeys_yard_layout", "mahaffeys_tools", "mahaffeys_tool_checkouts"]);
 
     for (const [key, serverValue] of entries) {
       if (!(SHARED_KEYS as readonly string[]).includes(key)) continue;

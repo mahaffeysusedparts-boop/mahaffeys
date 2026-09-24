@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { CarIntakeRecord, Ticket } from '@/types/scrap';
+import { CarIntakeRecord, Customer, Ticket } from '@/types/scrap';
 import { storageService } from '@/services/storageService';
 import { apiRequest } from '@/services/apiClient';
+import { customerService, type CustomerInput } from '@/services/customerService';
 import { uploadDataUrl } from '@/services/mediaService';
 import { PrintStickerModal } from '@/components/vehicle/PrintStickerModal';
 import { VehicleStickerData } from '@/components/vehicle/VehicleSticker';
@@ -18,6 +19,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import {
   Car,
   CheckCircle2,
@@ -36,6 +39,9 @@ import {
   ScanLine,
   User,
   Ban,
+  ChevronsUpDown,
+  CreditCard,
+  Loader2,
   Printer,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -99,6 +105,15 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
   const [sellerPhone, setSellerPhone] = useState<string>('');
   const [sellerAddress, setSellerAddress] = useState<string>('');
   const [licensePlate, setLicensePlate] = useState('');
+
+  // Registered-customer lookup on the seller name + saved ID photo
+  const [sellerSearchOpen, setSellerSearchOpen] = useState(false);
+  const [sellerSearch, setSellerSearch] = useState('');
+  const [sellerResults, setSellerResults] = useState<Customer[]>([]);
+  const [sellerSearchLoading, setSellerSearchLoading] = useState(false);
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const [sellerIdPhotoUrl, setSellerIdPhotoUrl] = useState<string>('');
+  const idPhotoInputRef = useRef<HTMLInputElement>(null);
 
   // Vehicle Details
 
@@ -165,6 +180,68 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
       });
     } finally {
       setLprLoading(false);
+    }
+  };
+
+  // Debounced lookup of registered customers for the seller combobox
+  useEffect(() => {
+    if (!sellerSearchOpen) return;
+    let active = true;
+    const timer = window.setTimeout(async () => {
+      setSellerSearchLoading(true);
+      try {
+        const result = await customerService.list({ search: sellerSearch.trim(), pageSize: 20 });
+        if (active) setSellerResults(result.customers);
+      } catch {
+        if (active) setSellerResults([]);
+      } finally {
+        if (active) setSellerSearchLoading(false);
+      }
+    }, 250);
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [sellerSearch, sellerSearchOpen]);
+
+  // Selecting a registered seller auto-fills their details AND their saved ID photo
+  const handleSellerSelect = (customer: Customer) => {
+    setSelectedCustomer(customer);
+    setSellerName(customer.fullName);
+    setSellerIdNumber((prev) => prev || customer.idNumber);
+    setSellerPhone((prev) => prev || customer.phone || '');
+    setSellerAddress((prev) => prev || customer.address || '');
+    setLicensePlate((prev) => prev || customer.vehicleLicensePlate || '');
+    if (customer.idPhotoUrl) {
+      setSellerIdPhotoUrl(customer.idPhotoUrl);
+      toast.success('Seller found — ID photo pulled from their customer record');
+    } else {
+      toast.info(`Seller found — ${customer.fullName}'s details pre-filled`, {
+        description: 'No ID photo on file yet. Capture one below to save it for next time.',
+      });
+    }
+    setSellerSearchOpen(false);
+  };
+
+  // Capture / replace the seller ID photo and store it on the server
+  const handleIdPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const dataUrl = await compressVehiclePhoto(file);
+      const url = await uploadDataUrl(dataUrl, `seller-id-${Date.now()}.jpg`);
+      setSellerIdPhotoUrl(url);
+      toast.success('ID photo captured', {
+        description: selectedCustomer
+          ? 'It will be saved to this seller\'s customer record.'
+          : 'It will be saved with this seller\'s new customer record.',
+      });
+    } catch (error) {
+      toast.error('Could not save the ID photo', {
+        description: error instanceof Error ? error.message : 'Choose a different image and try again.',
+      });
+    } finally {
+      e.target.value = '';
     }
   };
 
@@ -265,7 +342,7 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
     }
   }, [vin]);
 
-  const handleSubmitTicket = () => {
+  const handleSubmitTicket = async () => {
 
     if (isSaving) return;
 
@@ -359,6 +436,7 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
       complianceCaptures: {
         vehiclePhotoUrl: photoUrl,
         ...(doorJambPhotoUrl ? { doorJambVinPhotoUrl: doorJambPhotoUrl } : {}),
+        ...(sellerIdPhotoUrl ? { idPhotoUrl: sellerIdPhotoUrl } : {}),
       },
 
       grossTotal: purchasePrice,
@@ -372,6 +450,38 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
 
     setIsSaving(true);
     try {
+      // Keep the seller's registry record in sync: new sellers are created with
+      // their ID photo, and returning sellers get any newly captured photo saved.
+      try {
+        const customerInput: CustomerInput = {
+          fullName: finalCustomerName,
+          phone: sellerPhone.trim(),
+          idType: selectedCustomer?.idType ?? 'Driver License',
+          idNumber: sellerIdNumber.trim(),
+          idState: selectedCustomer?.idState ?? 'GA',
+          address: sellerAddress.trim(),
+          vehicleLicensePlate: licensePlate.trim().toUpperCase() || undefined,
+          vehicleState: selectedCustomer?.vehicleState,
+          notes: selectedCustomer?.notes,
+          idPhotoUrl: sellerIdPhotoUrl || undefined,
+          isCommercial: selectedCustomer?.isCommercial ?? false,
+          companyName: selectedCustomer?.companyName,
+          businessAddress: selectedCustomer?.businessAddress,
+        };
+
+        if (selectedCustomer) {
+          await customerService.update(selectedCustomer.id, customerInput);
+        } else if (sellerIdNumber.trim()) {
+          const created = await customerService.create(customerInput);
+          setSelectedCustomer(created);
+        }
+      } catch (error) {
+        // The ticket still saves; only the registry sync failed.
+        toast.warning('Seller registry could not be updated', {
+          description: error instanceof Error ? error.message : 'The ID photo will not be on file for next time.',
+        });
+      }
+
       storageService.saveTicket(newTicket);
       setStickerVehicle({
         businessName: settings.yardName,
@@ -395,6 +505,9 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
       setLicensePlate('');
       setPhotoUrl('');
       setDoorJambPhotoUrl('');
+      setSelectedCustomer(null);
+      setSellerIdPhotoUrl('');
+      setSellerSearch('');
 
       setNotes('');
 
@@ -792,7 +905,7 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
               <CardTitle className="text-sm font-bold tracking-wide uppercase text-blue-300 flex items-center gap-2">
                 <User className="w-4 h-4 text-blue-400" /> Who It Came From (Seller) *
               </CardTitle>
-              {sellerName.trim() && (
+              {selectedCustomer && (
                 <Badge className="bg-emerald-950 text-emerald-300 border-emerald-500/40 text-[10px] font-mono">
                   SELLER ON FILE
                 </Badge>
@@ -800,6 +913,79 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
             </CardHeader>
 
             <CardContent className="p-4 space-y-3">
+              <div>
+                <Label className="text-xs text-slate-300">
+                  <span>Find Returning Seller</span>
+                </Label>
+                <Popover open={sellerSearchOpen} onOpenChange={setSellerSearchOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      role="combobox"
+                      aria-expanded={sellerSearchOpen}
+                      className="mt-1 h-10 w-full justify-between rounded-lg border-slate-800 bg-slate-950 px-3 text-xs font-normal text-white hover:bg-slate-900"
+                    >
+                      <span className="truncate text-slate-300">
+                        {selectedCustomer ? selectedCustomer.fullName : 'Search name, phone, ID, or plate...'}
+                      </span>
+                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 text-slate-500" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent align="start" className="w-[min(420px,calc(100vw-2rem))] rounded-xl border-slate-700 bg-slate-900 p-0 text-white shadow-2xl">
+                    <Command shouldFilter={false} className="rounded-xl bg-slate-900 text-white">
+                      <CommandInput
+                        value={sellerSearch}
+                        onValueChange={setSellerSearch}
+                        placeholder="Name, phone, ID, or plate..."
+                        className="text-xs text-white placeholder:text-slate-500"
+                      />
+                      <CommandList>
+                        {sellerSearchLoading ? (
+                          <div className="flex items-center justify-center gap-2 py-8 text-xs text-slate-400">
+                            <Loader2 className="h-4 w-4 animate-spin text-blue-400" /> Searching...
+                          </div>
+                        ) : (
+                          <>
+                            <CommandEmpty>No seller found — enter their details below to add them.</CommandEmpty>
+                            <CommandGroup heading="Registered Sellers">
+                              {sellerResults.map((customer) => (
+                                <CommandItem
+                                  key={customer.id}
+                                  value={customer.id}
+                                  onSelect={() => handleSellerSelect(customer)}
+                                  className="items-start rounded-lg px-3 py-2.5 text-white data-[selected=true]:bg-blue-950"
+                                >
+                                  <div className="flex min-w-0 flex-1 items-center gap-2">
+                                    {customer.idPhotoUrl ? (
+                                      <img
+                                        src={customer.idPhotoUrl}
+                                        alt=""
+                                        className="h-8 w-11 shrink-0 rounded border border-slate-700 object-cover"
+                                      />
+                                    ) : (
+                                      <span className="flex h-8 w-11 shrink-0 items-center justify-center rounded border border-slate-700 bg-slate-950">
+                                        <CreditCard className="h-3.5 w-3.5 text-slate-600" />
+                                      </span>
+                                    )}
+                                    <div className="min-w-0">
+                                      <div className="truncate text-xs font-bold">{customer.fullName}</div>
+                                      <p className="truncate text-[10px] text-slate-400">
+                                        {customer.idNumber || customer.phone || 'No ID on file'}
+                                      </p>
+                                    </div>
+                                  </div>
+                                </CommandItem>
+                              ))}
+                            </CommandGroup>
+                          </>
+                        )}
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+              </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <Label className="text-xs text-slate-300">
@@ -860,6 +1046,45 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
 
                   <Label className="text-xs text-slate-300">Seller Address</Label>
                   <Input value={sellerAddress} onChange={(e) => setSellerAddress(e.target.value)} placeholder="Street, city, state, ZIP" className="mt-1 h-10 bg-slate-950 border-slate-800 text-white text-xs" />
+                </div>
+              </div>
+
+              {/* Seller ID photo — auto-pulled from the registry, saved back on submit */}
+              <div className="flex items-center gap-3 rounded-lg border border-slate-800 bg-slate-950/60 p-3">
+                <input
+                  ref={idPhotoInputRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  className="hidden"
+                  onChange={(e) => void handleIdPhotoUpload(e)}
+                />
+                <div className="flex h-16 w-24 shrink-0 items-center justify-center overflow-hidden rounded-md border border-slate-800 bg-slate-950">
+                  {sellerIdPhotoUrl ? (
+                    <img src={sellerIdPhotoUrl} alt="Seller ID" className="h-full w-full object-cover" />
+                  ) : (
+                    <CreditCard className="h-5 w-5 text-slate-600" />
+                  )}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-bold text-slate-200">Seller ID Photo</p>
+                  <p className="mt-0.5 text-[10px] leading-snug text-slate-500">
+                    {sellerIdPhotoUrl
+                      ? selectedCustomer
+                        ? 'Pulled from their customer record — retake only if the ID changed.'
+                        : 'Saved to their new customer record when you submit this intake.'
+                      : 'Capture the DL / State ID once — it is saved to the seller registry and auto-fills on future visits.'}
+                  </p>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => idPhotoInputRef.current?.click()}
+                    className="mt-1.5 h-8 gap-1.5 border-blue-500/40 bg-blue-950/40 text-[11px] font-bold text-blue-300 hover:bg-blue-900/50"
+                  >
+                    <Camera className="h-3.5 w-3.5" />
+                    {sellerIdPhotoUrl ? 'Retake ID Photo' : 'Capture ID Photo'}
+                  </Button>
                 </div>
               </div>
             </CardContent>
@@ -1065,7 +1290,7 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
 
               <Button
                 type="button"
-                onClick={handleSubmitTicket}
+                onClick={() => void handleSubmitTicket()}
                 disabled={isSaving}
                 className="w-full h-12 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black shadow-xl shadow-amber-950 text-sm tracking-wide rounded-xl"
               >

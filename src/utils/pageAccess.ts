@@ -11,7 +11,7 @@ import { UserRole } from '@/types/scrap';
 export const PAGE_KEYS = [
   'dashboard', 'operations', 'intake', 'scale-log', 'tickets', 'cash-drawer', 'customers', 'cameras',
   'yard-map', 'pull-a-part', 'containers', 'public-inventory', 'compliance', 'pricing', 'shipments',
-  'reports', 'team', 'system-status', 'users', 'server-admin', 'settings',
+  'reports', 'team', 'system-status', 'users', 'server-admin', 'settings', 'fleet',
 ] as const;
 
 export type PageKey = (typeof PAGE_KEYS)[number];
@@ -34,10 +34,11 @@ export const PAGE_LABELS: Record<PageKey, string> = {
   shipments: 'Mill Shipments',
   reports: 'Reports',
   team: 'Team Ops',
-  'system-status': 'System Status',
-  users: 'User Access',
-  'server-admin': 'Server Admin',
-  settings: 'Settings',
+    'system-status': 'System Status',
+    users: 'User Access',
+    'server-admin': 'Server Admin',
+    settings: 'Settings',
+    fleet: 'Fleet & Tools',
 };
 
 /** Conservative defaults — nothing changes for existing admin/manager users. */
@@ -45,7 +46,7 @@ export const ROLE_PAGE_ACCESS: Record<UserRole, PageKey[]> = {
   admin: [...PAGE_KEYS],
   yard_manager: [...PAGE_KEYS],
   scale_operator: ['dashboard', 'intake', 'scale-log', 'tickets', 'cash-drawer', 'customers', 'cameras'],
-  yard_employee: ['dashboard', 'yard-map', 'pull-a-part', 'containers', 'public-inventory'],
+    yard_employee: ['dashboard', 'yard-map', 'pull-a-part', 'containers', 'public-inventory', 'fleet'],
 };
 
 /** Route path → page key (used by the Navbar to hide links a role cannot open). */
@@ -68,7 +69,8 @@ export const PATH_TO_PAGE_KEY: Record<string, PageKey> = {
   '/shipments': 'shipments',
   '/reports': 'reports',
   '/team': 'team',
-  '/system-status': 'system-status',
+    '/fleet': 'fleet',
+    '/system-status': 'system-status',
   '/users': 'users',
   '/server-admin': 'server-admin',
   '/settings': 'settings',
