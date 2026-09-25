@@ -171,27 +171,170 @@ function isQuotaError(error: unknown) {
   return error instanceof DOMException && (error.name === "QuotaExceededError" || error.name === "NS_ERROR_DOM_QUOTA_REACHED");
 }
 
+// ---------------------------------------------------------------------------
+// Local quota management
+// ---------------------------------------------------------------------------
+// localStorage caps out around 5 MB per origin while the shared dataset keeps
+// growing. The server is the source of truth, so under quota pressure we
+// progressively clear the coldest LOCAL history (resolved alerts, old
+// summaries, oldest completed tickets). hydrate() re-merges whatever the
+// server still holds, so this only shrinks this workstation's offline cache —
+// open and recent records are always kept and in-session data lives in memory.
+
+const CLOSED_TICKET_STATUSES = new Set(["COMPLETED", "VOIDED"]);
+
+function attemptSetItem(key: string, value: string): boolean {
+  try {
+    localStorage.setItem(key, value);
+    return true;
+  } catch (error) {
+    if (!isQuotaError(error)) throw error;
+    return false;
+  }
+}
+
+function trimList(key: string, keep: (rows: Record<string, unknown>[]) => Record<string, unknown>[]): boolean {
+  const stored = localStorage.getItem(key);
+  if (!stored) return false;
+  try {
+    const rows = JSON.parse(stored);
+    if (!Array.isArray(rows)) return false;
+    const records = rows.filter((row): row is Record<string, unknown> => isRecord(row));
+    const kept = keep(records);
+    if (kept.length >= rows.length) return false;
+    localStorage.setItem(key, JSON.stringify(kept));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function keepNewest(field: string, limit: number) {
+  return (rows: Record<string, unknown>[]) =>
+    [...rows]
+      .sort((a, b) => String(b[field] ?? "").localeCompare(String(a[field] ?? "")))
+      .slice(0, limit);
+}
+
+function keepSince(field: string, days: number) {
+  const cutoff = new Date(Date.now() - days * 86_400_000).toISOString();
+  return (rows: Record<string, unknown>[]) => rows.filter((row) => String(row[field] ?? "") >= cutoff);
+}
+
+function trimResolvedAlerts(): boolean {
+  return trimList("mahaffeys_operations_alerts", (rows) => {
+    const active = rows.filter((row) => row.status !== "RESOLVED");
+    const resolved = rows.filter((row) => row.status === "RESOLVED");
+    return [...active, ...keepNewest("updatedAt", 250)(resolved)];
+  });
+}
+
+function trimClosedCheckouts(days: number): boolean {
+  const cutoff = new Date(Date.now() - days * 86_400_000).toISOString();
+  return trimList("mahaffeys_tool_checkouts", (rows) =>
+    rows.filter((row) => !row.checkedInAt || String(row.checkedInAt) >= cutoff),
+  );
+}
+
+function evictClosedTickets(olderThanDays: number): boolean {
+  const cutoff = new Date(Date.now() - olderThanDays * 86_400_000).toISOString();
+  return trimList("mahaffeys_tickets", (rows) =>
+    rows.filter((row) => {
+      if (!CLOSED_TICKET_STATUSES.has(String(row.status ?? ""))) return true;
+      const closedAt = String(row.updatedAt ?? row.createdAt ?? "");
+      return !closedAt || closedAt >= cutoff;
+    }),
+  );
+}
+
+function evictionStages(): Array<{ label: string; run: () => boolean }> {
+  return [
+    {
+      label: "cleared old resolved alerts, manager summaries, rate history, punch history, and returned tool checkouts",
+      run: () => {
+        const trimmed = [
+          trimResolvedAlerts(),
+          trimList("mahaffeys_operations_summaries", keepNewest("date", 45)),
+          trimList("mahaffeys_rate_history", keepNewest("changedAt", 365)),
+          trimList("mahaffeys_timeclock", keepSince("clockInAt", 120)),
+          trimClosedCheckouts(180),
+        ];
+        return trimmed.some(Boolean);
+      },
+    },
+    { label: "cleared completed tickets older than 90 days from this device", run: () => evictClosedTickets(90) },
+    { label: "cleared completed tickets older than 14 days from this device", run: () => evictClosedTickets(14) },
+    { label: "cleared completed tickets older than 1 day from this device", run: () => evictClosedTickets(1) },
+  ];
+}
+
+let lastEvictionNotice = 0;
+function notifyLocalEviction(detail: string) {
+  const now = Date.now();
+  if (now - lastEvictionNotice < 15 * 60_000) return;
+  lastEvictionNotice = now;
+  toast.warning("Device storage was full — oldest history cleared locally", {
+    description: `${detail}. Everything is still saved on the server; this only affects this workstation's offline copy.`,
+    duration: 10_000,
+  });
+}
+
+function writeMtime(key: string) {
+  try {
+    localStorage.setItem(`${key}${MTIME_KEY_SUFFIX}`, String(Date.now()));
+  } catch { /* best effort */ }
+}
+
 function compactExistingSnapshots() {
   for (const key of SHARED_KEYS) {
     const stored = localStorage.getItem(key);
     if (!stored) continue;
     const compacted = compactSerializedValue(stored);
-    if (compacted.length < stored.length) localStorage.setItem(key, compacted);
+    if (compacted.length < stored.length) {
+      try { localStorage.setItem(key, compacted); } catch { /* best effort */ }
+    }
   }
 }
 
 function persistLocalSnapshot(key: string, serialized: string) {
   const compacted = compactSerializedValue(serialized);
-  try {
-    localStorage.setItem(key, compacted);
-  } catch (error) {
-    if (!isQuotaError(error)) throw error;
-    compactExistingSnapshots();
-    localStorage.setItem(key, compacted);
+  if (attemptSetItem(key, compacted)) {
+    writeMtime(key);
+    return;
   }
-  try {
-    localStorage.setItem(`${key}${MTIME_KEY_SUFFIX}`, String(Date.now()));
-  } catch { /* best effort */ }
+
+  compactExistingSnapshots();
+  if (attemptSetItem(key, compacted)) {
+    writeMtime(key);
+    return;
+  }
+
+  const applied: string[] = [];
+  for (const stage of evictionStages()) {
+    if (stage.run()) applied.push(stage.label);
+    if (attemptSetItem(key, compacted)) break;
+  }
+
+  if (localStorage.getItem(key) !== compacted) {
+    // Even after clearing cold history this snapshot does not fit locally.
+    // The value stays in memory and is still queued for server upload, so no
+    // work is lost — this workstation just cannot cache it until browser
+    // storage is freed.
+    diagnosticLogger.error(
+      "sharedStorage",
+      `Cannot cache ${key} locally — browser storage quota exceeded`,
+      undefined,
+      { snapshotBytes: compacted.length, evictions: applied.join("; ") || "none" },
+    );
+    notifyLocalEviction("Newest data is kept in memory and synced to the server");
+    return;
+  }
+
+  diagnosticLogger.warn("sharedStorage", `Local quota pressure on ${key} — cold history cleared from this device`, {
+    evictions: applied.join("; "),
+    snapshotBytes: compacted.length,
+  });
+  notifyLocalEviction(applied.join("; "));
 }
 
 const STATE_CHUNK_SIZE = 500 * 1024;
