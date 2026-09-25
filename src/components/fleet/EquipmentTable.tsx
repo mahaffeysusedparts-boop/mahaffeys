@@ -8,6 +8,7 @@ import { storageService } from "@/services/storageService";
 import { getEquipmentDueInfo } from "@/services/fleetService";
 import { EquipmentForm } from "./EquipmentForm";
 import { MaintenanceLogForm } from "./MaintenanceLogForm";
+import { useConfirm } from "@/hooks/useConfirm";
 import type { EquipmentItem } from "@/types/scrap";
 
 export function EquipmentTable() {
@@ -17,6 +18,13 @@ export function EquipmentTable() {
   const [maintFormOpen, setMaintFormOpen] = useState(false);
   const [editingMaint, setEditingMaint] = useState<{ equipmentId: string } | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  const { confirm, ConfirmDialogComponent } = useConfirm({
+    title: "Delete Equipment",
+    description: "Are you sure you want to delete this equipment? This action cannot be undone.",
+    confirmLabel: "Delete",
+    cancelLabel: "Cancel",
+    destructive: true,
+  });
 
   const equipment = storageService.getEquipment();
   const filtered = equipment.filter(
@@ -28,11 +36,11 @@ export function EquipmentTable() {
       e.model?.toLowerCase().includes(search.toLowerCase())
   );
 
-  const handleDelete = (id: string) => {
-    if (confirm("Delete this equipment?")) {
-      storageService.removeEquipment(id);
-      setRefreshKey((k) => k + 1);
-    }
+  const handleDelete = async (id: string) => {
+    const ok = await confirm();
+    if (!ok) return;
+    storageService.removeEquipment(id);
+    setRefreshKey((k) => k + 1);
   };
 
   const handleAddMaintenance = (equipmentId: string) => {
@@ -126,12 +134,13 @@ export function EquipmentTable() {
         onSaved={() => { setRefreshKey((k) => k + 1); setEditingEquip(null); }}
       />
       <MaintenanceLogForm
-        open={maintFormOpen}
-        onOpenChange={setMaintFormOpen}
-        equipment={equipment}
-        editingLog={editingMaint ? { equipmentId: editingMaint.equipmentId } as any : null}
-        onSaved={() => { setRefreshKey((k) => k + 1); setMaintFormOpen(false); setEditingMaint(null); }}
-      />
-    </div>
-  );
+              open={maintFormOpen}
+              onOpenChange={setMaintFormOpen}
+              equipment={equipment}
+              editingLog={editingMaint ? { equipmentId: editingMaint.equipmentId } as any : null}
+              onSaved={() => { setRefreshKey((k) => k + 1); setMaintFormOpen(false); setEditingMaint(null); }}
+            />
+            <ConfirmDialogComponent />
+          </div>
+        );
 }

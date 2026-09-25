@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Edit, Plus, Trash2 } from "lucide-react";
 import { storageService } from "@/services/storageService";
 import { ToolForm } from "./ToolForm";
+import { useConfirm } from "@/hooks/useConfirm";
 import type { ToolItem } from "@/types/scrap";
 
 const STATUS_VARIANT: Record<ToolItem["status"], "default" | "destructive" | "secondary" | "outline"> = {
@@ -20,6 +21,13 @@ export function ToolTable() {
   const [formOpen, setFormOpen] = useState(false);
   const [editingTool, setEditingTool] = useState<ToolItem | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  const { confirm, ConfirmDialogComponent } = useConfirm({
+    title: "Delete Tool",
+    description: "Are you sure you want to delete this tool? This action cannot be undone.",
+    confirmLabel: "Delete",
+    cancelLabel: "Cancel",
+    destructive: true,
+  });
 
   const tools = storageService.getTools();
   const filtered = tools.filter(
@@ -29,11 +37,11 @@ export function ToolTable() {
       t.category?.toLowerCase().includes(search.toLowerCase())
   );
 
-  const handleDelete = (id: string) => {
-    if (confirm("Delete this tool?")) {
-      storageService.removeTool(id);
-      setRefreshKey((k) => k + 1);
-    }
+  const handleDelete = async (id: string) => {
+    const ok = await confirm();
+    if (!ok) return;
+    storageService.removeTool(id);
+    setRefreshKey((k) => k + 1);
   };
 
   return (
@@ -97,11 +105,12 @@ export function ToolTable() {
       </div>
 
       <ToolForm
-        open={formOpen}
-        onOpenChange={setFormOpen}
-        editingTool={editingTool}
-        onSaved={() => { setRefreshKey((k) => k + 1); setEditingTool(null); }}
-      />
-    </div>
-  );
+              open={formOpen}
+              onOpenChange={setFormOpen}
+              editingTool={editingTool}
+              onSaved={() => { setRefreshKey((k) => k + 1); setEditingTool(null); }}
+            />
+            <ConfirmDialogComponent />
+          </div>
+        );
 }

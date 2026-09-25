@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Plus, Search, Trash2 } from "lucide-react";
 import { storageService } from "@/services/storageService";
 import { MaintenanceLogForm } from "./MaintenanceLogForm";
+import { useConfirm } from "@/hooks/useConfirm";
 import type { MaintenanceLogEntry } from "@/types/scrap";
 
 export function MaintenanceLogTable() {
@@ -13,6 +14,13 @@ export function MaintenanceLogTable() {
   const [formOpen, setFormOpen] = useState(false);
   const [editingLog, setEditingLog] = useState<MaintenanceLogEntry | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  const { confirm, ConfirmDialogComponent } = useConfirm({
+    title: "Delete Maintenance Log",
+    description: "Are you sure you want to delete this maintenance log? This action cannot be undone.",
+    confirmLabel: "Delete",
+    cancelLabel: "Cancel",
+    destructive: true,
+  });
 
   const equipment = storageService.getEquipment();
   const logs = storageService.getMaintenanceLogs();
@@ -28,12 +36,12 @@ export function MaintenanceLogTable() {
     })
     .sort((a, b) => (b.completedAt || "").localeCompare(a.completedAt || ""));
 
-  const handleDelete = (id: string) => {
-    if (confirm("Delete this maintenance log?")) {
+  const handleDelete = async (id: string) => {
+      const ok = await confirm();
+      if (!ok) return;
       storageService.removeMaintenanceLog(id);
       setRefreshKey((k) => k + 1);
-    }
-  };
+    };
 
   return (
     <div className="space-y-4">
@@ -99,12 +107,13 @@ export function MaintenanceLogTable() {
       </div>
 
       <MaintenanceLogForm
-        open={formOpen}
-        onOpenChange={setFormOpen}
-        equipment={equipment}
-        editingLog={editingLog}
-        onSaved={() => { setRefreshKey((k) => k + 1); setFormOpen(false); setEditingLog(null); }}
-      />
-    </div>
-  );
+              open={formOpen}
+              onOpenChange={setFormOpen}
+              equipment={equipment}
+              editingLog={editingLog}
+              onSaved={() => { setRefreshKey((k) => k + 1); setFormOpen(false); setEditingLog(null); }}
+            />
+            <ConfirmDialogComponent />
+          </div>
+        );
 }

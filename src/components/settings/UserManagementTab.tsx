@@ -19,9 +19,17 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useConfirm } from "@/hooks/useConfirm";
 
 export const UserManagementTab: React.FC = () => {
   const { allUsers, approveUser, rejectUser, updateUserStatus, updateUserRole, deleteUser, user: currentUser } = useAuth();
+  const { confirm, ConfirmDialogComponent } = useConfirm({
+    title: "Remove User",
+    description: "Are you sure you want to remove this user? This action cannot be undone.",
+    confirmLabel: "Remove",
+    cancelLabel: "Cancel",
+    destructive: true,
+  });
 
   const pendingUsers = allUsers.filter((u) => u.status === "pending");
   const activeUsers = allUsers.filter((u) => u.status !== "pending");
@@ -50,12 +58,12 @@ export const UserManagementTab: React.FC = () => {
     toast.success(`User role updated to ${newRole.replace("_", " ").toUpperCase()}`);
   };
 
-  const handleDelete = (userId: string, userName: string) => {
-    if (confirm(`Are you sure you want to remove user ${userName}?`)) {
+  const handleDelete = async (userId: string, userName: string) => {
+      const ok = await confirm();
+      if (!ok) return;
       deleteUser(userId);
       toast.info(`User ${userName} removed`);
-    }
-  };
+    };
 
   const roleLabels: Record<UserRole, string> = {
     admin: "Administrator",
