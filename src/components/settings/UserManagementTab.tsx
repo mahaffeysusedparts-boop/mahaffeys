@@ -267,6 +267,7 @@ export const UserManagementTab: React.FC = () => {
         </CardContent>
       </Card>
 
+      <ConfirmDialogComponent />
     </div>
   );
 };

@@ -401,8 +401,7 @@ export function InteractiveYardMap({ bays, vehicles, metals }: InteractiveYardMa
         </section>
         <div className="yard-map-no-print lg:min-h-[620px]">{selectedItem ? <ItemPropertiesPanel item={selectedItem} bays={bays} vehicles={vehicles} metals={metals} onChange={(changes) => updateItem(selectedItem.id, changes)} onDuplicate={duplicateSelected} onDelete={() => { const deletedAt = new Date().toISOString(); setItems((current) => current.map((item) => item.id === selectedItem.id ? { ...item, deletedAt, updatedAt: deletedAt } : item)); setSelectedId(null); setSaved(false); }} onClose={() => setSelectedId(null)} /> : <aside className="rounded-2xl border border-slate-800 bg-slate-900/95 p-5 text-center shadow-2xl shadow-slate-950/40"><MousePointer2 className="mx-auto h-8 w-8 text-sky-400" /><h2 className="mt-3 text-base font-black text-white">{selectedDate ? "Historical snapshot" : "Select a map item"}</h2><p className="mt-2 text-xs leading-relaxed text-slate-400">{selectedDate ? "Past layouts are read-only. Move the timeline to Live layout to edit." : "Choose an item to edit its details, size, rotation, color, and inventory connection."}</p></aside>}</div>
       </div>
+      <ConfirmDialogComponent />
     </div>
-          <ConfirmDialogComponent />
-        </div>
-      );
-    }
+  );
+}
