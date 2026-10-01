@@ -45,6 +45,7 @@ import {
   Pencil,
   Trash2,
   Star,
+  ListPlus,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -264,6 +265,19 @@ export default function PricingPage() {
     setAddCatModalOpen(false);
     toast.success(`Added OEM Catalytic Converter Code: ${newEntry.code}`);
     setNewCode('');
+  };
+
+  // Merge any common industry codes missing from the registry
+  const handleSyncCommonCodes = () => {
+    const added = storageService.mergeCommonCatCodes();
+    setCatCodes(storageService.getCatCodes());
+    if (added > 0) {
+      toast.success(`Loaded ${added} common OEM converter codes`, {
+        description: 'Any codes you added yourself were kept — only missing ones were merged in.',
+      });
+    } else {
+      toast.info('All common OEM codes are already in your registry');
+    }
   };
 
   const filteredCatCodes = catCodes.filter(
@@ -611,23 +625,31 @@ export default function PricingPage() {
               <CardHeader className="py-4 px-6 bg-slate-950/60 border-b border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
                   <CardTitle className="text-base font-bold text-white flex items-center gap-2">
-                    <Sparkles className="w-5 h-5 text-purple-400" /> Catalytic Converter OEM Stamped Code Registry
+                    <Sparkles className="w-5 h-5 text-purple-400" /> Catalytic Converter OEM Stamped Code Registry ({catCodes.length})
                   </CardTitle>
                   <p className="text-xs text-slate-400 mt-0.5">
                     Search stamped shell numbers to estimate precious metal assay content and statutory market valuation.
                   </p>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <div className="relative">
                     <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-500" />
                     <Input
-                      placeholder="Search OEM serial code (e.g. 4R31)..."
+                      placeholder="Search code, make or category (e.g. 17410-0P020, Toyota, TF)..."
                       value={catSearch}
                       onChange={(e) => setCatSearch(e.target.value)}
                       className="bg-slate-950 border-slate-800 text-xs pl-8 w-60"
                     />
                   </div>
+
+                  <Button
+                    onClick={handleSyncCommonCodes}
+                    variant="outline"
+                    className="bg-slate-800 border-slate-700 text-purple-300 hover:bg-slate-700 hover:text-purple-200 font-semibold text-xs gap-1.5"
+                  >
+                    <ListPlus className="w-4 h-4" /> Sync Common Codes
+                  </Button>
 
                   <Button
                     onClick={() => setAddCatModalOpen(true)}
@@ -655,7 +677,12 @@ export default function PricingPage() {
                     {filteredCatCodes.map((cat) => (
                       <TableRow key={cat.id} className="border-slate-800 hover:bg-slate-800/40 text-xs font-mono">
                         <TableCell className="font-bold text-purple-300 font-mono tracking-wider">{cat.code}</TableCell>
-                        <TableCell className="font-sans font-semibold text-white">{cat.make}</TableCell>
+                        <TableCell className="font-sans font-semibold text-white">
+                          {cat.make}
+                          {cat.notes && (
+                            <span className="block text-[10px] font-normal text-slate-400">{cat.notes}</span>
+                          )}
+                        </TableCell>
                         <TableCell className="font-sans">
                           <Badge variant="outline" className="border-slate-700 text-slate-300 text-[10px]">
                             {cat.category}
@@ -669,6 +696,13 @@ export default function PricingPage() {
                         </TableCell>
                       </TableRow>
                     ))}
+                    {filteredCatCodes.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={7} className="text-center text-slate-500 text-xs py-10">
+                          No converter codes match "{catSearch}". Tap "Sync Common Codes" to load the industry list.
+                        </TableCell>
+                      </TableRow>
+                    )}
                   </TableBody>
                 </Table>
               </CardContent>

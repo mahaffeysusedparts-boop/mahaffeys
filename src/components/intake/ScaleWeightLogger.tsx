@@ -22,10 +22,12 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { scaleAccent } from '@/components/scale/scaleAccent';
+import { VoidTicketDialog } from '@/components/tickets/VoidTicketDialog';
 import {
   AlertTriangle,
   ArrowDownUp,
   ArrowLeft,
+  Ban,
   Check,
   CheckCircle2,
   DollarSign,
@@ -85,6 +87,8 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
   const [queue, setQueue] = useState<Ticket[]>([]);
   const [queueSearch, setQueueSearch] = useState('');
   const [activeTicket, setActiveTicket] = useState<Ticket | null>(null);
+  // Ticket pending a confirmed void (active panel or a queued intake row).
+  const [voidTarget, setVoidTarget] = useState<Ticket | null>(null);
 
   const [scale, setScale] = useState<ScaleStatus>(scaleService.getStatus());
   const [scales, setScales] = useState<ScaleConfig[]>(scaleService.getScales());
@@ -207,13 +211,18 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
       if (detail?.key && detail.key !== 'mahaffeys_tickets') return;
       refreshQueue();
       if (activeTicketId) {
-        const stillOpen = storageService
+        const latest = storageService
           .getTickets()
-          .some((t) => t.id === activeTicketId && t.ticketType === 'SCRAP_METAL' && t.status === 'PENDING');
+          .find((t) => t.id === activeTicketId && t.ticketType === 'SCRAP_METAL');
+        const stillOpen = latest?.status === 'PENDING';
         if (!stillOpen) {
           setActiveTicket(null);
           onActiveTicketChange(null);
-          toast.info(`Intake #${activeTicketId} was completed on another workstation`);
+          toast.info(
+            latest?.status === 'VOIDED'
+              ? `Intake #${activeTicketId} was voided on another workstation`
+              : `Intake #${activeTicketId} was completed on another workstation`
+          );
         }
       }
     };
@@ -247,6 +256,19 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
     storageService.saveTicket(ticket);
     refreshQueue();
     return ticket;
+  };
+
+  // After a confirmed void: clear the desk if it was the active transaction,
+  // then pull the refreshed queue so the row disappears everywhere.
+  const handleTicketVoided = (ticketId: string) => {
+    if (activeTicketId === ticketId) {
+      setActiveTicket(null);
+      onActiveTicketChange(null);
+      setNotes('');
+      setManualWeight('');
+      setDeductionPercent(0);
+    }
+    refreshQueue();
   };
 
   const currentLbs = scale.unit === 'KG'
@@ -875,13 +897,24 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
                       )}
                     </div>
 
-                    <Button
-                      size="sm"
-                      onClick={() => handleSwitch(ticket)}
-                      className="h-8 w-full gap-1.5 bg-emerald-600 text-xs font-bold text-white shadow hover:bg-emerald-500"
-                    >
-                      <Scale className="h-3.5 w-3.5" /> {isCurrent ? 'Continue This Intake' : 'Switch to This Intake'}
-                    </Button>
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        onClick={() => handleSwitch(ticket)}
+                        className="h-8 flex-1 gap-1.5 bg-emerald-600 text-xs font-bold text-white shadow hover:bg-emerald-500"
+                      >
+                        <Scale className="h-3.5 w-3.5" /> {isCurrent ? 'Continue This Intake' : 'Switch to This Intake'}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setVoidTarget(ticket)}
+                        title="Void this intake"
+                        className="h-8 w-9 shrink-0 border-slate-800 bg-slate-950 p-0 text-slate-500 hover:border-red-500/40 hover:bg-red-950/40 hover:text-red-400"
+                      >
+                        <Ban className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
                   </div>
                 );
               })}
@@ -943,14 +976,24 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
               </Badge>
             </div>
 
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={handleSwitchAway}
-              className="shrink-0 gap-1.5 border-slate-700 bg-slate-950 text-xs text-slate-300 hover:bg-slate-800 hover:text-white"
-            >
-              <Layers className="h-3.5 w-3.5" /> Save &amp; Switch Transaction
-            </Button>
+            <div className="flex shrink-0 items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setVoidTarget(activeTicket)}
+                className="gap-1.5 border-red-500/40 bg-red-950/30 text-xs font-bold text-red-400 hover:bg-red-950/60 hover:text-red-300"
+              >
+                <Ban className="h-3.5 w-3.5" /> Void Transaction
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleSwitchAway}
+                className="gap-1.5 border-slate-700 bg-slate-950 text-xs text-slate-300 hover:bg-slate-800 hover:text-white"
+              >
+                <Layers className="h-3.5 w-3.5" /> Save &amp; Switch Transaction
+              </Button>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
@@ -1488,6 +1531,14 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Void a transaction at any stage — active panel or a queued intake */}
+      <VoidTicketDialog
+        ticket={voidTarget}
+        open={voidTarget !== null}
+        onOpenChange={(open) => { if (!open) setVoidTarget(null); }}
+        onVoided={handleTicketVoided}
+      />
     </div>
   );
 };

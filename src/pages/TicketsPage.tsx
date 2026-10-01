@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import { Ticket } from '@/types/scrap';
 import { storageService } from '@/services/storageService';
-import { sharedStorage } from '@/services/sharedStorage';
 import { Navbar } from '@/components/layout/Navbar';
 import { ReceiptModal } from '@/components/receipts/ReceiptModal';
 import { CheckPrintModal } from '@/components/receipts/CheckPrintModal';
+import { VoidTicketDialog } from '@/components/tickets/VoidTicketDialog';
 import { calculateComplianceScore } from '@/utils/complianceUtils';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -41,6 +41,8 @@ export default function TicketsPage() {
   const [tickets, setTickets] = useState<Ticket[]>(storageService.getTickets());
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<'ALL' | 'CAR_SALVAGE' | 'SCRAP_METAL'>('ALL');
+  const [hideVoided, setHideVoided] = useState(false);
+  const [voidTarget, setVoidTarget] = useState<Ticket | null>(null);
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
   const [inspectionTicket, setInspectionTicket] = useState<Ticket | null>(null);
   const [receiptOpen, setReceiptOpen] = useState(false);
@@ -77,16 +79,13 @@ export default function TicketsPage() {
     setEditReceiptTicket(null);
   };
 
-  const handleVoidTicket = (id: string) => {
-    const updated = tickets.map((t) => (t.id === id ? { ...t, status: 'VOIDED' as const } : t));
-    setTickets(updated);
-    sharedStorage.setItem('mahaffeys_tickets', JSON.stringify(updated));
-    toast.info(`Ticket #${id} marked as VOIDED`);
+  const handleVoidTicket = (ticket: Ticket) => {
+    setVoidTarget(ticket);
   };
 
   const handleExportCSV = () => {
     if (tickets.length === 0) return;
-    const headers = ['Ticket ID', 'Type', 'Date', 'Customer', 'Plate / VIN', 'Compliance Score', 'Payout Method', 'Final Payout ($)'];
+    const headers = ['Ticket ID', 'Type', 'Date', 'Customer', 'Plate / VIN', 'Compliance Score', 'Payout Method', 'Final Payout ($)', 'Status', 'Voided By', 'Void Reason'];
     const rows = tickets.map((t) => {
       const stats = calculateComplianceScore(t.complianceCaptures);
       return [
@@ -98,6 +97,9 @@ export default function TicketsPage() {
         `"${stats.score}%"`,
         t.payoutMethod,
         t.finalPayout.toFixed(2),
+        t.status,
+        `"${t.voidedBy || ''}"`,
+        `"${t.voidReason || ''}"`,
       ];
     });
 
@@ -121,7 +123,9 @@ export default function TicketsPage() {
     const matchesType =
       typeFilter === 'ALL' ? true : t.ticketType === typeFilter;
 
-    return matchesSearch && matchesType;
+    const matchesVoidFilter = !hideVoided || t.status !== 'VOIDED';
+
+    return matchesSearch && matchesType && matchesVoidFilter;
   });
 
   const totalPayoutSum = filteredTickets.reduce((acc, t) => (t.status === 'COMPLETED' ? acc + t.finalPayout : acc), 0);
@@ -193,6 +197,21 @@ export default function TicketsPage() {
               </TabsList>
             </Tabs>
 
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setHideVoided((v) => !v)}
+              className={`h-9 gap-1.5 text-xs font-semibold ${
+                hideVoided
+                  ? 'border-slate-700 bg-slate-800 text-slate-300'
+                  : 'border-red-500/40 bg-red-950/30 text-red-300 hover:bg-red-950/50'
+              }`}
+              title="Toggle voided tickets in the ledger"
+            >
+              <Ban className="w-3.5 h-3.5" />
+              {hideVoided ? 'Show Voided' : 'Hide Voided'}
+            </Button>
+
           </CardContent>
         </Card>
 
@@ -225,7 +244,10 @@ export default function TicketsPage() {
                     const stats = calculateComplianceScore(caps);
 
                     return (
-                      <TableRow key={t.id} className="border-slate-800 hover:bg-slate-800/50 text-xs">
+                      <TableRow
+                        key={t.id}
+                        className={`border-slate-800 text-xs ${t.status === 'VOIDED' ? 'opacity-60 hover:bg-slate-800/50' : 'hover:bg-slate-800/50'}`}
+                      >
                         
                         <TableCell className="font-mono font-bold text-amber-400">
                           <div className="flex items-center gap-1">
@@ -314,7 +336,15 @@ export default function TicketsPage() {
                               ACTIVE LOAD
                             </Badge>
                           ) : (
-                            <Badge variant="outline" className="border-red-500/40 text-red-400 text-[10px]">
+                            <Badge
+                              variant="outline"
+                              className="border-red-500/40 text-red-400 text-[10px]"
+                              title={
+                                t.voidedAt
+                                  ? `Voided by ${t.voidedBy || 'unknown'} on ${new Date(t.voidedAt).toLocaleString()}${t.voidReason ? ` — ${t.voidReason}` : ''}`
+                                  : undefined
+                              }
+                            >
                               VOIDED
                             </Badge>
                           )}
@@ -365,12 +395,13 @@ export default function TicketsPage() {
                             </Button>
                           )}
 
-                          {t.status === 'COMPLETED' && (
+                          {t.status !== 'VOIDED' && (
                             <Button
                               variant="ghost"
                               size="sm"
-                              onClick={() => handleVoidTicket(t.id)}
+                              onClick={() => handleVoidTicket(t)}
                               className="h-7 px-2 text-slate-500 hover:text-red-400 hover:bg-slate-800 text-xs"
+                              title={t.status === 'COMPLETED' ? 'Void paid ticket (supervisor)' : 'Void transaction'}
                             >
                               <Ban className="w-3.5 h-3.5" />
                             </Button>
@@ -398,6 +429,14 @@ export default function TicketsPage() {
         ticket={checkTicket}
         open={checkOpen}
         onOpenChange={setCheckOpen}
+      />
+
+      {/* VOID TRANSACTION — any stage, supervisor-gated for paid tickets */}
+      <VoidTicketDialog
+        ticket={voidTarget}
+        open={voidTarget !== null}
+        onOpenChange={(open) => { if (!open) setVoidTarget(null); }}
+        onVoided={() => refreshData()}
       />
 
       {/* EDIT RECEIPT NUMBER MODAL */}

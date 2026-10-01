@@ -1,4 +1,5 @@
 import { sharedStorage } from "./sharedStorage";
+import { COMMON_CAT_CODES } from "@/data/catConverterCodes";
 import type {
   MetalGrade,
   AutoSalvageCategoryRate,
@@ -178,8 +179,32 @@ export const storageService = {
   getCarRates: (): AutoSalvageCategoryRate[] => readCached("mahaffeys_car_rates", []),
   saveCarRates: (rates: AutoSalvageCategoryRate[]) => patchCached("mahaffeys_car_rates", rates),
 
-  getCatCodes: (): CatalyticConverterCode[] => readCached("mahaffeys_cat_codes", []),
+  getCatCodes: (): CatalyticConverterCode[] => {
+    const stored = readCached<CatalyticConverterCode[]>("mahaffeys_cat_codes", []);
+    // Empty registry (first run or after a pricing reset) auto-loads the
+    // common industry codes so the serial lookup is usable out of the box.
+    if (stored.length > 0) return stored;
+    const seeded = COMMON_CAT_CODES.map((entry) => ({ ...entry }));
+    patchCached("mahaffeys_cat_codes", seeded);
+    return seeded;
+  },
   saveCatCodes: (codes: CatalyticConverterCode[]) => patchCached("mahaffeys_cat_codes", codes),
+
+  /**
+   * Merges any common industry codes missing from the current registry
+   * (matched on the stamped code) and returns how many were added.
+   */
+  mergeCommonCatCodes: (): number => {
+    const existing = storageService.getCatCodes();
+    const existingCodes = new Set(existing.map((c) => c.code.toUpperCase().trim()));
+    const missing = COMMON_CAT_CODES
+      .filter((c) => !existingCodes.has(c.code.toUpperCase().trim()))
+      .map((c) => ({ ...c }));
+    if (missing.length > 0) {
+      patchCached("mahaffeys_cat_codes", [...missing, ...existing]);
+    }
+    return missing.length;
+  },
 
   /** Clears the pricing catalog back to seed defaults (metals, car rates, cat codes). */
   resetPricingToDefaults: (): void => {
@@ -204,6 +229,27 @@ export const storageService = {
   },
   removeTicket: (id: string) => {
     patchCached("mahaffeys_tickets", removeItem("mahaffeys_tickets", id, storageService.getTickets()));
+  },
+
+  /**
+   * Voids a transaction at any stage (pending, mid-weigh, or paid). The ticket
+   * record is kept for audit — status flips to VOIDED with who/when/why, and
+   * any weigh data stays on the ticket as an honest weight journal.
+   */
+  voidTicket: (id: string, meta: { by: string; reason: string }): Ticket | null => {
+    const tickets = storageService.getTickets();
+    const index = tickets.findIndex((t) => t.id === id);
+    if (index === -1) return null;
+    const voided: Ticket = {
+      ...tickets[index],
+      status: "VOIDED",
+      voidedAt: new Date().toISOString(),
+      voidedBy: meta.by,
+      voidReason: meta.reason,
+    };
+    tickets[index] = voided;
+    patchCached("mahaffeys_tickets", tickets);
+    return voided;
   },
 
   /**

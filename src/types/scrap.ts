@@ -416,6 +416,11 @@ export interface Ticket {
   checkNumber?: string;
   notes?: string;
   operatorName: string;
+
+  /** Audit trail stamped when a transaction is voided at any stage of intake. */
+  voidedAt?: string;
+  voidedBy?: string;
+  voidReason?: string;
 }
 
 export interface WeightTransaction {
