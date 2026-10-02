@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
 import { storageService } from "@/services/storageService";
+import { apiRequest } from "@/services/apiClient";
 import { alarmComService, type AdcStatus } from "@/services/alarmComService";
 import type { AdcClip } from "@/services/alarmComService";
 import { IpCamera, IpCameraType, IpCameraAssignment } from "@/types/scrap";
@@ -39,6 +40,7 @@ import {
   Download,
   ExternalLink,
   AlertTriangle,
+  Signal,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -51,6 +53,56 @@ function captureAgeLabel(lastLoadedAt: number | null, now: number) {
   if (seconds < 5) return "captured just now";
   if (seconds < 90) return `captured ${seconds}s ago`;
   return `captured ${Math.round(seconds / 60)}m ago`;
+}
+
+/**
+ * Self-healing live <img> for server-restreamed RTSP and direct MJPEG cameras.
+ * Retries automatically when a stream drops, and periodically reconnects
+ * restreamed RTSP views so a dropped camera never leaves a frozen frame.
+ */
+function LocalStreamImg({ cam, refreshMs, objectFit = "object-cover" }: { cam: IpCamera; refreshMs?: number; objectFit?: string }) {
+  const [nonce, setNonce] = useState(0);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    setNonce(0);
+    setFailed(false);
+  }, [cam.streamUrl]);
+
+  useEffect(() => {
+    if (!refreshMs || !cam.isActive) return;
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible") setNonce(Date.now());
+    }, refreshMs);
+    return () => window.clearInterval(timer);
+  }, [refreshMs, cam.isActive, cam.streamUrl]);
+
+  const handleError = () => {
+    setFailed(true);
+    window.setTimeout(() => setNonce(Date.now()), 5000);
+  };
+
+  return (
+    <>
+      <img
+        key={`${cam.streamUrl}-${nonce}`}
+        src={`${cam.streamUrl}${nonce ? `?t=${nonce}` : ""}`}
+        alt={cam.name}
+        onLoad={() => setFailed(false)}
+        onError={handleError}
+        className={`w-full h-full ${objectFit}`}
+      />
+      {failed && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-slate-950/92 p-4 text-center">
+          <WifiOff className="w-7 h-7 text-slate-500" />
+          <span className="text-[11px] font-mono text-amber-300">STREAM RECONNECTING…</span>
+          <span className="text-[10px] text-slate-500 font-mono max-w-56">
+            {cam.ipAddress}:{cam.port || 554}
+          </span>
+        </div>
+      )}
+    </>
+  );
 }
 
 /** Auto-refreshing Alarm.com snapshot viewport (shared by tile + fullscreen). */
@@ -140,6 +192,10 @@ export default function CamerasPage() {
   const [camUsername, setCamUsername] = useState("");
   const [camPassword, setCamPassword] = useState("");
   const [camNotes, setCamNotes] = useState("");
+  // 3xLogic / RTSP preset state
+  const [camBrand, setCamBrand] = useState<"GENERIC" | "3XLOGIC">("GENERIC");
+  const [camRtspPath, setCamRtspPath] = useState("/rtsp/live/ch00_0");
+  const [probing, setProbing] = useState(false);
 
   // Alarm.com camera edit state (assignment / notes only — URLs are bridge-managed)
   const [adcEditing, setAdcEditing] = useState<IpCamera | null>(null);
@@ -194,6 +250,8 @@ export default function CamerasPage() {
     setCamUsername("");
     setCamPassword("");
     setCamNotes("Scale entrance camera; HTTP snapshot is monitored automatically for arriving vehicles");
+    setCamBrand("GENERIC");
+    setCamRtspPath("/rtsp/live/ch00_0");
     setAddModalOpen(true);
   };
 
@@ -209,6 +267,12 @@ export default function CamerasPage() {
     setCamUsername(cam.username || "");
     setCamPassword(cam.password || "");
     setCamNotes(cam.notes || "");
+    setCamBrand(cam.cameraType === "RTSP_STREAM" ? "3XLOGIC" : "GENERIC");
+    try {
+      setCamRtspPath(cam.rtspUrl ? new URL(cam.rtspUrl).pathname || "/rtsp/live/ch00_0" : "/rtsp/live/ch00_0");
+    } catch {
+      setCamRtspPath("/rtsp/live/ch00_0");
+    }
     setAddModalOpen(true);
   };
 
@@ -231,18 +295,25 @@ export default function CamerasPage() {
       toast.error("Camera Name and IP Address are required");
       return;
     }
-    if (camAssignment === "LICENSE_PLATE" && camType !== "SNAPSHOT" && !camSnapshotUrl.trim()) {
+    const isRtsp = camType === "RTSP_STREAM";
+    if (camAssignment === "LICENSE_PLATE" && !isRtsp && camType !== "SNAPSHOT" && !camSnapshotUrl.trim()) {
       toast.error("Scale entrance LPR requires an HTTP snapshot URL");
       return;
     }
 
+    const camId = editingCam ? editingCam.id : `cam-${Date.now()}`;
     const camObj: IpCamera = {
-      id: editingCam ? editingCam.id : `cam-${Date.now()}`,
+      id: camId,
       name: camName.trim(),
       ipAddress: camIp.trim(),
       port: camPort,
-      streamUrl: camStreamUrl.trim(),
-      snapshotUrl: camSnapshotUrl.trim() || undefined,
+      // RTSP cams are restreamed by the app server — the browser-friendly
+      // proxy URLs are managed automatically and never point at the camera.
+      streamUrl: isRtsp ? `/api/cameras/${camId}/stream` : camStreamUrl.trim(),
+      snapshotUrl: isRtsp ? `/api/cameras/${camId}/snapshot` : camSnapshotUrl.trim() || undefined,
+      rtspUrl: isRtsp
+        ? `rtsp://${camIp.trim()}:${camPort || 554}${camRtspPath.trim() || "/rtsp/live/ch00_0"}`
+        : editingCam?.rtspUrl,
       cameraType: camType,
       assignment: camAssignment,
       username: camUsername.trim() || undefined,
@@ -255,7 +326,28 @@ export default function CamerasPage() {
     storageService.saveIpCamera(camObj);
     loadData();
     setAddModalOpen(false);
-    toast.success(`${editingCam ? "Updated" : "Added"} IP Camera: ${camObj.name}`);
+    toast.success(`${editingCam ? "Updated" : "Added"} IP Camera: ${camObj.name}`, isRtsp ? {
+      description: "RTSP restream armed — the live tile connects through the app server (no NVR needed).",
+    } : undefined);
+  };
+
+  // Pre-save RTSP test: asks the server to pull one frame from the camera
+  const handleProbeRtsp = async () => {
+    const url = `rtsp://${camIp.trim()}:${camPort || 554}${camRtspPath.trim() || "/rtsp/live/ch00_0"}`;
+    setProbing(true);
+    try {
+      await apiRequest<{ ok: boolean }>("/api/cameras/probe", {
+        method: "POST",
+        body: JSON.stringify({ rtspUrl: url, username: camUsername.trim() || undefined, password: camPassword.trim() || undefined }),
+      });
+      toast.success(`RTSP connection OK — grabbed a test frame from ${camIp.trim()}`);
+    } catch (error) {
+      toast.error("RTSP test failed", {
+        description: error instanceof Error ? error.message : "The camera did not respond",
+      });
+    } finally {
+      setProbing(false);
+    }
   };
 
   const handleDeleteCamera = (cam: IpCamera) => {
@@ -452,7 +544,7 @@ export default function CamerasPage() {
               <Camera className="w-10 h-10 mx-auto text-slate-600" />
               <p className="text-sm font-semibold text-white">No Cameras Added Yet</p>
               <p className="text-xs text-slate-500 max-w-md mx-auto">
-                Tap <strong>"Add IP Camera"</strong> to enter camera IP addresses (e.g. 192.168.1.150) for scale desk license plate OCR — or connect
+                Tap <strong>"Add IP Camera"</strong> to enter camera IP addresses (e.g. 192.168.1.150) for scale desk license plate OCR — 3xLogic RTSP cams stream straight from the camera with no NVR needed — or connect
                 your <strong>Alarm.com</strong> cloud cameras from Server Admin → Alarm.com.
               </p>
               <Button onClick={handleOpenAdd} className="bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs gap-1.5">
@@ -510,16 +602,9 @@ export default function CamerasPage() {
                             }}
                           />
                         ) : (
-                          <img
-                            src={cam.streamUrl}
-                            alt={cam.name}
-                            className="w-full h-full object-cover"
-                            onError={(e) => {
-                              (e.target as HTMLImageElement).src =
-                                "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='640' height='360' viewBox='0 0 640 360'><rect width='640' height='360' fill='%230f172a'/><text x='320' y='180' fill='%2338bdf8' font-family='monospace' font-size='16' font-weight='bold' text-anchor='middle'>IP STREAM READY (" +
-                                cam.ipAddress +
-                                ")</text></svg>";
-                            }}
+                          <LocalStreamImg
+                            cam={cam}
+                            refreshMs={cam.cameraType === "RTSP_STREAM" ? 90_000 : undefined}
                           />
                         )
                       ) : (
@@ -546,7 +631,7 @@ export default function CamerasPage() {
                           </Badge>
                         ) : (
                           <Badge variant="outline" className="bg-slate-950/80 text-slate-300 border-slate-800 text-[9px] font-mono">
-                            {cam.cameraType}
+                            {cam.cameraType === "RTSP_STREAM" ? "RTSP LIVE" : cam.cameraType}
                           </Badge>
                         )}
                       </div>
@@ -658,7 +743,11 @@ export default function CamerasPage() {
                 <Label className="text-slate-300">Stream Protocol Type</Label>
                 <select
                   value={camType}
-                  onChange={(e) => setCamType(e.target.value as IpCameraType)}
+                  onChange={(e) => {
+                    const next = e.target.value as IpCameraType;
+                    setCamType(next);
+                    if (next === "RTSP_STREAM" && camPort !== 554) setCamPort(554);
+                  }}
                   className="w-full h-10 bg-slate-900 border border-slate-800 rounded-md text-xs text-white px-2 mt-1 font-mono"
                 >
                   <option value="MJPEG">MJPEG Video Stream</option>
@@ -686,24 +775,89 @@ export default function CamerasPage() {
             </div>
 
             <div>
-              <Label className="text-slate-300">Full Video Stream URL (Auto-Generated or Custom)</Label>
-              <Input
-                value={camStreamUrl}
-                onChange={(e) => setCamStreamUrl(e.target.value)}
-                placeholder="http://192.168.1.150:8080/video"
-                className="bg-slate-900 border-slate-800 text-sky-300 font-mono text-xs mt-1"
-              />
+              <Label className="text-slate-300">Camera Brand Preset</Label>
+              <select
+                value={camBrand}
+                onChange={(e) => {
+                  const brand = e.target.value as "GENERIC" | "3XLOGIC";
+                  setCamBrand(brand);
+                  if (brand === "3XLOGIC") {
+                    setCamType("RTSP_STREAM");
+                    setCamPort(554);
+                    setCamRtspPath("/rtsp/live/ch00_0");
+                  } else if (camType === "RTSP_STREAM") {
+                    setCamType("MJPEG");
+                  }
+                }}
+                className="w-full h-10 bg-slate-900 border border-slate-800 rounded-md text-xs text-white px-2 mt-1"
+              >
+                <option value="GENERIC">Generic IP Cam (MJPEG / Snapshot / HLS)</option>
+                <option value="3XLOGIC">3xLogic / VISIX (RTSP — no NVR needed)</option>
+              </select>
             </div>
 
-            <div>
-              <Label className="text-slate-300">Snapshot Image URL {camAssignment === "LICENSE_PLATE" ? "(Required for automatic entrance LPR)" : "(Optional)"}</Label>
-              <Input
-                value={camSnapshotUrl}
-                onChange={(e) => setCamSnapshotUrl(e.target.value)}
-                placeholder="http://192.168.1.150:8080/shot.jpg"
-                className="bg-slate-900 border-slate-800 text-slate-300 font-mono text-xs mt-1"
-              />
-            </div>
+            {camType === "RTSP_STREAM" ? (
+              <div className="space-y-3 rounded-xl border border-sky-500/30 bg-sky-950/20 p-3">
+                <div>
+                  <Label className="text-slate-300">RTSP Stream Path (3xLogic default pre-filled)</Label>
+                  <Input
+                    value={camRtspPath}
+                    onChange={(e) => setCamRtspPath(e.target.value)}
+                    placeholder="/rtsp/live/ch00_0"
+                    className="bg-slate-900 border-slate-800 text-sky-300 font-mono text-xs mt-1"
+                  />
+                  <p className="text-[10px] text-slate-500 mt-1">
+                    Main stream: <span className="font-mono text-slate-400">/rtsp/live/ch00_0</span> · lighter sub-stream:{" "}
+                    <span className="font-mono text-slate-400">/rtsp/live/ch00_1</span>
+                  </p>
+                </div>
+
+                <div className="rounded-lg bg-slate-950 border border-slate-800 px-3 py-2">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Server Restream Source</p>
+                  <p className="text-[11px] font-mono text-sky-300 break-all mt-0.5">
+                    rtsp://{camIp.trim() || "192.168.x.x"}:{camPort || 554}
+                    {camRtspPath.trim() || "/rtsp/live/ch00_0"}
+                  </p>
+                  <p className="text-[10px] text-slate-500 mt-1">
+                    The app server pulls this RTSP feed straight from the camera and restreams it to your workstation — no NVR required. Live view, snapshots and entrance LPR are wired automatically.
+                  </p>
+                </div>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void handleProbeRtsp()}
+                  disabled={probing || !camIp.trim()}
+                  className="h-9 w-full bg-slate-900 border-sky-500/40 text-sky-300 hover:bg-slate-800 hover:text-sky-200 text-xs font-bold gap-1.5"
+                >
+                  <Signal className={`w-4 h-4 ${probing ? "animate-pulse" : ""}`} />
+                  {probing ? "Testing RTSP connection…" : "Test RTSP Connection"}
+                </Button>
+              </div>
+            ) : (
+              <>
+                <div>
+                  <Label className="text-slate-300">Full Video Stream URL (Auto-Generated or Custom)</Label>
+                  <Input
+                    value={camStreamUrl}
+                    onChange={(e) => setCamStreamUrl(e.target.value)}
+                    placeholder="http://192.168.1.150:8080/video"
+                    className="bg-slate-900 border-slate-800 text-sky-300 font-mono text-xs mt-1"
+                  />
+                </div>
+
+                <div>
+                  <Label className="text-slate-300">Snapshot Image URL {camAssignment === "LICENSE_PLATE" ? "(Required for automatic entrance LPR)" : "(Optional)"}</Label>
+                  <Input
+                    value={camSnapshotUrl}
+                    onChange={(e) => setCamSnapshotUrl(e.target.value)}
+                    placeholder="http://192.168.1.150:8080/shot.jpg"
+                    className="bg-slate-900 border-slate-800 text-slate-300 font-mono text-xs mt-1"
+                  />
+                </div>
+              </>
+            )}
 
             <div>
               <Label className="text-slate-300">Notes / Location Description</Label>
@@ -811,10 +965,10 @@ export default function CamerasPage() {
               {selectedCamForFullscreen.provider === "ALARM_COM" ? (
                 <AdcSnapshotView cam={selectedCamForFullscreen} refreshMs={ADC_FULLSCREEN_REFRESH_MS} large />
               ) : (
-                <img
-                  src={selectedCamForFullscreen.streamUrl}
-                  alt={selectedCamForFullscreen.name}
-                  className="w-full h-full object-contain"
+                <LocalStreamImg
+                  cam={selectedCamForFullscreen}
+                  refreshMs={selectedCamForFullscreen.cameraType === "RTSP_STREAM" ? 90_000 : undefined}
+                  objectFit="object-contain"
                 />
               )}
             </div>

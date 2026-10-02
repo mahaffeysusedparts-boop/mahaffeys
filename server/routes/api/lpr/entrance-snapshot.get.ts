@@ -4,11 +4,13 @@ import { requireUser } from "../../../utils/auth";
 import { query } from "../../../utils/db";
 import { getAdcSnapshot, isAdcError } from "../../../utils/alarmComClient";
 import { getAdcCameraConfigs } from "../../../utils/alarmComConfig";
+import { grabRtspFrame, resolveRtspSource } from "../../../utils/rtspProxy";
 
 interface EntranceCamera {
   id: string;
   ipAddress: string;
   streamUrl: string;
+  rtspUrl?: string;
   snapshotUrl?: string;
   cameraType: "MJPEG" | "SNAPSHOT" | "HLS" | "RTSP_STREAM";
   assignment: string;
@@ -67,6 +69,25 @@ export default defineHandler(async (event) => {
   if (!camera) {
     if (adcEntrance) return serveAlarmComEntrance(adcEntrance.deviceId);
     throw createError({ statusCode: 404, statusMessage: "No active scale entrance license plate camera is configured" });
+  }
+
+  // RTSP cameras (e.g. 3xLogic cams without an NVR) expose no HTTP snapshot
+  // endpoint — pull a frame straight from the network stream instead.
+  const rtspSource = resolveRtspSource(camera);
+  if (rtspSource) {
+    try {
+      const frame = await grabRtspFrame(rtspSource);
+      return new Response(new Uint8Array(frame), {
+        headers: {
+          "Content-Type": "image/jpeg",
+          "Cache-Control": "no-store, private",
+          "X-Entrance-Camera-Id": camera.id,
+          "X-Entrance-Camera-Provider": "RTSP_PROXY",
+        },
+      });
+    } catch (error) {
+      throw createError({ statusCode: 502, statusMessage: error instanceof Error ? error.message : "The RTSP entrance camera is unreachable" });
+    }
   }
 
   const source = camera.snapshotUrl || (camera.cameraType === "SNAPSHOT" ? camera.streamUrl : "");

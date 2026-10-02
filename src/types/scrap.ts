@@ -19,6 +19,8 @@ export interface IpCamera {
   ipAddress: string; // e.g. "192.168.1.150" or full URL "http://192.168.1.150:8080/video"
   port?: number;
   streamUrl: string; // resolved video or snapshot URL
+  /** Raw RTSP source (e.g. rtsp://192.168.1.60:554/rtsp/live/ch00_0) — restreamed to the browser by the server. */
+  rtspUrl?: string;
   snapshotUrl?: string; // e.g. "http://192.168.1.150/cgi-bin/snapshot.cgi" or "/snapshot.jpg"
   cameraType: IpCameraType;
   assignment: IpCameraAssignment;
