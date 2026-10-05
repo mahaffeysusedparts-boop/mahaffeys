@@ -1,8 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { MetalGrade, ScaleStatus, ScrapTicketLine, Ticket, WeightTransaction, ScaleConfig } from '@/types/scrap';
+import { MetalGrade, ScaleStatus, ScrapTicketLine, Ticket, WeightTransaction, ScaleConfig, ScaleWeighingMode } from '@/types/scrap';
 import { scaleService } from '@/services/scaleService';
 import { storageService } from '@/services/storageService';
 import { calculateComplianceScore } from '@/utils/complianceUtils';
+import { computeWeightBreakdown, buildScrapTicketLine } from '@/utils/weightCalculations';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -36,6 +37,7 @@ import {
   Layers,
   LogIn,
   LogOut,
+  PackageCheck,
   PackagePlus,
   Plus,
   Radar,
@@ -50,6 +52,14 @@ import {
 import { toast } from 'sonner';
 
 const MAX_ACTIVE_LOADS = 10;
+
+type SingleTareMode = 'NONE' | 'SCALE_TARE' | 'MANUAL';
+
+interface SingleCapture {
+  capturedLbs: number;
+  tareLbs: number;
+  isManual: boolean;
+}
 
 // Auto-capture tuning: a reading only fires after it stays stable this long,
 // and must exceed this floor so idle platform drift never auto-logs.
@@ -107,11 +117,22 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
   const stableSinceRef = useRef<number | null>(null);
   // Manual capture attempted while the reading was still in MOTION — parked
   // here until the operator confirms or waits for stability.
-  const [pendingUnstable, setPendingUnstable] = useState<{ direction: 'IN' | 'OUT'; lbs: number } | null>(null);
+  const [pendingUnstable, setPendingUnstable] = useState<{ direction: 'IN' | 'OUT' | 'SINGLE'; lbs: number } | null>(null);
 
   const [payoutMethod, setPayoutMethod] = useState<'Cash' | 'Check'>('Cash');
   const [checkNumber, setCheckNumber] = useState(`CHK-${Math.floor(1000 + Math.random() * 9000)}`);
   const [notes, setNotes] = useState('');
+
+  // Small-load single-weight mode keeps the review pending until the operator
+  // confirms the grade, deduction, and payout details.
+  const [weighingMode, setWeighingMode] = useState<ScaleWeighingMode>(
+    scaleService.isCurrentScaleSingleWeight() ? 'SINGLE_WEIGHT' : 'VEHICLE_IN_OUT',
+  );
+  const [singleCapture, setSingleCapture] = useState<SingleCapture | null>(null);
+  const [singleTareMode, setSingleTareMode] = useState<SingleTareMode>('NONE');
+  const [singleManualTare, setSingleManualTare] = useState('');
+  const [singleManualWeight, setSingleManualWeight] = useState('');
+  const [pendingSingleDiscard, setPendingSingleDiscard] = useState(false);
 
   useEffect(() => {
     const unsub = scaleService.subscribe((s) => {
@@ -126,6 +147,13 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
 
   const activeScale = scales.find((s) => s.id === currentScaleId) ?? null;
   const accent = scaleAccent(activeScale?.accentColor);
+  const activeScaleIsSmall = activeScale?.weighingMode === 'SINGLE_WEIGHT';
+
+  useEffect(() => {
+    if (!singleCapture) {
+      setWeighingMode(activeScaleIsSmall ? 'SINGLE_WEIGHT' : 'VEHICLE_IN_OUT');
+    }
+  }, [activeScaleIsSmall, singleCapture]);
 
   const applyScaleSwitch = (id: string | null) => {
     const next = scales.find((s) => s.id === id);
@@ -141,7 +169,8 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
     const midWeighing = !!activeTicket
       && activeTicket.scaleGrossInWeight != null
       && activeTicket.scaleTareOutWeight == null;
-    if (midWeighing) {
+    const hasPendingSingle = singleCapture !== null;
+    if (midWeighing || hasPendingSingle) {
       setPendingScaleSwitch({ id });
       return;
     }
@@ -274,6 +303,7 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
   const currentLbs = scale.unit === 'KG'
     ? Math.round(scale.grossWeight * 2.20462)
     : Math.round(scale.grossWeight);
+  const selectedMetal = metals.find((m) => m.id === selectedMetalId);
 
   // ---- Weighing state machine -------------------------------------------------
   const weighState: WeighState | null = !activeTicket
@@ -283,6 +313,13 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
       : activeTicket.scaleGrossInWeight != null
         ? 'AWAITING_OUT'
         : 'AWAITING_IN';
+
+  const singleCapturedNet = singleCapture
+    ? Math.max(0, singleCapture.capturedLbs - singleCapture.tareLbs)
+    : 0;
+  const selectedSingleBreakdown = selectedMetal
+    ? computeWeightBreakdown(singleCapture?.capturedLbs ?? 0, singleCapture?.tareLbs ?? 0, deductionPercent, selectedMetal)
+    : null;
 
   const recordTransaction = (ticket: Ticket, type: WeightTransaction['type'], weightLbs: number): WeightTransaction[] => [
     ...(ticket.weightTransactions || []),
@@ -455,7 +492,6 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
   const pendingNet = activeTicket && weighState === 'PENDING_GRADE'
     ? Math.max(0, (activeTicket.scaleGrossInWeight ?? 0) - (activeTicket.scaleTareOutWeight ?? 0))
     : 0;
-  const selectedMetal = metals.find((m) => m.id === selectedMetalId);
   const pendingDeductionLbs = Math.round(pendingNet * (deductionPercent / 100) * 10) / 10;
   const pendingBillable = Math.max(0, Math.round((pendingNet - pendingDeductionLbs) * 10) / 10);
   const pendingTotal = selectedMetal ? Math.round(pendingBillable * selectedMetal.ratePerLb * 100) / 100 : 0;
@@ -508,6 +544,89 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
     setActiveTicket(persist(next));
     setDeductionPercent(0);
     toast.success(`Load ${newLine.loadNumber}: ${fmtLbs(billableWeight)} LBS of ${metal.name} added`);
+  };
+
+  // ---- Single-weight (small-load) capture --------------------------------------
+  const scaleTareLbs = scale.unit === 'KG' ? Math.round(scale.tareWeight * 2.20462) : Math.round(scale.tareWeight);
+  const resolveSingleTare = (): number | null => {
+    if (singleTareMode === 'NONE') return 0;
+    if (singleTareMode === 'SCALE_TARE') return scaleTareLbs;
+    const lbs = Math.round(parseFloat(singleManualTare));
+    if (!Number.isFinite(lbs) || lbs < 0) {
+      toast.error('Enter a valid tare weight in pounds');
+      return null;
+    }
+    return lbs;
+  };
+
+  const captureSingle = (lbs: number, isManual: boolean) => {
+    const tareLbs = resolveSingleTare();
+    if (tareLbs === null) return;
+    if (tareLbs > lbs) {
+      toast.error('Tare exceeds the captured weight', { description: `Tare (${fmtLbs(tareLbs)} LBS) is greater than the reading (${fmtLbs(lbs)} LBS).` });
+      return;
+    }
+    setSingleCapture({ capturedLbs: lbs, tareLbs, isManual });
+    toast.success(`Captured ${fmtLbs(lbs)} LBS${isManual ? ' (manual)' : ''} — review the load details below`);
+  };
+
+  const handleSingleCapture = () => {
+    if (!scale.connected) {
+      toast.error('Scale is not connected', { description: 'Use manual entry below, or check the scale host connection.' });
+      return;
+    }
+    if (currentLbs <= 0) {
+      toast.error('Scale is reading zero', { description: 'Place the small load on the platform before capturing.' });
+      return;
+    }
+    if (!scale.isStable) {
+      setPendingUnstable({ direction: 'SINGLE', lbs: currentLbs });
+      return;
+    }
+    captureSingle(currentLbs, false);
+  };
+
+  const handleSingleManualCapture = () => {
+    const lbs = Math.round(parseFloat(singleManualWeight));
+    if (!Number.isFinite(lbs) || lbs <= 0) {
+      toast.error('Enter a weight in pounds greater than zero');
+      return;
+    }
+    captureSingle(lbs, true);
+  };
+
+  const handleCommitSingleLoad = () => {
+    if (!activeTicket || !singleCapture || !selectedMetal) return;
+    const breakdown = computeWeightBreakdown(singleCapture.capturedLbs, singleCapture.tareLbs, deductionPercent, selectedMetal);
+    const lines = activeTicket.scrapLines || [];
+    const newLine = buildScrapTicketLine(breakdown, selectedMetal, lines.length + 1, 'SINGLE_WEIGHT');
+    const next: Ticket = {
+      ...activeTicket,
+      scrapLines: [...lines, newLine],
+      weightTransactions: [...(activeTicket.weightTransactions || []), {
+        id: `wt-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        type: 'SINGLE_WEIGHT',
+        weightLbs: singleCapture.capturedLbs,
+        recordedAt: new Date().toISOString(),
+        operatorName: storageService.getSettings().operatorName,
+        scaleName: scaleService.getCurrentScale()?.name,
+      }],
+    };
+    setActiveTicket(persist(next));
+    setSingleCapture(null);
+    setSingleTareMode('NONE');
+    setSingleManualTare('');
+    setSingleManualWeight('');
+    setDeductionPercent(0);
+    toast.success(`Small load ${newLine.loadNumber}: ${fmtLbs(breakdown.billableWeight)} LBS of ${selectedMetal.name} added`);
+  };
+
+  const handleDiscardSingleCapture = () => {
+    setSingleCapture(null);
+    setSingleTareMode('NONE');
+    setSingleManualTare('');
+    setSingleManualWeight('');
+    toast.info('Small-load capture discarded');
   };
 
   const handleRemoveLine = (id: string) => {
@@ -778,11 +897,22 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
                     <span className={`h-2 w-2 rounded-full ${scaleAccent(s.accentColor).dot}`} />
                     {s.name}
                     {s.location ? ' (' + s.location + ')' : ''}
+                    {s.weighingMode === 'SINGLE_WEIGHT' && (
+                      <Badge className="ml-1 border border-violet-500/40 bg-violet-500/15 text-[8px] text-violet-300">SMALL</Badge>
+                    )}
                   </span>
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
+          <Button
+            size="sm"
+            variant={weighingMode === 'SINGLE_WEIGHT' ? 'default' : 'outline'}
+            onClick={() => setWeighingMode((mode) => mode === 'SINGLE_WEIGHT' ? 'VEHICLE_IN_OUT' : 'SINGLE_WEIGHT')}
+            className={`h-8 gap-1.5 text-xs font-bold ${weighingMode === 'SINGLE_WEIGHT' ? 'bg-violet-600 text-white hover:bg-violet-500' : 'border-violet-500/50 bg-violet-950/30 text-violet-300 hover:bg-violet-950/60'}`}
+          >
+            <PackageCheck className="h-3.5 w-3.5" /> Small Load — Single Weight
+          </Button>
           <Button
             size="sm"
             onClick={onNewIntake}
@@ -999,7 +1129,78 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
             {/* Left: weighing + lines */}
             <div className="space-y-6 lg:col-span-2">
-              <Card className="border-slate-800 bg-slate-900 text-white shadow-lg">
+              {weighingMode === 'SINGLE_WEIGHT' && (
+                <Card className="border-violet-500/40 bg-slate-900 text-white shadow-lg">
+                  <CardHeader className="flex flex-row items-center justify-between border-b border-violet-500/30 bg-violet-950/20 px-4 py-3">
+                    <CardTitle className="flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-violet-200">
+                      <PackageCheck className="h-4 w-4 text-violet-400" /> Small Load — Single Weight
+                    </CardTitle>
+                    <Badge className={`${activeScaleIsSmall ? 'border-violet-500/50 bg-violet-500/15 text-violet-300' : 'border-amber-500/50 bg-amber-500/15 text-amber-300'} font-mono text-[10px]`}>
+                      {activeScaleIsSmall ? 'CONFIGURED SMALL SCALE' : 'QUICK MODE OVERRIDE'}
+                    </Badge>
+                  </CardHeader>
+                  <CardContent className="space-y-4 p-4">
+                    <div className="rounded-xl border border-slate-800 bg-black/90 p-4">
+                      <div className="flex items-center justify-between font-mono text-[10px] text-slate-400">
+                        <span>{activeScale?.name || 'Active scale'} · LIVE READING</span>
+                        <Badge className={scale.connected ? scale.isStable ? 'bg-emerald-950/60 text-emerald-400' : 'animate-pulse bg-amber-950/60 text-amber-400' : 'bg-red-950/60 text-red-400'}>
+                          {!scale.connected ? 'OFFLINE' : scale.isStable ? 'STABLE' : 'MOTION'}
+                        </Badge>
+                      </div>
+                      <div className="my-3 flex items-baseline justify-center gap-2 font-mono">
+                        <span className="text-5xl font-extrabold text-violet-300 sm:text-6xl">{fmtLbs(currentLbs)}</span>
+                        <span className="text-xl font-bold text-slate-400">LBS</span>
+                      </div>
+                      <p className="text-center text-[10px] text-slate-500">Display: {scale.unit} · Stored weights: LBS</p>
+                    </div>
+
+                    {!singleCapture ? (
+                      <>
+                        <div className="space-y-2">
+                          <Label className="text-xs font-semibold text-slate-300">Tare for this load</Label>
+                          <Select value={singleTareMode} onValueChange={(v) => setSingleTareMode(v as SingleTareMode)}>
+                            <SelectTrigger className="h-11 border-slate-800 bg-slate-950 text-xs text-white"><SelectValue /></SelectTrigger>
+                            <SelectContent className="border-slate-800 bg-slate-900 text-white">
+                              <SelectItem value="NONE">No tare — reading is final net</SelectItem>
+                              <SelectItem value="SCALE_TARE">Use current scale tare ({fmtLbs(scaleTareLbs)} LBS)</SelectItem>
+                              <SelectItem value="MANUAL">Enter tare manually</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          {singleTareMode === 'MANUAL' && (
+                            <Input type="number" min={0} value={singleManualTare} onChange={(e) => setSingleManualTare(e.target.value)} placeholder="Tare in LBS" className="h-11 border-slate-800 bg-slate-950 font-mono text-white" />
+                          )}
+                        </div>
+                        <Button onClick={handleSingleCapture} disabled={!scale.connected || !scale.isStable || currentLbs <= 0} className="h-16 w-full gap-2 bg-violet-600 text-base font-extrabold text-white hover:bg-violet-500 disabled:bg-slate-800 disabled:text-slate-500">
+                          <Scale className="h-6 w-6" /> Capture Stable Weight
+                        </Button>
+                        <div className="rounded-xl border border-dashed border-amber-500/40 bg-amber-950/20 p-3">
+                          <Label className="text-[10px] font-bold uppercase tracking-wider text-amber-300">Manual fallback — offline capture (LBS)</Label>
+                          <div className="mt-2 flex gap-2">
+                            <Input type="number" min={0} value={singleManualWeight} onChange={(e) => setSingleManualWeight(e.target.value)} placeholder="e.g. 85" className="h-11 border-slate-700 bg-slate-950 font-mono text-white" />
+                            <Button onClick={handleSingleManualCapture} className="h-11 shrink-0 gap-1.5 bg-amber-700 text-xs font-bold text-white hover:bg-amber-600"><Keyboard className="h-4 w-4" /> Capture Manual</Button>
+                          </div>
+                          <p className="mt-1 text-[10px] text-amber-200/70">Manual entries are clearly marked and are not connected live readings.</p>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="space-y-4">
+                        <div className="grid grid-cols-2 gap-2 font-mono sm:grid-cols-4">
+                          <div className="rounded-xl border border-slate-800 bg-slate-950 p-3"><span className="block text-[10px] text-slate-400">SINGLE / GROSS</span><span className="text-lg font-bold text-violet-300">{fmtLbs(singleCapture.capturedLbs)} LBS</span>{singleCapture.isManual && <Badge className="mt-1 bg-amber-500/15 text-[9px] text-amber-300">MANUAL</Badge>}</div>
+                          <div className="rounded-xl border border-slate-800 bg-slate-950 p-3"><span className="block text-[10px] text-slate-400">TARE USED</span><span className="text-lg font-bold text-amber-300">{fmtLbs(singleCapture.tareLbs)} LBS</span></div>
+                          <div className="rounded-xl border border-emerald-500/40 bg-emerald-950/40 p-3"><span className="block text-[10px] text-emerald-300">FINAL NET</span><span className="text-lg font-black text-emerald-400">{fmtLbs(singleCapturedNet)} LBS</span></div>
+                          <div className="rounded-xl border border-slate-800 bg-slate-950 p-3"><span className="block text-[10px] text-slate-400">RATE</span><span className="text-lg font-bold text-white">${selectedMetal?.ratePerLb.toFixed(2) || '0.00'}/lb</span></div>
+                        </div>
+                        {gradeSelector}
+                        <div><Label className="text-[11px] text-slate-400">Contamination %</Label><Input type="number" min={0} max={100} value={deductionPercent} onChange={(e) => setDeductionPercent(Math.min(100, Math.max(0, parseFloat(e.target.value) || 0)))} className="mt-1 h-11 border-slate-800 bg-slate-950 font-mono text-base text-red-400" /></div>
+                        <div className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-950 px-4 py-3 font-mono text-xs"><span className="text-slate-400">{fmtLbs(singleCapturedNet)} lb net − {fmtLbs(selectedSingleBreakdown?.deductionLbs)} lb ded = <span className="font-bold text-white">{fmtLbs(selectedSingleBreakdown?.billableWeight)} lb billable</span></span><span className="font-extrabold text-emerald-400">${(selectedSingleBreakdown?.lineTotal || 0).toFixed(2)}</span></div>
+                        <div className="flex gap-2"><Button onClick={handleCommitSingleLoad} className="h-12 flex-1 gap-2 bg-emerald-600 text-sm font-extrabold text-white hover:bg-emerald-500"><PackagePlus className="h-5 w-5" /> Add Small Load to Ticket</Button><Button variant="outline" onClick={handleDiscardSingleCapture} className="h-12 border-slate-700 bg-slate-950 text-xs text-slate-400 hover:text-red-400"><Trash2 className="h-4 w-4" /> Discard</Button></div>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
+
+              <Card className={`${weighingMode === 'SINGLE_WEIGHT' ? 'hidden ' : ''}border-slate-800 bg-slate-900 text-white shadow-lg`}>
                 <CardHeader className="flex flex-row items-center justify-between border-b border-slate-800 bg-slate-950/60 px-4 py-3">
                   <CardTitle className="flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-slate-300">
                     <Scale className="h-4 w-4 text-emerald-400" /> Vehicle Weighing
@@ -1027,6 +1228,7 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
                         {activeScale && (
                           <span className={`rounded border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${accent.chipBorder} ${accent.chipBg} ${accent.chipText}`}>
                             {activeScale.name}
+                            {activeScaleIsSmall && <span className="ml-1 rounded border border-violet-500/40 bg-violet-500/15 px-1 py-0.5 text-[8px] text-violet-300">SMALL</span>}
                           </span>
                         )}
                       </span>
@@ -1240,11 +1442,14 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
                           <TableRow key={line.id} className="border-slate-800 font-mono text-xs hover:bg-slate-800/40">
                             <TableCell className="font-bold text-amber-300">#{line.loadNumber}</TableCell>
                             <TableCell className="font-sans font-semibold text-white">
-                              {line.metalName}
+                              <div className="flex items-center gap-2">
+                                {line.metalName}
+                                {line.weighingMode === 'SINGLE_WEIGHT' && <Badge className="border border-violet-500/40 bg-violet-500/15 text-[9px] text-violet-300">SINGLE</Badge>}
+                              </div>
                               <span className="block text-[10px] text-slate-400">{line.metalCategory}</span>
                             </TableCell>
                             <TableCell className="text-slate-400">
-                              {fmtLbs(line.grossWeight)} / {fmtLbs(line.tareWeight)}
+                              {line.weighingMode === 'SINGLE_WEIGHT' ? `${fmtLbs(line.grossWeight)} single / ${fmtLbs(line.tareWeight)} tare` : `${fmtLbs(line.grossWeight)} / ${fmtLbs(line.tareWeight)}`}
                             </TableCell>
                             <TableCell className="text-right text-slate-300">{fmtLbs(line.netWeight)} lb</TableCell>
                             <TableCell className="text-right text-red-400">
@@ -1291,10 +1496,12 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
                               className={`font-mono text-[9px] font-bold ${
                                 tx.type === 'SCALE_IN'
                                   ? 'border border-emerald-500/40 bg-emerald-500/15 text-emerald-300'
-                                  : 'border border-amber-500/40 bg-amber-500/15 text-amber-300'
+                                  : tx.type === 'SCALE_OUT'
+                                    ? 'border border-amber-500/40 bg-amber-500/15 text-amber-300'
+                                    : 'border border-violet-500/40 bg-violet-500/15 text-violet-300'
                               }`}
                             >
-                              {tx.type === 'SCALE_IN' ? 'IN' : 'OUT'}
+                              {tx.type === 'SCALE_IN' ? 'IN' : tx.type === 'SCALE_OUT' ? 'OUT' : 'SINGLE'}
                             </Badge>
                             <span className="font-bold text-white">{fmtLbs(tx.weightLbs)} LBS</span>
                             <span className="text-slate-400">{tx.scaleName || 'Unstamped platform'}</span>
@@ -1483,6 +1690,7 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
             <AlertDialogAction
               onClick={() => {
                 if (pendingScaleSwitch) applyScaleSwitch(pendingScaleSwitch.id);
+                if (singleCapture) handleDiscardSingleCapture();
                 setPendingScaleSwitch(null);
               }}
               className="bg-amber-600 font-bold text-white hover:bg-amber-500"
@@ -1507,7 +1715,9 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
             <AlertDialogDescription className="text-slate-300">
               The platform hasn't settled yet. Current reading:{' '}
               <span className="font-mono font-bold text-amber-300">{fmtLbs(pendingUnstable?.lbs)} LBS</span> for the{' '}
-              <span className="font-bold text-white">{pendingUnstable?.direction === 'IN' ? 'IN (gross)' : 'OUT (tare)'}</span>{' '}
+              <span className="font-bold text-white">
+                {pendingUnstable?.direction === 'IN' ? 'IN (gross)' : pendingUnstable?.direction === 'OUT' ? 'OUT (tare)' : 'single-weight'}
+              </span>{' '}
               weight. Capturing now may log an inaccurate weight — or wait a moment for the{' '}
               <span className="font-mono font-bold text-emerald-400">STABLE</span> indicator.
             </AlertDialogDescription>
@@ -1520,13 +1730,14 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
               onClick={() => {
                 if (pendingUnstable) {
                   if (pendingUnstable.direction === 'IN') commitInWeight(pendingUnstable.lbs);
-                  else commitOutWeight(pendingUnstable.lbs);
+                  else if (pendingUnstable.direction === 'OUT') commitOutWeight(pendingUnstable.lbs);
+                  else captureSingle(pendingUnstable.lbs, false);
                 }
                 setPendingUnstable(null);
               }}
               className="bg-amber-600 font-bold text-white hover:bg-amber-500"
             >
-              Capture {pendingUnstable?.direction === 'IN' ? 'IN' : 'OUT'} Anyway
+              Capture {pendingUnstable?.direction === 'IN' ? 'IN' : pendingUnstable?.direction === 'OUT' ? 'OUT' : 'Single'} Anyway
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

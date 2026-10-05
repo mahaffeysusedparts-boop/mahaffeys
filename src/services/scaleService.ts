@@ -132,6 +132,15 @@ class ScaleService {
     return this.scales.find((s) => s.id === this.currentScaleId) ?? null;
   }
 
+  /** Legacy configurations default to the original vehicle IN/OUT workflow. */
+  public getCurrentWeighingMode(): ScaleConfig['weighingMode'] {
+    return this.getCurrentScale()?.weighingMode ?? 'VEHICLE_IN_OUT';
+  }
+
+  public isCurrentScaleSingleWeight(): boolean {
+    return this.getCurrentWeighingMode() === 'SINGLE_WEIGHT';
+  }
+
   public setCurrentScale(id: string | null) {
     // Snapshot the outgoing platform's tare (normalized to LBS) so returning
     // to it later restores exactly what the operator left.

@@ -2,6 +2,8 @@ export type IntakeType = 'CAR_SALVAGE' | 'SCRAP_METAL';
 
 export type ScaleConnectionMode = 'SERVER' | 'WEB_SERIAL' | 'WEBSOCKET';
 
+export type ScaleWeighingMode = 'VEHICLE_IN_OUT' | 'SINGLE_WEIGHT';
+
 export type WeightUnit = 'LBS' | 'KG';
 
 export type UserRole = 'admin' | 'yard_manager' | 'scale_operator' | 'yard_employee';
@@ -276,6 +278,8 @@ export interface ComplianceCaptures {
 
 export interface ScrapTicketLine {
   id: string;
+  /** Explicitly distinguishes a single small-load capture from legacy vehicle lines. */
+  weighingMode?: ScaleWeighingMode;
   loadNumber?: number;
   capturedAt?: string;
   metalGradeId: string;
@@ -427,7 +431,7 @@ export interface Ticket {
 
 export interface WeightTransaction {
   id: string;
-  type: 'SCALE_IN' | 'SCALE_OUT';
+  type: 'SCALE_IN' | 'SCALE_OUT' | 'SINGLE_WEIGHT';
   weightLbs: number;
   recordedAt: string;
   operatorName?: string;
@@ -461,6 +465,8 @@ export interface ScaleConfig {
   isDefault: boolean;
   /** Preset color used to tag this platform across readouts and the journal. */
   accentColor?: ScaleAccentColor;
+  /** Older saved scales omit this and remain vehicle/two-weight platforms. */
+  weighingMode?: ScaleWeighingMode;
 }
 
 /**

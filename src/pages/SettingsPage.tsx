@@ -992,6 +992,9 @@ export default function SettingsPage() {
                           {scale.isDefault && (
                             <Badge className="bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[9px] font-mono">DEFAULT</Badge>
                           )}
+                          {scale.weighingMode === 'SINGLE_WEIGHT' && (
+                            <Badge className="bg-violet-500/20 text-violet-300 border border-violet-500/40 text-[9px] font-mono">SMALL LOAD</Badge>
+                          )}
                         </div>
                         <p className="text-[11px] text-slate-400 font-mono">
                           {scale.location || 'No location set'} · {scale.connectionType}
@@ -1055,6 +1058,23 @@ export default function SettingsPage() {
                         placeholder="e.g. Receiving Dock"
                         className="bg-slate-900 border-slate-800 text-white text-xs mt-1 h-9"
                       />
+                    </div>
+
+                    <div>
+                      <Label className="text-[11px] text-slate-400">Scale Purpose / Type</Label>
+                      <Select
+                        value={scale.weighingMode ?? 'VEHICLE_IN_OUT'}
+                        onValueChange={(val) => updateScaleField(scale.id, { weighingMode: val as ScaleConfig['weighingMode'] })}
+                      >
+                        <SelectTrigger className="bg-slate-900 border-slate-800 text-white text-xs mt-1 h-9">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="bg-slate-900 border-slate-800 text-white text-xs">
+                          <SelectItem value="VEHICLE_IN_OUT">Vehicle / two-weight platform</SelectItem>
+                          <SelectItem value="SINGLE_WEIGHT">Small-load / single-weight scale</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <p className="mt-1 text-[10px] text-slate-500">Controls the default intake workflow for this platform.</p>
                     </div>
 
                     <div>
