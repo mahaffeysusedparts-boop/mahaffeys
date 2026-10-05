@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Ticket } from '@/types/scrap';
 import { storageService } from '@/services/storageService';
 import { Navbar } from '@/components/layout/Navbar';
@@ -56,6 +56,15 @@ export default function TicketsPage() {
   const refreshData = () => {
     setTickets(storageService.getTickets());
   };
+
+  useEffect(() => {
+    const onRemoteSync = (event: Event) => {
+      const detail = (event as CustomEvent<{ key?: string }>).detail;
+      if (detail?.key === 'mahaffeys_tickets') refreshData();
+    };
+    window.addEventListener('mahaffeys:remote-sync', onRemoteSync);
+    return () => window.removeEventListener('mahaffeys:remote-sync', onRemoteSync);
+  }, []);
 
   const handlePrint = (ticket: Ticket) => {
     setSelectedTicket(ticket);

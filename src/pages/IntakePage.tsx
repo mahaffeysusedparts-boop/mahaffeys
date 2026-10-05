@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { IntakeType, Ticket } from '@/types/scrap';
 import { storageService } from '@/services/storageService';
 import { Navbar } from '@/components/layout/Navbar';
@@ -10,6 +10,7 @@ import { StoplightControlPanel } from '@/components/scale/StoplightControlPanel'
 import { ReceiptModal } from '@/components/receipts/ReceiptModal';
 import { Button } from '@/components/ui/button';
 import { Car, Scale, ArrowLeft } from 'lucide-react';
+import { toast } from 'sonner';
 
 export default function IntakePage() {
   const [activeMode, setActiveMode] = useState<IntakeType | null>(null);
@@ -47,6 +48,35 @@ export default function IntakePage() {
     setScrapTicketId(ticketId);
     setScrapStage('SCALE');
   };
+
+  // Cross-workstation sync: when another device (e.g. the iPad) creates a new
+  // pending scrap intake, automatically navigate to the scale workstation so
+  // the operator can weigh it without manually switching views.
+  useEffect(() => {
+    const onRemoteSync = (event: Event) => {
+      const detail = (event as CustomEvent<{ key?: string }>).detail;
+      if (detail?.key !== 'mahaffeys_tickets') return;
+      const hasPending = storageService
+        .getTickets()
+        .some((t) => t.ticketType === 'SCRAP_METAL' && t.status === 'PENDING');
+      if (!hasPending) return;
+      // Only auto-navigate when the operator isn't already mid-intake.
+      if (activeMode === 'SCRAP_METAL' && scrapStage === 'SCALE') return;
+      if (activeMode === null) {
+        setActiveMode('SCRAP_METAL');
+      }
+      if (scrapStage !== 'SCALE') {
+        setScrapStage('SCALE');
+        setScrapTicketId(null);
+      }
+      toast.info('New pending scrap intake arrived from another workstation', {
+        description: 'Switched to the scale workstation to weigh it.',
+        duration: 3000,
+      });
+    };
+    window.addEventListener('mahaffeys:remote-sync', onRemoteSync);
+    return () => window.removeEventListener('mahaffeys:remote-sync', onRemoteSync);
+  }, [activeMode, scrapStage]);
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
