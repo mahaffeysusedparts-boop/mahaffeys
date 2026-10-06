@@ -17,6 +17,7 @@ import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { SCALE_ACCENT_COLORS } from '@/types/scrap';
 import { scaleAccent } from '@/components/scale/scaleAccent';
+import { NetworkPrinterManager } from '@/components/settings/NetworkPrinterManager';
 import {
   PAGE_KEYS,
   PAGE_LABELS,
@@ -748,6 +749,8 @@ export default function SettingsPage() {
             </div>
           </CardContent>
         </Card>
+
+        <NetworkPrinterManager />
 
         {/* Section 2.6: Compliance Automation (NMVTIS cadence + crush hold) */}
         <Card className="bg-slate-900 border-slate-800 text-white shadow-lg">

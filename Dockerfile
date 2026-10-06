@@ -11,7 +11,14 @@ ENV NITRO_HOST=0.0.0.0
 ENV NITRO_PORT=3000
 WORKDIR /app
 COPY --from=build /app/.output ./.output
-RUN chown -R node:node /app
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        cups \
+        cups-bsd \
+        cups-client \
+        chromium \
+    && rm -rf /var/lib/apt/lists/* \
+    && chown -R node:node /app
 USER node
 EXPOSE 3000
 CMD ["node", ".output/server/index.mjs"]

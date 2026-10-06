@@ -44,6 +44,24 @@ services:
       retries: 10
       start_period: 90s
 
+  cups:
+    build:
+      context: .
+      dockerfile: deploy/docker/cups.Dockerfile
+    container_name: mahaffeys-cups
+    restart: unless-stopped
+    ports:
+      - "631:631"
+    volumes:
+      - cups-data:/var/cache/cups
+      - cups-config:/etc/cups
+    healthcheck:
+      test: ["CMD", "sh", "-c", "lpstat -r 2>/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+
   mahaffeys:
     build: .
     container_name: mahaffeys-app
@@ -54,6 +72,8 @@ services:
       storage-agent:
         condition: service_healthy
       vision-worker:
+        condition: service_healthy
+      cups:
         condition: service_healthy
     environment:
       NODE_ENV: production
@@ -67,6 +87,7 @@ services:
       NITRO_VISION_RETENTION_DAYS: ${NITRO_VISION_RETENTION_DAYS:-90}
       NITRO_SCALE_SERIAL_PORT: ${SCALE_SERIAL_PORT:-/dev/ttyS4}
       NITRO_SCALE_SERIAL_BAUD_RATE: ${SCALE_SERIAL_BAUD_RATE:-2400}
+      NITRO_CUPS_SERVER: cups:631
     devices:
       - "/dev/ttyS4:/dev/ttyS4"
       - "/dev/ttyS5:/dev/ttyS5"
@@ -105,3 +126,5 @@ services:
 volumes:
   mahaffeys-postgres-data:
   mahaffeys-vision-images:
+  cups-data:
+  cups-config:

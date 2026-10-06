@@ -1,5 +1,6 @@
 import { Printer, QrCode } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { NetworkPrintButton } from '@/components/settings/NetworkPrintButton';
 import {
   Dialog,
   DialogContent,
@@ -55,6 +56,7 @@ export const PrintStickerModal = ({ open, onOpenChange, vehicle }: PrintStickerM
           <Printer className="mr-2 size-4" />
           Print Sticker
         </Button>
+        {vehicle && <NetworkPrintButton kind="sticker" rootSelector=".vehicle-sticker-print-container" documentName={`sticker-${vehicle.vin}`} className="rounded-xl bg-amber-500 font-black text-slate-950 hover:bg-amber-400" />}
       </DialogFooter>
     </DialogContent>
   </Dialog>

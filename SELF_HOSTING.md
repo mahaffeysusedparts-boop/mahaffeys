@@ -45,6 +45,8 @@ The application will now be available at `http://SERVER_LAN_IP:8080`. Set `APP_P
 
 The PostgreSQL volume stores users, sessions, application records, and uploaded images across container updates and restarts. Docker Compose also starts a private `storage-agent` container. It installs `mdadm`, receives no published host port, validates every requested block-device operation, and is the only container granted host device privileges. The public Mahaffeys web container remains unprivileged. RAID operations affect real host disks and should only be confirmed after checking the selected device serial numbers.
 
+Docker Compose also starts a private `cups` container that runs the CUPS print service on the LAN. The Mahaffeys app container talks to it over the internal `cups:631` address (set via `NITRO_CUPS_SERVER`). This lets any workstation print receipts, checks, and vehicle stickers directly to a shared network printer instead of routing through each device's browser print dialog. Add printers in **Settings → Shared network printers**, then choose one at print time in the receipt, check, and sticker dialogs. The app container needs `chromium` (installed in the image) to render documents to PDF before handing them to CUPS.
+
 ### Managing the Docker Deployment
 
 - **View logs:** `sudo docker compose logs -f`
@@ -75,11 +77,13 @@ This method uses the `fresh-install.sh` script to install all application compon
 The installer will guide you through the process, which includes:
 -   Prompting for the `jhilliard` Linux user password.
 -   Confirming the data wipe.
--   Installing system dependencies (Nginx, PostgreSQL, Node.js).
+-   Installing system dependencies (Nginx, PostgreSQL, Node.js, CUPS, Chromium).
 -   Configuring the database, application, `pm2` service manager, and Nginx.
 -   Attempting to secure the site with a free Let's Encrypt HTTPS certificate.
 
 Once complete, the application will be running at `http://192.168.1.210` and, if successful, `https://app.mahaffeysusedparts.com`.
+
+For shared network printing, the installer also enables the local CUPS service and installs Chromium. Add printers in **Settings → Shared network printers**, then choose one at print time in the receipt, check, and sticker dialogs. The app renders each document to PDF with Chromium and submits it to CUPS, so jobs print directly to the selected network printer instead of routing through each workstation's browser.
 
 ### Post-Installation
 

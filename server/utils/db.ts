@@ -183,6 +183,16 @@ async function initializeSchema() {
       linked_record_id TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+
+    CREATE TABLE IF NOT EXISTS network_printers (
+      id UUID PRIMARY KEY,
+      name TEXT NOT NULL,
+      host TEXT NOT NULL,
+      queue TEXT NOT NULL,
+      kind TEXT NOT NULL CHECK (kind IN ('standard', 'sticker')),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS network_printers_kind_idx ON network_printers (kind);
   `);
 
   await getPool().query(`

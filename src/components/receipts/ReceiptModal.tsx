@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Ticket, YardSettings } from '@/types/scrap';
 import { storageService } from '@/services/storageService';
 import { CheckPrintModal } from '@/components/receipts/CheckPrintModal';
+import { NetworkPrintButton } from '@/components/settings/NetworkPrintButton';
 import {
   Dialog,
   DialogContent,
@@ -310,6 +311,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ ticket, open, onOpen
             >
               <Printer className="w-4 h-4 mr-1.5" /> Print Both Copies
             </Button>
+            <NetworkPrintButton kind="standard" rootSelector=".printable-receipt-container .space-y-6" documentName={`receipt-${ticket.id}`} />
             {ticket.payoutMethod === 'Check' && (
               <Button
                 onClick={() => {

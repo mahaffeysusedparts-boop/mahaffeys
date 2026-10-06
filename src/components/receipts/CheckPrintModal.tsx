@@ -10,6 +10,7 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { NetworkPrintButton } from '@/components/settings/NetworkPrintButton';
 import { Printer, Landmark, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -106,6 +107,7 @@ export const CheckPrintModal: React.FC<CheckPrintModalProps> = ({ ticket, open, 
               <Printer className="w-4 h-4 mr-1.5" />
               {ticket.checkNumber || printedNumber ? 'Reprint Check' : 'Print Check'}
             </Button>
+            {!amountInvalid && <NetworkPrintButton kind="standard" rootSelector=".check-sheet" documentName={`check-${checkNumber}`} />}
           </div>
           {!bank && (
             <div className="mt-3 flex items-start gap-2 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-[11px] text-amber-200">
