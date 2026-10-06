@@ -195,6 +195,8 @@ export default function CamerasPage() {
   // 3xLogic / RTSP preset state
   const [camBrand, setCamBrand] = useState<"GENERIC" | "3XLOGIC">("GENERIC");
   const [camRtspPath, setCamRtspPath] = useState("/rtsp/live/ch00_0");
+  const [camUseCustomRtsp, setCamUseCustomRtsp] = useState(false);
+  const [camCustomRtspUrl, setCamCustomRtspUrl] = useState("");
   const [probing, setProbing] = useState(false);
 
   // Alarm.com camera edit state (assignment / notes only — URLs are bridge-managed)
@@ -252,6 +254,8 @@ export default function CamerasPage() {
     setCamNotes("Scale entrance camera; HTTP snapshot is monitored automatically for arriving vehicles");
     setCamBrand("GENERIC");
     setCamRtspPath("/rtsp/live/ch00_0");
+    setCamUseCustomRtsp(false);
+    setCamCustomRtspUrl("");
     setAddModalOpen(true);
   };
 
@@ -268,10 +272,19 @@ export default function CamerasPage() {
     setCamPassword(cam.password || "");
     setCamNotes(cam.notes || "");
     setCamBrand(cam.cameraType === "RTSP_STREAM" ? "3XLOGIC" : "GENERIC");
-    try {
-      setCamRtspPath(cam.rtspUrl ? new URL(cam.rtspUrl).pathname || "/rtsp/live/ch00_0" : "/rtsp/live/ch00_0");
-    } catch {
-      setCamRtspPath("/rtsp/live/ch00_0");
+    setCamRtspPath("/rtsp/live/ch00_0");
+    setCamUseCustomRtsp(false);
+    setCamCustomRtspUrl("");
+    if (cam.cameraType === "RTSP_STREAM" && cam.rtspUrl) {
+      setCamCustomRtspUrl(cam.rtspUrl);
+      try {
+        const parsed = new URL(cam.rtspUrl);
+        setCamIp(parsed.hostname);
+        setCamPort(parsed.port ? parseInt(parsed.port, 10) : 554);
+        setCamRtspPath(parsed.pathname || "/rtsp/live/ch00_0");
+      } catch {
+        setCamUseCustomRtsp(true);
+      }
     }
     setAddModalOpen(true);
   };
@@ -291,17 +304,31 @@ export default function CamerasPage() {
   };
 
   const handleSaveCamera = () => {
-    if (!camName.trim() || !camIp.trim()) {
-      toast.error("Camera Name and IP Address are required");
+    if (!camName.trim()) {
+      toast.error("Camera Name is required");
       return;
     }
     const isRtsp = camType === "RTSP_STREAM";
+    if (isRtsp && !camUseCustomRtsp && !camIp.trim()) {
+      toast.error("IP Address is required for RTSP cameras");
+      return;
+    }
     if (camAssignment === "LICENSE_PLATE" && !isRtsp && camType !== "SNAPSHOT" && !camSnapshotUrl.trim()) {
       toast.error("Scale entrance LPR requires an HTTP snapshot URL");
       return;
     }
 
     const camId = editingCam ? editingCam.id : `cam-${Date.now()}`;
+    const rtspUrl = isRtsp
+      ? (camUseCustomRtsp
+          ? camCustomRtspUrl.trim()
+          : `rtsp://${camIp.trim()}:${camPort || 554}${camRtspPath.trim() || "/rtsp/live/ch00_0"}`)
+      : editingCam?.rtspUrl;
+    if (isRtsp && !rtspUrl) {
+      toast.error("Enter an RTSP URL or configure the IP and path");
+      return;
+    }
+
     const camObj: IpCamera = {
       id: camId,
       name: camName.trim(),
@@ -311,9 +338,7 @@ export default function CamerasPage() {
       // proxy URLs are managed automatically and never point at the camera.
       streamUrl: isRtsp ? `/api/cameras/${camId}/stream` : camStreamUrl.trim(),
       snapshotUrl: isRtsp ? `/api/cameras/${camId}/snapshot` : camSnapshotUrl.trim() || undefined,
-      rtspUrl: isRtsp
-        ? `rtsp://${camIp.trim()}:${camPort || 554}${camRtspPath.trim() || "/rtsp/live/ch00_0"}`
-        : editingCam?.rtspUrl,
+      rtspUrl,
       cameraType: camType,
       assignment: camAssignment,
       username: camUsername.trim() || undefined,
@@ -333,7 +358,13 @@ export default function CamerasPage() {
 
   // Pre-save RTSP test: asks the server to pull one frame from the camera
   const handleProbeRtsp = async () => {
-    const url = `rtsp://${camIp.trim()}:${camPort || 554}${camRtspPath.trim() || "/rtsp/live/ch00_0"}`;
+    const url = camUseCustomRtsp
+      ? camCustomRtspUrl.trim()
+      : `rtsp://${camIp.trim()}:${camPort || 554}${camRtspPath.trim() || "/rtsp/live/ch00_0"}`;
+    if (!url) {
+      toast.error("Enter an RTSP URL or configure the IP and path");
+      return;
+    }
     setProbing(true);
     try {
       await apiRequest<{ ok: boolean }>("/api/cameras/probe", {
@@ -798,25 +829,50 @@ export default function CamerasPage() {
 
             {camType === "RTSP_STREAM" ? (
               <div className="space-y-3 rounded-xl border border-sky-500/30 bg-sky-950/20 p-3">
-                <div>
-                  <Label className="text-slate-300">RTSP Stream Path (3xLogic default pre-filled)</Label>
-                  <Input
-                    value={camRtspPath}
-                    onChange={(e) => setCamRtspPath(e.target.value)}
-                    placeholder="/rtsp/live/ch00_0"
-                    className="bg-slate-900 border-slate-800 text-sky-300 font-mono text-xs mt-1"
-                  />
-                  <p className="text-[10px] text-slate-500 mt-1">
-                    Main stream: <span className="font-mono text-slate-400">/rtsp/live/ch00_0</span> · lighter sub-stream:{" "}
-                    <span className="font-mono text-slate-400">/rtsp/live/ch00_1</span>
-                  </p>
+                <div className="flex items-center gap-3">
+                  <label className="flex items-center gap-1.5 text-xs">
+                    <input type="radio" name="rtspMode" checked={!camUseCustomRtsp} onChange={() => setCamUseCustomRtsp(false)} className="accent-sky-500" />
+                    <span className="text-slate-300">Build from IP + Path</span>
+                  </label>
+                  <label className="flex items-center gap-1.5 text-xs">
+                    <input type="radio" name="rtspMode" checked={camUseCustomRtsp} onChange={() => setCamUseCustomRtsp(true)} className="accent-sky-500" />
+                    <span className="text-slate-300">Custom RTSP URL</span>
+                  </label>
                 </div>
+
+                {camUseCustomRtsp ? (
+                  <div>
+                    <Label className="text-slate-300">Full RTSP URL</Label>
+                    <Input
+                      value={camCustomRtspUrl}
+                      onChange={(e) => setCamCustomRtspUrl(e.target.value)}
+                      placeholder="rtsp://192.168.1.150:554/rtsp/live/ch00_0"
+                      className="bg-slate-900 border-slate-800 text-sky-300 font-mono text-xs mt-1"
+                    />
+                    <p className="text-[10px] text-slate-500 mt-1">Paste the complete rtsp:// link from your camera or NVR.</p>
+                  </div>
+                ) : (
+                  <div>
+                    <Label className="text-slate-300">RTSP Stream Path (3xLogic default pre-filled)</Label>
+                    <Input
+                      value={camRtspPath}
+                      onChange={(e) => setCamRtspPath(e.target.value)}
+                      placeholder="/rtsp/live/ch00_0"
+                      className="bg-slate-900 border-slate-800 text-sky-300 font-mono text-xs mt-1"
+                    />
+                    <p className="text-[10px] text-slate-500 mt-1">
+                      Main stream: <span className="font-mono text-slate-400">/rtsp/live/ch00_0</span> · lighter sub-stream:{" "}
+                      <span className="font-mono text-slate-400">/rtsp/live/ch00_1</span>
+                    </p>
+                  </div>
+                )}
 
                 <div className="rounded-lg bg-slate-950 border border-slate-800 px-3 py-2">
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Server Restream Source</p>
                   <p className="text-[11px] font-mono text-sky-300 break-all mt-0.5">
-                    rtsp://{camIp.trim() || "192.168.x.x"}:{camPort || 554}
-                    {camRtspPath.trim() || "/rtsp/live/ch00_0"}
+                    {camUseCustomRtsp
+                      ? camCustomRtspUrl.trim() || "rtsp://..."
+                      : `rtsp://${camIp.trim() || "192.168.x.x"}:${camPort || 554}${camRtspPath.trim() || "/rtsp/live/ch00_0"}`}
                   </p>
                   <p className="text-[10px] text-slate-500 mt-1">
                     The app server pulls this RTSP feed straight from the camera and restreams it to your workstation — no NVR required. Live view, snapshots and entrance LPR are wired automatically.
@@ -828,7 +884,7 @@ export default function CamerasPage() {
                   variant="outline"
                   size="sm"
                   onClick={() => void handleProbeRtsp()}
-                  disabled={probing || !camIp.trim()}
+                  disabled={probing || (!camUseCustomRtsp && !camIp.trim()) || (camUseCustomRtsp && !camCustomRtspUrl.trim())}
                   className="h-9 w-full bg-slate-900 border-sky-500/40 text-sky-300 hover:bg-slate-800 hover:text-sky-200 text-xs font-bold gap-1.5"
                 >
                   <Signal className={`w-4 h-4 ${probing ? "animate-pulse" : ""}`} />
