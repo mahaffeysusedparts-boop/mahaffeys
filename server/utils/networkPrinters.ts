@@ -40,12 +40,14 @@ function toPublicPrinter(row: PrinterRow): NetworkPrinter {
 }
 
 function cupsEnv() {
-  return { ...process.env, ...(process.env.NITRO_CUPS_SERVER ? { CUPS_SERVER: process.env.NITRO_CUPS_SERVER } : {}) };
+  return process.env;
 }
 
 async function runCups(program: string, args: string[]) {
   try {
-    return await execFileAsync(program, args, { env: cupsEnv(), timeout: 30_000, maxBuffer: 1024 * 1024 });
+    const server = process.env.NITRO_CUPS_SERVER;
+    const serverArgs = server ? ["-h", server] : [];
+    return await execFileAsync(program, [...serverArgs, ...args], { env: cupsEnv(), timeout: 30_000, maxBuffer: 1024 * 1024 });
   } catch (error) {
     const detail = error instanceof Error ? error.message : "Unknown CUPS error";
     if (detail.includes("ENOENT")) {
