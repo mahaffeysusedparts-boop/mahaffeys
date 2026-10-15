@@ -1,4 +1,4 @@
-import { Ticket, ComplianceCaptures, NMVTISReportLog, YardSettings } from "@/types/scrap";
+import { Ticket, ComplianceCaptures, NMVTISReportLog, NMVTISReportStatus, YardSettings, IntakeType } from "@/types/scrap";
 
 export interface DLScanResult {
   fullName: string;
@@ -191,6 +191,12 @@ export function generateNMVTISCsv(tickets: Ticket[], reportingEntityId: string =
 
       const dateOnly = t.createdAt ? t.createdAt.split('T')[0] : new Date().toISOString().split('T')[0];
 
+      // Derive the title/plate state from the license plate when it carries a
+      // state prefix (e.g. "GA 123ABC"). Otherwise leave blank — never invent a
+      // jurisdiction. DispositionCode, SellerIDType, SellerIDState, and
+      // SellerAddress are only emitted when the source data actually exists.
+      const plateState = t.vehicleLicensePlate?.split(' ')[1] || '';
+
       return [
         escapeCsv(reportingEntityId),
         escapeCsv(new Date().toISOString().split('T')[0]),
@@ -201,16 +207,16 @@ export function generateNMVTISCsv(tickets: Ticket[], reportingEntityId: string =
         escapeCsv(c.make),
         escapeCsv(c.model),
         escapeCsv(c.titleStatus),
-        escapeCsv(c.titleNumber || "N/A"),
-        escapeCsv(t.vehicleLicensePlate?.split(' ')[1] || "GA"),
-        escapeCsv("S"),
+        escapeCsv(c.titleNumber || ""),
+        escapeCsv(plateState),
+        escapeCsv(""),
         escapeCsv(t.customerName),
-        escapeCsv(t.customerIdNumber || "N/A"),
-        escapeCsv("Driver License"),
-        escapeCsv("GA"),
-        escapeCsv("Address On File"),
-        escapeCsv(t.vehicleLicensePlate || "N/A"),
-        escapeCsv("GA"),
+        escapeCsv(t.customerIdNumber || ""),
+        escapeCsv(""),
+        escapeCsv(""),
+        escapeCsv(""),
+        escapeCsv(t.vehicleLicensePlate || ""),
+        escapeCsv(plateState),
         escapeCsv(t.finalPayout.toFixed(2)),
         escapeCsv(photoCount)
       ].join(",");
@@ -359,4 +365,256 @@ export function getNmvtisStatus(
 /** True when the NMVTIS banner should be shown: due within 7 days or overdue. */
 export function isNmvtisBannerActive(status: NmvtisStatus): boolean {
   return status.isOverdue || status.daysUntilDue <= 7;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// NMVTIS readiness & report lifecycle
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Readiness bucket for a single ticket — drives the Compliance hub KPI cards.
+ * - COMPLETE: all required evidence present and data valid (ready to export)
+ * - INCOMPLETE: required evidence/photos missing
+ * - INVALID_DATA: VIN or other critical data is invalid/missing
+ * - PENDING_EXPORT: already exported (CSV downloaded) but not yet confirmed
+ */
+export type ReadinessStatus = 'COMPLETE' | 'INCOMPLETE' | 'INVALID_DATA' | 'PENDING_EXPORT';
+
+export interface ReadinessResult {
+  status: ReadinessStatus;
+  score: number;
+  missingItems: string[];
+  warnings: string[];
+  isVoided: boolean;
+  isExported: boolean;
+  isConfirmed: boolean;
+}
+
+const CAR_SALVAGE_REQUIREMENTS: Array<{ key: keyof ComplianceCaptures; name: string }> = [
+  { key: 'personPhotoUrl', name: 'Seller Photo' },
+  { key: 'vehiclePhotoUrl', name: 'Vehicle Photo' },
+  { key: 'licensePlatePhotoUrl', name: 'License Plate Photo' },
+  { key: 'loadPhotoUrl', name: 'Scrap Cargo Photo' },
+];
+
+const SCRAP_METAL_REQUIREMENTS: Array<{ key: keyof ComplianceCaptures; name: string }> = [
+  { key: 'personPhotoUrl', name: 'Seller Photo' },
+  { key: 'idPhotoUrl', name: 'ID Scan' },
+  { key: 'vehiclePhotoUrl', name: 'Vehicle Photo' },
+  { key: 'licensePlatePhotoUrl', name: 'License Plate Photo' },
+  { key: 'loadPhotoUrl', name: 'Scrap Cargo Photo' },
+];
+
+function getRequirements(intakeType: IntakeType): Array<{ key: keyof ComplianceCaptures; name: string }> {
+  return intakeType === 'CAR_SALVAGE' ? CAR_SALVAGE_REQUIREMENTS : SCRAP_METAL_REQUIREMENTS;
+}
+
+/**
+ * Reads the NMVTIS report flags from either the ticket-level or car-record-level
+ * captures (the app writes to both for backwards compatibility).
+ */
+function getReportFlags(ticket: Ticket): {
+  isExported: boolean;
+  isConfirmed: boolean;
+  confirmedAt?: string;
+  confirmedBy?: string;
+} {
+  const caps = ticket.complianceCaptures || ticket.carRecord?.complianceCaptures;
+  return {
+    isExported: !!(caps?.nmvtisReported),
+    isConfirmed: !!(caps?.nmvtisSubmissionConfirmedAt),
+    confirmedAt: caps?.nmvtisSubmissionConfirmedAt,
+    confirmedBy: caps?.nmvtisSubmissionConfirmedBy,
+  };
+}
+
+/**
+ * Computes per-ticket NMVTIS readiness using the ticket's actual intake type.
+ * Voided tickets are never "ready" — they are excluded from active reporting.
+ */
+export function calculateReadiness(ticket: Ticket): ReadinessResult {
+  const isVoided = ticket.status === 'VOIDED';
+  const caps = ticket.complianceCaptures || ticket.carRecord?.complianceCaptures;
+  const flags = getReportFlags(ticket);
+
+  const requirements = getRequirements(ticket.ticketType);
+  const missingItems: string[] = [];
+  let filledCount = 0;
+
+  requirements.forEach((item) => {
+    const val = caps ? (caps as Record<string, unknown>)[item.key] : undefined;
+    if (val) {
+      filledCount++;
+    } else {
+      missingItems.push(item.name);
+    }
+  });
+
+  const score = Math.round((filledCount / requirements.length) * 100);
+  const warnings: string[] = [];
+
+  // CAR_SALVAGE-specific data checks
+  if (ticket.ticketType === 'CAR_SALVAGE' && ticket.carRecord) {
+    const vinAudit = validateVin(ticket.carRecord.vin);
+    if (!vinAudit.isValid) {
+      warnings.push(`VIN issue: ${vinAudit.reason}`);
+    }
+    if (!ticket.carRecord.titleNumber) {
+      warnings.push('Title number missing');
+    }
+    if (!ticket.customerIdNumber) {
+      warnings.push('Seller ID number missing');
+    }
+    if (!ticket.vehicleLicensePlate) {
+      warnings.push('Vehicle license plate missing');
+    }
+  }
+
+  // SCRAP_METAL-specific data checks
+  if (ticket.ticketType === 'SCRAP_METAL') {
+    if (!ticket.customerIdNumber) {
+      warnings.push('Seller ID number missing');
+    }
+  }
+
+  // Determine readiness status
+  let status: ReadinessStatus;
+  if (isVoided) {
+    status = 'INCOMPLETE';
+  } else if (flags.isConfirmed) {
+    status = 'PENDING_EXPORT';
+  } else if (flags.isExported) {
+    status = 'PENDING_EXPORT';
+  } else if (ticket.ticketType === 'CAR_SALVAGE' && ticket.carRecord) {
+    const vinAudit = validateVin(ticket.carRecord.vin);
+    if (!vinAudit.isValid) {
+      status = 'INVALID_DATA';
+    } else if (missingItems.length > 0) {
+      status = 'INCOMPLETE';
+    } else {
+      status = 'COMPLETE';
+    }
+  } else {
+    if (missingItems.length > 0) {
+      status = 'INCOMPLETE';
+    } else {
+      status = 'COMPLETE';
+    }
+  }
+
+  return { status, score, missingItems, warnings, isVoided, isExported: flags.isExported, isConfirmed: flags.isConfirmed };
+}
+
+/**
+ * Lifecycle status for the NMVTIS report workflow.
+ * - READY: not yet exported, eligible for export
+ * - EXPORTED: CSV downloaded, awaiting submission confirmation
+ * - SUBMISSION_CONFIRMED: operator explicitly confirmed external submission
+ * - DISCREPANCY: VIN or critical data invalid
+ */
+export type ReportLifecycleStatus = 'READY' | 'EXPORTED' | 'SUBMISSION_CONFIRMED' | 'DISCREPANCY';
+
+export function getReportStatus(ticket: Ticket): ReportLifecycleStatus {
+  const flags = getReportFlags(ticket);
+  if (flags.isConfirmed) return 'SUBMISSION_CONFIRMED';
+  if (flags.isExported) return 'EXPORTED';
+  if (ticket.ticketType === 'CAR_SALVAGE' && ticket.carRecord) {
+    if (!validateVin(ticket.carRecord.vin).isValid) return 'DISCREPANCY';
+  }
+  return 'READY';
+}
+
+/**
+ * Validates a batch of tickets before export. Returns counts, excluded voided
+ * records, blocked rows (invalid data that should prevent export), and warned
+ * rows (missing jurisdictional data that should be reviewed before download).
+ */
+export interface ExportValidationResult {
+  totalTickets: number;
+  includedTickets: number;
+  excludedVoided: number;
+  blockedRows: Array<{ ticketId: string; vin?: string; issues: string[] }>;
+  warnedRows: Array<{ ticketId: string; vin?: string; warnings: string[] }>;
+  canExport: boolean;
+}
+
+export function validateExportBatch(tickets: Ticket[]): ExportValidationResult {
+  const blockedRows: ExportValidationResult['blockedRows'] = [];
+  const warnedRows: ExportValidationResult['warnedRows'] = [];
+  let excludedVoided = 0;
+  let includedTickets = 0;
+
+  for (const ticket of tickets) {
+    if (ticket.status === 'VOIDED') {
+      excludedVoided++;
+      continue;
+    }
+
+    const readiness = calculateReadiness(ticket);
+    const issues: string[] = [];
+    const warnings: string[] = [];
+
+    if (readiness.status === 'INVALID_DATA') {
+      issues.push(...readiness.warnings);
+    }
+    if (readiness.missingItems.length > 0) {
+      issues.push(`Missing evidence: ${readiness.missingItems.join(', ')}`);
+    }
+
+    // Jurisdictional data warnings (not blocking, but should be reviewed)
+    if (ticket.ticketType === 'CAR_SALVAGE' && ticket.carRecord) {
+      if (!ticket.carRecord.titleNumber) warnings.push('Title number missing');
+      if (!ticket.customerIdNumber) warnings.push('Seller ID number missing');
+      if (!ticket.vehicleLicensePlate) warnings.push('Vehicle license plate missing');
+    }
+
+    if (issues.length > 0) {
+      blockedRows.push({ ticketId: ticket.id, vin: ticket.carRecord?.vin, issues });
+    } else if (warnings.length > 0) {
+      warnedRows.push({ ticketId: ticket.id, vin: ticket.carRecord?.vin, warnings });
+      includedTickets++;
+    } else {
+      includedTickets++;
+    }
+  }
+
+  return {
+    totalTickets: tickets.length,
+    includedTickets,
+    excludedVoided,
+    blockedRows,
+    warnedRows,
+    canExport: blockedRows.length === 0,
+  };
+}
+
+/**
+ * Returns a human-readable label for a report log's lifecycle status,
+ * distinguishing legacy records whose real submission state is unknown.
+ */
+export function getReportStatusLabel(log: NMVTISReportLog): string {
+  if (log.legacyExported) {
+    return 'Exported (legacy — submission unverified)';
+  }
+  switch (log.status) {
+    case 'SUBMISSION_CONFIRMED':
+      return 'Submission Confirmed';
+    case 'EXPORTED':
+      return 'Exported';
+    case 'DISCREPANCY':
+      return 'Discrepancy';
+    case 'PENDING':
+    default:
+      return 'Pending Export';
+  }
+}
+
+/**
+ * Returns the current operator name for audit attribution. Falls back to the
+ * yard's configured operator name when no authenticated user is available.
+ */
+export function getCurrentOperatorName(settings: YardSettings, currentUser?: { fullName?: string; username?: string } | null): string {
+  if (currentUser?.fullName) return currentUser.fullName;
+  if (currentUser?.username) return currentUser.username;
+  return settings.operatorName || 'Operator';
 }

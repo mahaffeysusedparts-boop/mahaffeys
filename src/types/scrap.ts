@@ -274,6 +274,8 @@ export interface ComplianceCaptures {
   nmvtisReported?: boolean;
   nmvtisReportedAt?: string;
   nmvtisBatchId?: string;
+  nmvtisSubmissionConfirmedAt?: string;
+  nmvtisSubmissionConfirmedBy?: string;
 }
 
 export interface ScrapTicketLine {
@@ -439,15 +441,25 @@ export interface WeightTransaction {
   scaleName?: string;
 }
 
+export type NMVTISReportStatus = 'PENDING' | 'EXPORTED' | 'SUBMISSION_CONFIRMED' | 'DISCREPANCY';
+
 export interface NMVTISReportLog {
   id: string;
   batchId: string;
   exportedAt: string;
   ticketCount: number;
   ticketIds: string[];
-  status: 'PENDING' | 'EXPORTED' | 'DISCREPANCY';
+  status: NMVTISReportStatus;
   exportedBy: string;
   downloadUrl?: string;
+  /** Operator who confirmed the batch was actually submitted to NMVTIS (not just downloaded). */
+  submissionConfirmedBy?: string;
+  /** ISO timestamp of the explicit submission-confirmation action. */
+  submissionConfirmedAt?: string;
+  /** Human-readable note recorded at confirmation time (e.g. confirmation number). */
+  submissionNote?: string;
+  /** True when this log predates the submission-confirmation workflow and its real submission state is unknown. */
+  legacyExported?: boolean;
 }
 
 export type ScaleAccentColor = 'emerald' | 'amber' | 'sky' | 'violet' | 'rose';

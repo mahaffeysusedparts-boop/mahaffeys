@@ -404,6 +404,22 @@ export const storageService = {
     patchCached("mahaffeys_tickets", tickets);
   },
 
+  /** Records the operator who confirmed an NMVTIS batch was actually submitted. */
+  markTicketsAsNMVTISConfirmed: (ticketIds: string[], confirmedBy: string, confirmedAt: string, note?: string): void => {
+    const tickets = storageService.getTickets().map((t) =>
+      ticketIds.includes(t.id)
+        ? {
+            ...t,
+            complianceCaptures: { ...t.complianceCaptures, nmvtisSubmissionConfirmedAt: confirmedAt, nmvtisSubmissionConfirmedBy: confirmedBy, ...(note ? { nmvtisSubmissionNote: note } : {}) },
+            carRecord: t.carRecord
+              ? { ...t.carRecord, complianceCaptures: { ...t.carRecord.complianceCaptures, nmvtisSubmissionConfirmedAt: confirmedAt, nmvtisSubmissionConfirmedBy: confirmedBy, ...(note ? { nmvtisSubmissionNote: note } : {}) } }
+              : t.carRecord,
+          }
+        : t
+    );
+    patchCached("mahaffeys_tickets", tickets);
+  },
+
   getIpCameras: (): IpCamera[] => readCached("mahaffeys_ip_cameras", []),
   saveIpCamera: (camera: IpCamera) => {
     const existing = storageService.getIpCameras();
