@@ -11,15 +11,10 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { scaleAccent } from "@/components/scale/scaleAccent";
-import {
-  AreaChart,
-  Area,
-  ResponsiveContainer,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-} from "recharts";
+import { IntakeChart, ticketWeight } from '@/components/dashboard/IntakeChart';
+import { TicketActivity } from '@/components/dashboard/TicketActivity';
+import { DayTrend } from '@/components/dashboard/DayTrend';
+import { hasPageAccess, PATH_TO_PAGE_KEY } from '@/utils/pageAccess';
 import {
   Scale,
   Car,
@@ -56,7 +51,15 @@ export default function DashboardPage() {
   const [scales, setScales] = useState<ScaleConfig[]>(scaleService.getScales());
   const [currentScaleId, setCurrentScaleId] = useState<string | null>(scaleService.getCurrentScaleId());
   const [scaleEvents, setScaleEvents] = useState<ScaleWeightEvent[]>(storageService.getScaleEvents());
-  const { isAdmin, pendingUsersCount } = useAuth();
+  const [vehiclesCount, setVehiclesCount] = useState(storageService.getPullYardVehicles().length);
+  const [cashLogs, setCashLogs] = useState(storageService.getCashDrawerLogs());
+  const [now, setNow] = useState(() => new Date());
+  const { user, isAdmin, pendingUsersCount } = useAuth();
+  const canOpen = (path: string) => {
+    if (!user || !PATH_TO_PAGE_KEY[path]) return false;
+    if (['/settings', '/users', '/server-admin'].includes(path) && !isAdmin) return false;
+    return hasPageAccess(user.role, PATH_TO_PAGE_KEY[path], settings.rolePageAccess);
+  };
 
   const syncScaleState = () => {
     setScales(scaleService.getScales());
@@ -78,10 +81,19 @@ export default function DashboardPage() {
     const eventsUnsub = storageService.subscribe("mahaffeys_scale_events", () => {
       setScaleEvents(storageService.getScaleEvents());
     });
+    const dataUnsubscribers = ['mahaffeys_tickets', 'mahaffeys_pull_yard_vehicles', 'mahaffeys_cash_drawer', 'mahaffeys_nmvtis_logs'].map(key => storageService.subscribe(key, () => {
+      setTickets(storageService.getTickets());
+      setVehiclesCount(storageService.getPullYardVehicles().length);
+      setCashLogs(storageService.getCashDrawerLogs());
+      setNow(new Date());
+    }));
+    const clock = window.setInterval(() => setNow(new Date()), 60_000);
     return () => {
       scaleUnsub();
       settingsUnsub();
       eventsUnsub();
+      dataUnsubscribers.forEach(unsubscribe => unsubscribe());
+      window.clearInterval(clock);
     };
   }, []);
 
@@ -90,27 +102,17 @@ export default function DashboardPage() {
   const isSameDay = (a: string | Date, b: Date) =>
     new Date(a).toDateString() === b.toDateString();
 
-  const todayTickets = completedTickets.filter((t) =>
-    isSameDay(t.createdAt, new Date()),
-  );
+  const todayTickets = completedTickets.filter((t) => isSameDay(t.createdAt, now));
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayTickets = completedTickets.filter(t => isSameDay(t.createdAt, yesterday));
+  const yesterdayPayout = yesterdayTickets.reduce((total, t) => total + t.finalPayout, 0);
+  const yesterdayWeight = yesterdayTickets.reduce((total, t) => total + ticketWeight(t), 0);
+  const yesterdayCars = tickets.filter(t => t.ticketType === 'CAR_SALVAGE' && isSameDay(t.createdAt, yesterday)).length;
 
-  // "Cars brought in today" = every CAR_SALVAGE ticket created today,
-  // regardless of completion status (intake vs. processed).
+  // Cars brought in includes intake still awaiting completion.
   const carsBroughtInToday = tickets.filter(
-    (t) => t.ticketType === "CAR_SALVAGE" && isSameDay(t.createdAt, new Date()),
-  );
-
-  // Most-recent-first sorts for the activity stream.
-  const recentCarsIn = [...tickets]
-    .filter((t) => t.ticketType === "CAR_SALVAGE")
-    .sort(
-      (a, b) =>
-        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-    );
-
-  const recentReceipts = [...completedTickets].sort(
-    (a, b) =>
-      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    (t) => t.ticketType === "CAR_SALVAGE" && isSameDay(t.createdAt, now),
   );
 
   // Calculate Key KPIs
@@ -127,31 +129,7 @@ export default function DashboardPage() {
   }, 0);
 
   const carsStagedToday = carsBroughtInToday.length;
-  const vehiclesCount = storageService.getPullYardVehicles().length;
-  const cashLogs = storageService.getCashDrawerLogs();
   const currentCashBalance = cashLogs.length > 0 ? cashLogs[0].balanceAfter : 0;
-
-  const weeklyData = Array.from({ length: 7 }, (_, index) => {
-    const date = new Date();
-    date.setHours(0, 0, 0, 0);
-    date.setDate(date.getDate() - (6 - index));
-    const dayTickets = completedTickets.filter((ticket) => {
-      const ticketDate = new Date(ticket.createdAt);
-      ticketDate.setHours(0, 0, 0, 0);
-      return ticketDate.getTime() === date.getTime();
-    });
-    const scrapLbs = dayTickets.reduce((total, ticket) => {
-      if (ticket.ticketType === "CAR_SALVAGE" && ticket.carRecord) {
-        return total + ticket.carRecord.vehicleWeightLbs;
-      }
-      return total + (ticket.scrapLines?.reduce((lineTotal, line) => lineTotal + line.billableWeight, 0) || 0);
-    }, 0);
-    return {
-      day: index === 6 ? "Today" : date.toLocaleDateString(undefined, { weekday: "short" }),
-      scrapLbs,
-      payout: dayTickets.reduce((total, ticket) => total + ticket.finalPayout, 0),
-    };
-  });
 
   const handleZeroScale = () => {
     scaleService.setZero();
@@ -169,10 +147,10 @@ export default function DashboardPage() {
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
         
         {/* Hero Banner */}
-        <div className="relative bg-gradient-to-r from-slate-900 via-slate-900 to-emerald-950/60 p-6 sm:p-8 rounded-3xl border border-slate-800 shadow-2xl overflow-hidden">
+        <div className="relative bg-slate-900 p-6 sm:p-8 rounded-3xl border border-emerald-800/50 shadow-2xl overflow-hidden">
           <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
             <div className="space-y-2 max-w-2xl">
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-500/40 text-xs font-mono uppercase tracking-widest px-3 py-1">
                   YARD COMMAND CENTER
                 </Badge>
@@ -289,17 +267,17 @@ export default function DashboardPage() {
                   <Badge
                     variant="outline"
                     className={`text-[10px] font-mono uppercase ${
-                      scaleStatus.isStable
+                      scaleStatus.connected && scaleStatus.isStable
                         ? "bg-emerald-950 text-emerald-300 border-emerald-500/40"
                         : "bg-amber-950 text-amber-300 border-amber-500/40"
                     }`}
                   >
-                    {scaleStatus.isStable ? "STABLE" : "MOTION"}
+                    {!scaleStatus.connected ? 'OFFLINE' : scaleStatus.isStable ? "STABLE" : "MOTION"}
                   </Badge>
                 </div>
-                <div className="flex items-baseline gap-2 mt-0.5 font-mono">
+                <div className="flex flex-wrap items-baseline gap-2 mt-0.5 font-mono">
                   <span className="text-3xl font-black text-emerald-400">
-                    {scaleStatus.netWeight.toLocaleString()}
+                    {scaleStatus.connected ? scaleStatus.netWeight.toLocaleString() : '—'}
                   </span>
                   <span className="text-base font-bold text-slate-400 uppercase">
                     {scaleStatus.unit} NET
@@ -321,6 +299,7 @@ export default function DashboardPage() {
                 size="sm"
                 variant="outline"
                 onClick={handleZeroScale}
+                disabled={!scaleStatus.connected}
                 className="border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold gap-1.5"
               >
                 <RotateCcw className="w-3.5 h-3.5 text-slate-400" /> Zero Scale
@@ -499,6 +478,7 @@ export default function DashboardPage() {
                 <p className="text-[11px] text-slate-400 font-mono mt-1">
                   Lifetime: ${totalLifetimePayout.toLocaleString("en-US", { minimumFractionDigits: 2 })}
                 </p>
+                <DayTrend current={totalTodayPayout} previous={yesterdayPayout} />
               </div>
               <div className="p-3 rounded-2xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                 <DollarSign className="w-7 h-7" />
@@ -517,6 +497,7 @@ export default function DashboardPage() {
                 <p className="text-[11px] text-slate-400 font-mono mt-1">
                   {totalScrapLbsToday.toLocaleString()} LBS Today
                 </p>
+                <DayTrend current={totalScrapLbsToday} previous={yesterdayWeight} />
               </div>
               <div className="p-3 rounded-2xl bg-amber-500/10 text-amber-400 border border-amber-500/20">
                 <Scale className="w-7 h-7" />
@@ -535,6 +516,7 @@ export default function DashboardPage() {
                 <p className="text-[11px] text-slate-400 font-mono mt-1">
                   {vehiclesCount.toLocaleString()} Total on Lot
                 </p>
+                <DayTrend current={carsStagedToday} previous={yesterdayCars} />
               </div>
               <div className="p-3 rounded-2xl bg-sky-500/10 text-sky-400 border border-sky-500/20">
                 <Car className="w-7 h-7" />
@@ -550,8 +532,8 @@ export default function DashboardPage() {
                 <p className="text-3xl font-black text-purple-300 font-mono mt-1">
                   ${currentCashBalance.toLocaleString("en-US", { minimumFractionDigits: 2 })}
                 </p>
-                <p className="text-[11px] text-emerald-400 font-semibold mt-1">
-                  Paymaster Drawer Balanced
+                <p className="text-[11px] text-slate-300 font-semibold mt-1">
+                  {cashLogs.length > 0 ? 'Latest recorded drawer balance' : 'No drawer transactions recorded'}
                 </p>
               </div>
               <div className="p-3 rounded-2xl bg-purple-500/10 text-purple-400 border border-purple-500/20">
@@ -565,57 +547,7 @@ export default function DashboardPage() {
         {/* Charts Section */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           
-          {/* Main 7-Day Tonnage & Cash Chart */}
-          <Card className="lg:col-span-2 bg-slate-900 border-slate-800 text-white shadow-xl">
-            <CardHeader className="py-4 px-6 bg-slate-950/60 border-b border-slate-800 flex flex-row items-center justify-between">
-              <div>
-                <CardTitle className="text-base font-bold text-white flex items-center gap-2">
-                  <TrendingUp className="w-5 h-5 text-emerald-400" /> Weekly Scrap Volume & Cash Stream
-                </CardTitle>
-                <CardDescription className="text-xs text-slate-400 mt-0.5">
-                  Daily Intake Volume (LBS) vs Cash Discursed ($)
-                </CardDescription>
-              </div>
-
-              <div className="flex items-center gap-3 text-xs font-mono">
-                <div className="flex items-center gap-1.5">
-                  <span className="w-3 h-3 rounded-full bg-emerald-400 inline-block" />
-                  <span className="text-slate-300">Payout ($)</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="w-3 h-3 rounded-full bg-amber-400 inline-block" />
-                  <span className="text-slate-300">Scrap (lbs)</span>
-                </div>
-              </div>
-            </CardHeader>
-
-            <CardContent className="p-6">
-              <div className="h-64 w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={weeklyData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="colorPayout" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#10b981" stopOpacity={0.4} />
-                        <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
-                      </linearGradient>
-                      <linearGradient id="colorLbs" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.4} />
-                        <stop offset="95%" stopColor="#f59e0b" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                    <XAxis dataKey="day" stroke="#64748b" fontSize={11} />
-                    <YAxis stroke="#64748b" fontSize={11} />
-                    <Tooltip
-                      contentStyle={{ backgroundColor: "#020617", borderColor: "#1e293b", color: "#f8fafc", fontSize: "12px", borderRadius: "8px" }}
-                    />
-                    <Area type="monotone" dataKey="payout" name="Payout ($)" stroke="#10b981" strokeWidth={2} fillOpacity={1} fill="url(#colorPayout)" />
-                    <Area type="monotone" dataKey="scrapLbs" name="Scrap (lbs)" stroke="#f59e0b" strokeWidth={2} fillOpacity={1} fill="url(#colorLbs)" />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
-            </CardContent>
-          </Card>
+          <IntakeChart tickets={tickets} now={now} />
 
           {/* Module Launchers Grid */}
           <Card className="bg-slate-900 border-slate-800 text-white shadow-xl flex flex-col justify-between">
@@ -642,11 +574,11 @@ export default function DashboardPage() {
                 ...(isAdmin
                   ? [{ title: `User Access (${pendingUsersCount} pending)`, path: "/users", icon: Shield, color: "text-amber-400" }]
                   : []),
-              ].map((item, i) => {
+              ].filter(item => canOpen(item.path)).map((item) => {
                 const Icon = item.icon;
                 return (
                   <Link
-                    key={i}
+                    key={item.path}
                     to={item.path}
                     className="p-2.5 bg-slate-950 hover:bg-slate-800 rounded-xl border border-slate-800/80 flex items-center justify-between text-xs font-semibold transition-colors group"
                   >
@@ -663,81 +595,7 @@ export default function DashboardPage() {
 
         </div>
 
-        {/* Recent Activity Stream */}
-        <Card className="bg-slate-900 border-slate-800 text-white shadow-xl overflow-hidden">
-          <CardHeader className="py-4 px-6 bg-slate-950/60 border-b border-slate-800 flex items-center justify-between">
-            <CardTitle className="text-base font-bold text-white flex items-center gap-2">
-              <Receipt className="w-5 h-5 text-emerald-400" /> Recent Ticket Ledger Activity
-            </CardTitle>
-            <Link to="/tickets" className="text-xs text-amber-400 hover:underline flex items-center gap-1 font-semibold">
-              View All Tickets <ChevronRight className="w-4 h-4" />
-            </Link>
-          </CardHeader>
-
-          <CardContent className="p-0">
-            {/* Most Recent Cars In */}
-            <div className="divide-y divide-slate-800/80">
-              <div className="px-4 py-2 bg-slate-950/60 border-b border-slate-800 text-[10px] font-mono uppercase tracking-wider text-slate-500">
-                Most Recent Cars In
-              </div>
-              {recentCarsIn.slice(0, 5).map((t) => (
-                <div key={t.id} className="p-4 flex items-center justify-between hover:bg-slate-800/40 text-xs font-mono transition-colors">
-                  <div className="flex items-center gap-3">
-                    <div className={`p-2 rounded-xl ${t.ticketType === "CAR_SALVAGE" ? "bg-amber-950 text-amber-400 border border-amber-800" : "bg-emerald-950 text-emerald-400 border border-emerald-800"}`}>
-                      {t.ticketType === "CAR_SALVAGE" ? <Car className="w-4 h-4" /> : <Scale className="w-4 h-4" />}
-                    </div>
-                    <div>
-                      <div className="font-bold text-white font-sans text-sm">{t.customerName}</div>
-                      <div className="text-[11px] text-slate-400 font-mono">
-                        Ticket #{t.id} • {new Date(t.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="text-right">
-                    <div className="text-emerald-400 font-black text-sm font-mono">
-                      ${t.finalPayout.toFixed(2)}
-                    </div>
-                    <Badge variant="outline" className="border-slate-700 text-slate-300 text-[10px] font-sans">
-                      {t.payoutMethod}
-                    </Badge>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* Most Recent Receipts */}
-            <div className="divide-y divide-slate-800/80">
-              <div className="px-4 py-2 bg-slate-950/60 border-b border-slate-800 text-[10px] font-mono uppercase tracking-wider text-slate-500">
-                Most Recent Receipts
-              </div>
-              {recentReceipts.slice(0, 5).map((t) => (
-                <div key={t.id} className="p-4 flex items-center justify-between hover:bg-slate-800/40 text-xs font-mono transition-colors">
-                  <div className="flex items-center gap-3">
-                    <div className={`p-2 rounded-xl ${t.ticketType === "CAR_SALVAGE" ? "bg-amber-950 text-amber-400 border border-amber-800" : "bg-emerald-950 text-emerald-400 border border-emerald-800"}`}>
-                      {t.ticketType === "CAR_SALVAGE" ? <Car className="w-4 h-4" /> : <Scale className="w-4 h-4" />}
-                    </div>
-                    <div>
-                      <div className="font-bold text-white font-sans text-sm">{t.customerName}</div>
-                      <div className="text-[11px] text-slate-400 font-mono">
-                        Ticket #{t.id} • {new Date(t.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="text-right">
-                    <div className="text-emerald-400 font-black text-sm font-mono">
-                      ${t.finalPayout.toFixed(2)}
-                    </div>
-                    <Badge variant="outline" className="border-slate-700 text-slate-300 text-[10px] font-sans">
-                      {t.payoutMethod}
-                    </Badge>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+        <TicketActivity tickets={tickets} now={now} canOpenTickets={canOpen('/tickets')} />
 
       </main>
     </div>

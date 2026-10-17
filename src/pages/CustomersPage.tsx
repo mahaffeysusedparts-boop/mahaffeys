@@ -12,6 +12,7 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Building2, Car, ChevronLeft, ChevronRight, CreditCard, Edit3, Loader2, RefreshCw, Search, UserPlus, Users } from 'lucide-react';
 import { toast } from 'sonner';
+import { useLinkedSearch } from '@/hooks/useLinkedSearch';
 
 const PAGE_SIZE = 25;
 const emptyForm: CustomerInput = {
@@ -29,8 +30,8 @@ const emptyForm: CustomerInput = {
 
 export default function CustomersPage() {
   const [customers, setCustomers] = useState<Customer[]>([]);
-  const [search, setSearch] = useState('');
-  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [search, setSearch] = useLinkedSearch();
+  const [debouncedSearch, setDebouncedSearch] = useState(search);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(1);

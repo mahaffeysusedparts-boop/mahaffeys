@@ -14,6 +14,7 @@ import {
   SheetContent,
   SheetHeader,
   SheetTitle,
+  SheetDescription,
   SheetTrigger,
 } from '@/components/ui/sheet';
 import {
@@ -65,6 +66,12 @@ export const Navbar: React.FC = () => {
   const [configOpen, setConfigOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [mobileNavQuery, setMobileNavQuery] = useState('');
+  const [searchOpen, setSearchOpen] = useState(false);
+
+  useEffect(() => {
+    setMobileMenuOpen(false);
+    setMobileNavQuery('');
+  }, [location.pathname]);
 
   useEffect(() => {
     const unsubscribe = scaleService.subscribe((status) => {
@@ -152,7 +159,7 @@ export const Navbar: React.FC = () => {
                   </Button>
                 </SheetTrigger>
 
-                <SheetContent side="left" className="w-[92vw] max-w-[380px] bg-slate-950 text-slate-100 border-slate-800 p-0 flex flex-col">
+                <SheetContent side="left" onCloseAutoFocus={event => { if (searchOpen) event.preventDefault(); }} className="w-[92vw] max-w-[380px] bg-slate-950 text-slate-100 border-slate-800 p-0 flex flex-col">
                   <SheetHeader className="px-5 pt-5 pb-4 border-b border-slate-800 text-left bg-slate-900">
                     <div className="flex items-center gap-3 pr-10">
                       <div className="w-11 h-11 rounded-xl bg-emerald-600 flex items-center justify-center shadow-md shadow-emerald-950/50">
@@ -162,9 +169,9 @@ export const Navbar: React.FC = () => {
                         <SheetTitle className="text-lg font-extrabold text-white font-mono">
                           Main Menu
                         </SheetTitle>
-                        <p className="text-xs text-slate-400 font-medium truncate">
+                        <SheetDescription className="text-xs text-slate-400 font-medium truncate">
                           {settings.yardName}
-                        </p>
+                        </SheetDescription>
                       </div>
                     </div>
                   </SheetHeader>
@@ -178,9 +185,15 @@ export const Navbar: React.FC = () => {
                         onChange={(event) => setMobileNavQuery(event.target.value)}
                         placeholder="Find a page..."
                         aria-label="Search menu pages"
-                        className="h-12 pl-11 rounded-xl bg-slate-950 border-slate-700 text-base text-white placeholder:text-slate-500 focus-visible:ring-emerald-500"
+                        className="h-12 pl-11 rounded-xl bg-slate-950 border-slate-700 text-base text-white placeholder:text-slate-400 focus-visible:ring-emerald-500"
                       />
                     </label>
+                    <Button variant="ghost" className="mt-2 h-11 w-full justify-start rounded-xl text-emerald-300 hover:bg-slate-800 hover:text-white" onClick={() => {
+                      handleMobileMenuChange(false);
+                      setSearchOpen(true);
+                    }}>
+                      <Search className="mr-3 h-4 w-4" /> Search all yard records
+                    </Button>
                   </div>
 
                   {/* Drawer Nav Items */}
@@ -259,7 +272,7 @@ export const Navbar: React.FC = () => {
             </div>
 
             {/* Desktop Navigation Links */}
-            <nav className="hidden xl:flex items-center space-x-1 overflow-x-auto py-1">
+            <nav aria-label="Main navigation" className="hidden xl:flex min-w-0 flex-1 mx-4 items-center space-x-1 overflow-x-auto py-1">
               {navItems.map((item) => {
                 const Icon = item.icon;
                 const isActive = location.pathname === item.path || (item.path === '/' && location.pathname === '/dashboard');
@@ -267,6 +280,7 @@ export const Navbar: React.FC = () => {
                   <Link
                     key={item.path}
                     to={item.path}
+                    aria-current={isActive ? 'page' : undefined}
                     className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors shrink-0 relative ${
                       isActive
                         ? 'bg-slate-800 text-amber-400 border border-slate-700/80 shadow-sm'
@@ -286,31 +300,32 @@ export const Navbar: React.FC = () => {
             </nav>
 
             {/* Right: Scale Live Status, Sync Status & User Profile Dropdown */}
-            <div className="flex items-center space-x-2">
-              <QuickSearchButton />
+            <div className="flex shrink-0 items-center gap-1 sm:gap-2">
+              <QuickSearchButton open={searchOpen} onOpenChange={setSearchOpen} />
 
               {/* Scale Quick Switcher */}
-              <ScaleQuickSwitcher />
+              <div className="hidden sm:block"><ScaleQuickSwitcher /></div>
 
               {/* Scale Indicator */}
               <button
                 onClick={() => setConfigOpen(true)}
                 className="flex h-11 w-11 sm:h-auto sm:w-auto items-center justify-center sm:justify-start gap-2 sm:px-2.5 sm:py-1.5 rounded-xl bg-slate-800/90 border border-slate-700/80 hover:border-emerald-500/50 hover:bg-slate-800 transition-all text-left active:scale-95"
-                aria-label="Open scale status"
+                aria-label={`Scale ${scaleStatus.connected ? (scaleStatus.isStable ? 'connected and stable' : 'connected, in motion') : 'offline'}. Open scale configuration`}
+                title={scaleStatus.connected ? `${scaleStatus.weight.toLocaleString()} ${scaleStatus.unit} · ${scaleStatus.isStable ? 'Stable' : 'In motion'}` : 'Scale offline — open configuration'}
               >
-                <Activity className={`w-5 h-5 sm:w-4 sm:h-4 ${scaleStatus.connected ? 'text-emerald-400 animate-pulse' : 'text-amber-400'}`} />
+                <Activity className={`w-5 h-5 sm:w-4 sm:h-4 ${scaleStatus.connected ? 'text-emerald-400' : 'text-amber-400'}`} />
 
                 <div className="hidden sm:block text-xs">
                   <div className="flex items-center gap-1 font-semibold font-mono text-slate-100 text-[11px]">
-                    <span>{scaleStatus.weight.toLocaleString()} {scaleStatus.unit}</span>
+                    <span>{scaleStatus.connected ? `${scaleStatus.weight.toLocaleString()} ${scaleStatus.unit}` : 'Scale offline'}</span>
                     <span
                       className={`text-[9px] px-1 rounded uppercase tracking-wider font-bold ${
-                        scaleStatus.isStable
+                        scaleStatus.connected && scaleStatus.isStable
                           ? 'bg-emerald-500/20 text-emerald-300'
                           : 'bg-amber-500/20 text-amber-300'
                       }`}
                     >
-                      {scaleStatus.isStable ? 'STABLE' : 'MOTION'}
+                      {!scaleStatus.connected ? 'OFFLINE' : scaleStatus.isStable ? 'STABLE' : 'MOTION'}
                     </span>
                   </div>
                 </div>
@@ -321,9 +336,9 @@ export const Navbar: React.FC = () => {
 
               {/* Admin Pending Requests Notification Badge */}
               {isAdmin && pendingUsersCount > 0 && (
-                <Link to="/users" title="Pending User Requests">
+                <Link to="/users" title="Pending User Requests" aria-label={`${pendingUsersCount} pending user requests`} className="hidden sm:block">
                   <Button size="icon" variant="outline" className="h-9 w-9 bg-amber-950/60 border-amber-500/50 text-amber-400 relative">
-                    <Bell className="w-4 h-4 animate-bounce" />
+                    <Bell className="w-4 h-4" />
                     <span className="absolute -top-1 -right-1 bg-amber-500 text-slate-950 font-bold text-[10px] w-4 h-4 rounded-full flex items-center justify-center">
                       {pendingUsersCount}
                     </span>
@@ -335,7 +350,7 @@ export const Navbar: React.FC = () => {
               {user ? (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" className="h-9 px-2 gap-2 text-slate-200 hover:text-white hover:bg-slate-800">
+                    <Button variant="ghost" aria-label={`Account menu for ${user.fullName || user.username}`} className="h-11 px-2 gap-2 rounded-xl text-slate-200 hover:text-white hover:bg-slate-800">
                       <div className="w-7 h-7 rounded-lg bg-emerald-600/20 border border-emerald-500/30 text-emerald-400 flex items-center justify-center font-bold text-xs">
                         {user.fullName ? user.fullName[0].toUpperCase() : 'U'}
                       </div>

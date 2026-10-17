@@ -10,9 +10,10 @@ import { EquipmentForm } from "./EquipmentForm";
 import { MaintenanceLogForm } from "./MaintenanceLogForm";
 import { useConfirm } from "@/hooks/useConfirm";
 import type { EquipmentItem } from "@/types/scrap";
+import { useLinkedSearch } from "@/hooks/useLinkedSearch";
 
 export function EquipmentTable() {
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useLinkedSearch();
   const [equipFormOpen, setEquipFormOpen] = useState(false);
   const [editingEquip, setEditingEquip] = useState<EquipmentItem | null>(null);
   const [maintFormOpen, setMaintFormOpen] = useState(false);

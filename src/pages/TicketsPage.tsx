@@ -36,10 +36,11 @@ import {
   Landmark,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { useLinkedSearch } from '@/hooks/useLinkedSearch';
 
 export default function TicketsPage() {
   const [tickets, setTickets] = useState<Ticket[]>(storageService.getTickets());
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useLinkedSearch();
   const [typeFilter, setTypeFilter] = useState<'ALL' | 'CAR_SALVAGE' | 'SCRAP_METAL'>('ALL');
   const [hideVoided, setHideVoided] = useState(false);
   const [voidTarget, setVoidTarget] = useState<Ticket | null>(null);

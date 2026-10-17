@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -15,7 +16,10 @@ import { getOverdueCheckouts, getOverdueEquipment } from "@/services/fleetServic
 import { storageService } from "@/services/storageService";
 
 export function FleetPage() {
-  const [tab, setTab] = useState("equipment");
+  const [params] = useSearchParams();
+  const linkedTab = params.get('tab');
+  const [tab, setTab] = useState(linkedTab === 'tools' ? 'tools' : 'equipment');
+  useEffect(() => { setTab(linkedTab === 'tools' ? 'tools' : 'equipment'); }, [linkedTab]);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
 

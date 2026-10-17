@@ -8,6 +8,7 @@ import { storageService } from "@/services/storageService";
 import { ToolForm } from "./ToolForm";
 import { useConfirm } from "@/hooks/useConfirm";
 import type { ToolItem } from "@/types/scrap";
+import { useLinkedSearch } from "@/hooks/useLinkedSearch";
 
 const STATUS_VARIANT: Record<ToolItem["status"], "default" | "destructive" | "secondary" | "outline"> = {
   Available: "default",
@@ -17,7 +18,7 @@ const STATUS_VARIANT: Record<ToolItem["status"], "default" | "destructive" | "se
 };
 
 export function ToolTable() {
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useLinkedSearch();
   const [formOpen, setFormOpen] = useState(false);
   const [editingTool, setEditingTool] = useState<ToolItem | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
