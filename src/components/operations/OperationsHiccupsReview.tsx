@@ -138,7 +138,7 @@ export function OperationsHiccupsReview({ hiccups, canManage, onAction }: { hicc
             <Badge className={statusColor('ACKNOWLEDGED')}>{acknowledgedHiccups.length + escalatedHiccups.length}</Badge>
           </CardHeader>
           <CardContent className="p-2 space-y-1">
-            {[...acknowledgedHiccups, ...escalatedHiccups].map(hiccup => (
+{acknowledgedHiccups.length + escalatedHiccups.length ? [...acknowledgedHiccups, ...escalatedHiccups].map(hiccup => (
               <div key={hiccup.id} className="p-3 rounded-xl bg-slate-950 border border-slate-800">
                 <div className="flex gap-2 items-start">
                   <span className={`mt-1.5 w-2 h-2 rounded-full shrink-0 ${statusColor(hiccup.status)}`}/>

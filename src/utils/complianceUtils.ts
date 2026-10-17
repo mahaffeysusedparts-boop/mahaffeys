@@ -512,16 +512,21 @@ export function calculateReadiness(ticket: Ticket): ReadinessResult {
  * - SUBMISSION_CONFIRMED: operator explicitly confirmed external submission
  * - DISCREPANCY: VIN or critical data invalid
  */
-export type ReportLifecycleStatus = 'READY' | 'EXPORTED' | 'SUBMISSION_CONFIRMED' | 'DISCREPANCY';
+export enum ReportLifecycleStatus {
+  READY = 'READY',
+  EXPORTED = 'EXPORTED',
+  SUBMISSION_CONFIRMED = 'SUBMISSION_CONFIRMED',
+  DISCREPANCY = 'DISCREPANCY',
+}
 
 export function getReportStatus(ticket: Ticket): ReportLifecycleStatus {
   const flags = getReportFlags(ticket);
-  if (flags.isConfirmed) return 'SUBMISSION_CONFIRMED';
-  if (flags.isExported) return 'EXPORTED';
+  if (flags.isConfirmed) return ReportLifecycleStatus.SUBMISSION_CONFIRMED;
+  if (flags.isExported) return ReportLifecycleStatus.EXPORTED;
   if (ticket.ticketType === 'CAR_SALVAGE' && ticket.carRecord) {
-    if (!validateVin(ticket.carRecord.vin).isValid) return 'DISCREPANCY';
+    if (!validateVin(ticket.carRecord.vin).isValid) return ReportLifecycleStatus.DISCREPANCY;
   }
-  return 'READY';
+  return ReportLifecycleStatus.READY;
 }
 
 /**
