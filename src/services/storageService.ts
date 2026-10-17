@@ -32,6 +32,12 @@ import type {
   YardMapItem,
 } from "@/types/scrap";
 import type {
+  ReconciliationEntry,
+  OperationalHiccup,
+  HiccupRule,
+  HiccupSummary,
+} from "@/types/operations";
+import type {
   AlertRule,
   OperationsAlert,
   ShiftGoals,
@@ -167,6 +173,38 @@ const DEFAULT_ALERT_RULES: AlertRule[] = [
   { id: "r8", key: "EQUIPMENT_SERVICE_DUE", enabled: true, threshold: 7, escalationMinutes: 120 },
   { id: "r9", key: "TOOL_CHECKOUT_OVERDUE", enabled: true, threshold: 1, escalationMinutes: 60 },
 ];
+
+const DEFAULT_HICCUP_RULES: HiccupRule[] = [
+  { id: "h1", category: "PAYOUT_DISCREPANCY", enabled: true, severityThreshold: "MEDIUM", escalationMinutes: 60 },
+  { id: "h2", category: "CASH_DRAWER_MISMATCH", enabled: true, severityThreshold: "HIGH", escalationMinutes: 30 },
+  { id: "h3", category: "WEIGHT_DISCREPANCY", enabled: true, severityThreshold: "MEDIUM", escalationMinutes: 45 },
+  { id: "h4", category: "SETTLEMENT_VARIANCE", enabled: true, severityThreshold: "HIGH", escalationMinutes: 30 },
+  { id: "h5", category: "COMPLIANCE_GAP", enabled: true, severityThreshold: "MEDIUM", escalationMinutes: 60 },
+  { id: "h6", category: "EQUIPMENT_ISSUE", enabled: true, severityThreshold: "LOW", escalationMinutes: 120 },
+  { id: "h7", category: "TOOL_OVERDUE", enabled: true, severityThreshold: "LOW", escalationMinutes: 60 },
+  { id: "h8", category: "PROCESSING_DELAY", enabled: true, severityThreshold: "MEDIUM", escalationMinutes: 90 },
+];
+
+const DEFAULT_HICCUPS: HiccupSummary = {
+  id: "default",
+  date: new Date().toISOString().slice(0, 10),
+  generatedAt: new Date().toISOString(),
+  totalOpen: 0,
+  totalResolved: 0,
+  totalEscalated: 0,
+  criticalOpen: 0,
+  byCategory: {
+    PAYOUT_DISCREPANCY: 0,
+    CASH_DRAWER_MISMATCH: 0,
+    WEIGHT_DISCREPANCY: 0,
+    SETTLEMENT_VARIANCE: 0,
+    COMPLIANCE_GAP: 0,
+    EQUIPMENT_ISSUE: 0,
+    TOOL_OVERDUE: 0,
+    PROCESSING_DELAY: 0,
+  },
+  narrative: "No operational hiccups detected.",
+};
 
 // ---------------------------------------------------------------------------
 // The exported service
@@ -569,6 +607,10 @@ export const storageService = {
       "mahaffeys_operations_alerts",
       "mahaffeys_operations_summaries",
       "mahaffeys_settings",
+      "mahaffeys_reconciliations",
+      "mahaffeys_hiccups",
+      "mahaffeys_hiccup_rules",
+      "mahaffeys_hiccup_summary",
     ]);
   },
 
@@ -598,6 +640,27 @@ export const storageService = {
     const filtered = existing.filter((s) => s.date !== summary.date);
     patchCached("mahaffeys_operations_summaries", [...filtered, summary]);
   },
+
+  // ── Reconciliation ──────────────────────────────────────────────────────────
+  getReconciliations: (): ReconciliationEntry[] => readCached("mahaffeys_reconciliations", []),
+  saveReconciliation: (entry: ReconciliationEntry) => {
+    const existing = storageService.getReconciliations();
+    patchCached("mahaffeys_reconciliations", upsertItem("mahaffeys_reconciliations", entry, existing));
+  },
+
+  // ── Operational Hiccups ─────────────────────────────────────────────────────
+  getHiccups: (): OperationalHiccup[] => readCached("mahaffeys_hiccups", []),
+  saveHiccup: (hiccup: OperationalHiccup) => {
+    const existing = storageService.getHiccups();
+    patchCached("mahaffeys_hiccups", upsertItem("mahaffeys_hiccups", hiccup, existing));
+  },
+  removeHiccup: (id: string) => {
+    patchCached("mahaffeys_hiccups", removeItem("mahaffeys_hiccups", id, storageService.getHiccups()));
+  },
+  getHiccupRules: (): HiccupRule[] => readCached("mahaffeys_hiccup_rules", []),
+  saveHiccupRules: (rules: HiccupRule[]) => patchCached("mahaffeys_hiccup_rules", rules),
+  getHiccupSummary: (): HiccupSummary => readCached("mahaffeys_hiccup_summary", DEFAULT_HICCUPS),
+  saveHiccupSummary: (summary: HiccupSummary) => patchCached("mahaffeys_hiccup_summary", summary),
 
   // ── Removed inventory ─────────────────────────────────────────────────────
   getRemovedInventoryVehicles: (): string[] => readCached("mahaffeys_removed_inventory_vehicles", []),

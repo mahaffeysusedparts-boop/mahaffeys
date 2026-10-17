@@ -39,6 +39,7 @@ const ScaleLogPage = lazy(() => import("./pages/ScaleLogPage"));
 const ShipmentsPage = lazy(() => import("./pages/ShipmentsPage"));
 const TeamOpsPage = lazy(() => import("./pages/TeamOpsPage"));
 const OperationsPage = lazy(() => import("./pages/OperationsPage"));
+const OperationsReviewPage = lazy(() => import("./pages/OperationsReviewPage"));
 const FleetPage = lazy(() => import("./pages/FleetPage"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
@@ -94,6 +95,7 @@ const App = () => (
               <Route path="/reports" element={guarded(<ReportsPage />, "reports")} />
               <Route path="/scale-log" element={guarded(<ScaleLogPage />, "scale-log")} />
               <Route path="/operations" element={guarded(<OperationsPage />, "operations")} />
+              <Route path="/operations-review" element={guarded(<OperationsReviewPage />, "operations-review")} />
               <Route path="/shipments" element={guarded(<ShipmentsPage />, "shipments")} />
               <Route path="/team" element={guarded(<TeamOpsPage />, "team")} />
                             <Route path="/fleet" element={guarded(<FleetPage />, "fleet")} />

@@ -1,12 +1,17 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { storageService } from "@/services/storageService";
+import { useAuth } from "@/context/AuthContext";
 import { Ticket, NMVTISReportLog } from "@/types/scrap";
 import {
   validateVin,
   generateNMVTISCsv,
   generateLawEnforcementLogCsv,
   downloadFile,
-  calculateComplianceScore,
+  calculateReadiness,
+  getReportStatus,
+  validateExportBatch,
+  getReportStatusLabel,
+  getCurrentOperatorName,
   getNmvtisStatus,
   isNmvtisBannerActive,
 } from "@/utils/complianceUtils";
@@ -63,18 +68,30 @@ import {
   PackageCheck,
   CalendarClock,
   SendHorizonal,
+  FileCheck,
+  AlertOctagon,
 } from "lucide-react";
 import { toast } from "sonner";
 
 export const CompliancePage: React.FC = () => {
+  const { user } = useAuth();
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [logs, setLogs] = useState<NMVTISReportLog[]>([]);
   const [selectedTicketIds, setSelectedTicketIds] = useState<string[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"ALL" | "PENDING" | "REPORTED" | "DISCREPANCY">("ALL");
+  const [statusFilter, setStatusFilter] = useState<"ALL" | "READY" | "EXPORTED" | "CONFIRMED" | "DISCREPANCY">("ALL");
   const [selectedTicketForModal, setSelectedTicketForModal] = useState<Ticket | null>(null);
   const [reportAllOpen, setReportAllOpen] = useState(false);
   const [isPackaging, setIsPackaging] = useState(false);
+
+  // Export preview state
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+
+  // Submission confirmation state
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmingLogId, setConfirmingLogId] = useState<string | null>(null);
+  const [confirmNote, setConfirmNote] = useState("");
 
   // AI Vision Inspection State inside Modal
   const [isAiInspecting, setIsAiScanning] = useState(false);
@@ -82,6 +99,7 @@ export const CompliancePage: React.FC = () => {
   const [aiPlateResult, setAiPlateResult] = useState<AILicensePlateResult | null>(null);
 
   const yardSettings = storageService.getSettings();
+  const operatorName = getCurrentOperatorName(yardSettings, user);
 
   const loadData = () => {
     const allTickets = storageService.getTickets();
@@ -94,50 +112,64 @@ export const CompliancePage: React.FC = () => {
     loadData();
   }, []);
 
-  const vehicleTickets = tickets.filter((t) => t.ticketType === 'CAR_SALVAGE' && t.carRecord);
+  // Vehicle tickets only (CAR_SALVAGE with a carRecord)
+  const vehicleTickets = useMemo(
+    () => tickets.filter((t) => t.ticketType === 'CAR_SALVAGE' && t.carRecord),
+    [tickets]
+  );
 
-  const filteredTickets = vehicleTickets.filter((t) => {
-    const record = t.carRecord!;
-    const isReported = t.complianceCaptures?.nmvtisReported || record.complianceCaptures?.nmvtisReported;
-    const vinValid = validateVin(record.vin).isValid;
+  // Readiness summary — computed from actual intake type, not a fixed KPI
+  const readinessSummary = useMemo(() => {
+    const summary = { complete: 0, incomplete: 0, invalidData: 0, pendingExport: 0 };
+    vehicleTickets.forEach((t) => {
+      const r = calculateReadiness(t);
+      if (r.status === 'COMPLETE') summary.complete++;
+      else if (r.status === 'INCOMPLETE') summary.incomplete++;
+      else if (r.status === 'INVALID_DATA') summary.invalidData++;
+      else if (r.status === 'PENDING_EXPORT') summary.pendingExport++;
+    });
+    return summary;
+  }, [vehicleTickets]);
 
-    if (statusFilter === "PENDING" && isReported) return false;
-    if (statusFilter === "REPORTED" && !isReported) return false;
-    if (statusFilter === "DISCREPANCY" && vinValid) return false;
+  // Filtered tickets based on search + status filter
+  const filteredTickets = useMemo(() => {
+    return vehicleTickets.filter((t) => {
+      const record = t.carRecord!;
+      const lifecycle = getReportStatus(t);
+      const vinValid = validateVin(record.vin).isValid;
 
-    if (searchTerm.trim()) {
-      const q = searchTerm.toLowerCase();
-      const matchVin = record.vin.toLowerCase().includes(q);
-      const matchCustomer = t.customerName.toLowerCase().includes(q);
-      const matchId = t.id.toLowerCase().includes(q);
-      const matchMake = record.make.toLowerCase().includes(q);
-      return matchVin || matchCustomer || matchId || matchMake;
-    }
+      if (statusFilter === "READY" && lifecycle !== 'READY') return false;
+      if (statusFilter === "EXPORTED" && lifecycle !== 'EXPORTED') return false;
+      if (statusFilter === "CONFIRMED" && lifecycle !== 'SUBMISSION_CONFIRMED') return false;
+      if (statusFilter === "DISCREPANCY" && lifecycle !== 'DISCREPANCY') return false;
 
-    return true;
-  });
+      if (searchTerm.trim()) {
+        const q = searchTerm.toLowerCase();
+        const matchVin = record.vin.toLowerCase().includes(q);
+        const matchCustomer = t.customerName.toLowerCase().includes(q);
+        const matchId = t.id.toLowerCase().includes(q);
+        const matchMake = record.make.toLowerCase().includes(q);
+        return matchVin || matchCustomer || matchId || matchMake;
+      }
 
-  const pendingCount = vehicleTickets.filter(
-    (t) => !(t.complianceCaptures?.nmvtisReported || t.carRecord?.complianceCaptures?.nmvtisReported)
-  ).length;
+      return true;
+    });
+  }, [vehicleTickets, statusFilter, searchTerm]);
 
+  const pendingCount = readinessSummary.complete + readinessSummary.incomplete + readinessSummary.invalidData;
   const pendingVehicleTickets = vehicleTickets.filter(
-    (t) => !(t.complianceCaptures?.nmvtisReported || t.carRecord?.complianceCaptures?.nmvtisReported)
+    (t) => !calculateReadiness(t).isExported
   );
 
   const nmvtisStatus = getNmvtisStatus(logs, yardSettings);
   const nmvtisBannerActive = isNmvtisBannerActive(nmvtisStatus);
 
-  const reportedCount = vehicleTickets.filter(
-    (t) => t.complianceCaptures?.nmvtisReported || t.carRecord?.complianceCaptures?.nmvtisReported
-  ).length;
-
-  const discrepancyCount = vehicleTickets.filter(
-    (t) => t.carRecord && !validateVin(t.carRecord.vin).isValid
-  ).length;
+  const reportedCount = readinessSummary.pendingExport;
+  const confirmedCount = vehicleTickets.filter((t) => calculateReadiness(t).isConfirmed).length;
+  const discrepancyCount = readinessSummary.invalidData;
 
   const totalPayoutPending = vehicleTickets
-    .filter((t) => !(t.complianceCaptures?.nmvtisReported || t.carRecord?.complianceCaptures?.nmvtisReported))
+    .filter((t) => !calculateReadiness(t).isExported)
     .reduce((acc, t) => acc + t.finalPayout, 0);
 
   const handleToggleSelectAll = () => {
@@ -191,16 +223,36 @@ export const CompliancePage: React.FC = () => {
     }
   };
 
-  const handleExportNMVTISBatch = () => {
-    const targets = selectedTicketIds.length > 0
+  // ── Export workflow: preview → download (Exported) → confirm (Submission confirmed) ──
+
+  const getExportTargets = () => {
+    return selectedTicketIds.length > 0
       ? vehicleTickets.filter((t) => selectedTicketIds.includes(t.id))
       : filteredTickets;
+  };
 
+  const handleOpenExportPreview = () => {
+    const targets = getExportTargets();
     if (targets.length === 0) {
       toast.error("No vehicle salvage records available to export");
       return;
     }
+    setPreviewOpen(true);
+  };
 
+  const handleExportNMVTISBatch = () => {
+    const targets = getExportTargets();
+    if (targets.length === 0) return;
+
+    const validation = validateExportBatch(targets);
+    if (!validation.canExport) {
+      toast.error("Export blocked — resolve data issues first", {
+        description: `${validation.blockedRows.length} record(s) have invalid data or missing evidence.`,
+      });
+      return;
+    }
+
+    setIsExporting(true);
     const csvContent = generateNMVTISCsv(targets, yardSettings.nmvtisReportingId || yardSettings.licenseNumber);
     const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
     const batchId = `NMVTIS-BATCH-${dateStr}-${Math.floor(100 + Math.random() * 900)}`;
@@ -218,15 +270,16 @@ export const CompliancePage: React.FC = () => {
       ticketCount: targets.length,
       ticketIds: targetIds,
       status: "EXPORTED",
-      exportedBy: yardSettings.operatorName,
+      exportedBy: operatorName,
       downloadUrl: filename,
     };
 
     storageService.saveNMVTISLog(newLog);
     loadData();
     setSelectedTicketIds([]);
+    setPreviewOpen(false);
     toast.success(`Exported ${targets.length} vehicle records to NMVTIS CSV!`, {
-      description: `Batch ID: ${batchId}`,
+      description: `Batch ID: ${batchId} — status: Exported (not yet submitted to NMVTIS)`,
     });
   };
 
@@ -246,6 +299,14 @@ export const CompliancePage: React.FC = () => {
       return;
     }
 
+    const validation = validateExportBatch(pendingVehicleTickets);
+    if (!validation.canExport) {
+      toast.error("Export blocked — resolve data issues first", {
+        description: `${validation.blockedRows.length} record(s) have invalid data or missing evidence.`,
+      });
+      return;
+    }
+
     const csvContent = generateNMVTISCsv(pendingVehicleTickets, yardSettings.nmvtisReportingId || yardSettings.licenseNumber);
     const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
     const batchId = `NMVTIS-BATCH-${dateStr}-${Math.floor(100 + Math.random() * 900)}`;
@@ -261,15 +322,41 @@ export const CompliancePage: React.FC = () => {
       ticketCount: targetIds.length,
       ticketIds: targetIds,
       status: "EXPORTED",
-      exportedBy: yardSettings.operatorName,
+      exportedBy: operatorName,
       downloadUrl: `${batchId}.csv`,
     });
 
     loadData();
     setSelectedTicketIds([]);
     setReportAllOpen(false);
-    toast.success(`Reported ${targetIds.length} vehicles to NMVTIS`, {
-      description: `Batch ${batchId} · CSV downloaded`,
+    toast.success(`Exported ${targetIds.length} vehicles to NMVTIS CSV`, {
+      description: `Batch ${batchId} · status: Exported (not yet submitted to NMVTIS)`,
+    });
+  };
+
+  // Mark a batch as submission-confirmed by an operator
+  const handleConfirmSubmission = () => {
+    if (!confirmingLogId) return;
+    const log = logs.find((l) => l.id === confirmingLogId);
+    if (!log) return;
+
+    const now = new Date().toISOString();
+    const updatedLog: NMVTISReportLog = {
+      ...log,
+      status: "SUBMISSION_CONFIRMED",
+      submissionConfirmedBy: operatorName,
+      submissionConfirmedAt: now,
+      submissionNote: confirmNote || undefined,
+    };
+    storageService.saveNMVTISLog(updatedLog);
+    storageService.markTicketsAsNMVTISConfirmed(log.ticketIds, operatorName, now, confirmNote || undefined);
+
+    loadData();
+    setConfirmOpen(false);
+    setConfirmingLogId(null);
+    setConfirmNote("");
+    toast.success("Submission confirmed", {
+      description: `Batch ${log.batchId} marked as submitted by ${operatorName} at ${new Date().toLocaleString()}`,
     });
   };
 
@@ -297,6 +384,7 @@ export const CompliancePage: React.FC = () => {
     try {
       const result = await buildEvidencePackage(targets, {
         settings: yardSettings,
+        operatorName,
         onProgress: (done, total) => {
           if (total > 0 && done % 5 === 0) {
             toast.loading("Building evidence package…", {
@@ -318,12 +406,19 @@ export const CompliancePage: React.FC = () => {
     }
   };
 
+  // ── Export preview validation ──
+  const exportPreview = useMemo(() => {
+    const targets = getExportTargets();
+    if (targets.length === 0) return null;
+    return validateExportBatch(targets);
+  }, [selectedTicketIds, filteredTickets, tickets]);
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 font-sans">
       <Navbar />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-8">
-        
+
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-900/90 p-6 rounded-2xl border border-slate-800 backdrop-blur">
           <div className="flex items-center gap-4">
             <div className="p-3.5 rounded-2xl bg-blue-600/20 text-blue-400 border border-blue-500/30">
@@ -362,7 +457,7 @@ export const CompliancePage: React.FC = () => {
               Package Evidence ({selectedTicketIds.length > 0 ? selectedTicketIds.length : filteredTickets.length})
             </Button>
             <Button
-              onClick={handleExportNMVTISBatch}
+              onClick={handleOpenExportPreview}
               variant="outline"
               className="border-blue-500/40 bg-blue-950/40 hover:bg-blue-900/50 text-blue-300 text-xs gap-1.5"
             >
@@ -419,29 +514,17 @@ export const CompliancePage: React.FC = () => {
           </div>
         )}
 
+        {/* Readiness KPI cards — computed, not hard-coded */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <Card className="bg-slate-900 border-slate-800 text-white">
             <CardContent className="p-5 flex items-center justify-between">
               <div>
-                <p className="text-xs text-slate-400 font-medium">Pending NMVTIS Export</p>
-                <p className="text-2xl font-black text-amber-400 font-mono mt-1">{pendingCount}</p>
-                <p className="text-[11px] text-slate-500 mt-1">${totalPayoutPending.toFixed(2)} Value Pending</p>
-              </div>
-              <div className="p-3 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                <Clock className="w-6 h-6" />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-slate-900 border-slate-800 text-white">
-            <CardContent className="p-5 flex items-center justify-between">
-              <div>
-                <p className="text-xs text-slate-400 font-medium">Reported Vehicles</p>
-                <p className="text-2xl font-black text-emerald-400 font-mono mt-1">{reportedCount}</p>
-                <p className="text-[11px] text-slate-500 mt-1">Uploaded to NMVTIS DB</p>
+                <p className="text-xs text-slate-400 font-medium">Ready for Export</p>
+                <p className="text-2xl font-black text-emerald-400 font-mono mt-1">{readinessSummary.complete}</p>
+                <p className="text-[11px] text-slate-500 mt-1">All evidence present &amp; VIN valid</p>
               </div>
               <div className="p-3 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                <CheckCircle2 className="w-6 h-6" />
+                <FileCheck className="w-6 h-6" />
               </div>
             </CardContent>
           </Card>
@@ -449,11 +532,11 @@ export const CompliancePage: React.FC = () => {
           <Card className="bg-slate-900 border-slate-800 text-white">
             <CardContent className="p-5 flex items-center justify-between">
               <div>
-                <p className="text-xs text-slate-400 font-medium">VIN Discrepancy Alerts</p>
-                <p className="text-2xl font-black text-rose-400 font-mono mt-1">{discrepancyCount}</p>
-                <p className="text-[11px] text-slate-500 mt-1">Non-17 Char or Invalid VINs</p>
+                <p className="text-xs text-slate-400 font-medium">Incomplete Records</p>
+                <p className="text-2xl font-black text-amber-400 font-mono mt-1">{readinessSummary.incomplete}</p>
+                <p className="text-[11px] text-slate-500 mt-1">Missing required photos</p>
               </div>
-              <div className="p-3 rounded-xl bg-rose-500/10 text-rose-400 border border-rose-500/20">
+              <div className="p-3 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20">
                 <AlertTriangle className="w-6 h-6" />
               </div>
             </CardContent>
@@ -462,12 +545,27 @@ export const CompliancePage: React.FC = () => {
           <Card className="bg-slate-900 border-slate-800 text-white">
             <CardContent className="p-5 flex items-center justify-between">
               <div>
-                <p className="text-xs text-slate-400 font-medium">Compliance Rate</p>
-                <p className="text-2xl font-black text-sky-400 font-mono mt-1">100%</p>
-                <p className="text-[11px] text-slate-500 mt-1">5-Point Photo Studio Audit</p>
+                <p className="text-xs text-slate-400 font-medium">Invalid Data</p>
+                <p className="text-2xl font-black text-rose-400 font-mono mt-1">{readinessSummary.invalidData}</p>
+                <p className="text-[11px] text-slate-500 mt-1">VIN or critical field issues</p>
+              </div>
+              <div className="p-3 rounded-xl bg-rose-500/10 text-rose-400 border border-rose-500/20">
+                <AlertOctagon className="w-6 h-6" />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-slate-900 border-slate-800 text-white">
+            <CardContent className="p-5 flex items-center justify-between">
+              <div>
+                <p className="text-xs text-slate-400 font-medium">Exported / Awaiting Confirmation</p>
+                <p className="text-2xl font-black text-sky-400 font-mono mt-1">{readinessSummary.pendingExport}</p>
+                <p className="text-[11px] text-slate-500 mt-1">
+                  {confirmedCount} confirmed · ${totalPayoutPending.toFixed(2)} value pending
+                </p>
               </div>
               <div className="p-3 rounded-xl bg-sky-500/10 text-sky-400 border border-sky-500/20">
-                <Award className="w-6 h-6" />
+                <Clock className="w-6 h-6" />
               </div>
             </CardContent>
           </Card>
@@ -491,6 +589,9 @@ export const CompliancePage: React.FC = () => {
                     <CardTitle className="text-base font-bold flex items-center gap-2">
                       <Car className="w-5 h-5 text-blue-400" /> Vehicle Intake & NMVTIS Audit Desk
                     </CardTitle>
+                    <CardDescription className="text-[11px] text-slate-500 mt-1">
+                      Readiness is calculated per intake type. Voided tickets are excluded from active reporting.
+                    </CardDescription>
                   </div>
 
                   <div className="flex items-center gap-2">
@@ -505,7 +606,7 @@ export const CompliancePage: React.FC = () => {
                     </div>
 
                     <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800 text-xs">
-                      {(["ALL", "PENDING", "REPORTED", "DISCREPANCY"] as const).map((st) => (
+                      {(["ALL", "READY", "EXPORTED", "CONFIRMED", "DISCREPANCY"] as const).map((st) => (
                         <button
                           key={st}
                           onClick={() => setStatusFilter(st)}
@@ -542,7 +643,7 @@ export const CompliancePage: React.FC = () => {
                         <TableHead className="text-slate-400">Vehicle Description</TableHead>
                         <TableHead className="text-slate-400">Title Document</TableHead>
                         <TableHead className="text-slate-400">Seller Details</TableHead>
-                        <TableHead className="text-slate-400">Compliance Audit</TableHead>
+                        <TableHead className="text-slate-400">Readiness</TableHead>
                         <TableHead className="text-slate-400">NMVTIS Status</TableHead>
                         <TableHead className="text-right text-slate-400">Payout</TableHead>
                         <TableHead className="w-12"></TableHead>
@@ -552,9 +653,27 @@ export const CompliancePage: React.FC = () => {
                       {filteredTickets.map((ticket) => {
                         const rec = ticket.carRecord!;
                         const vinAudit = validateVin(rec.vin);
-                        const isReported = ticket.complianceCaptures?.nmvtisReported || rec.complianceCaptures?.nmvtisReported;
+                        const readiness = calculateReadiness(ticket);
+                        const lifecycle = getReportStatus(ticket);
                         const isSelected = selectedTicketIds.includes(ticket.id);
-                        const stats = calculateComplianceScore(ticket.complianceCaptures);
+
+                        const readinessColor =
+                          readiness.status === 'COMPLETE'
+                            ? 'bg-emerald-950 text-emerald-400 border-emerald-500/40'
+                            : readiness.status === 'INVALID_DATA'
+                            ? 'bg-rose-950 text-rose-400 border-rose-500/40'
+                            : readiness.status === 'PENDING_EXPORT'
+                            ? 'bg-sky-950 text-sky-400 border-sky-500/40'
+                            : 'bg-amber-950 text-amber-400 border-amber-500/40';
+
+                        const lifecycleColor =
+                          lifecycle === 'SUBMISSION_CONFIRMED'
+                            ? 'bg-emerald-950 text-emerald-400 border-emerald-500/40'
+                            : lifecycle === 'EXPORTED'
+                            ? 'bg-amber-950 text-amber-400 border-amber-500/40'
+                            : lifecycle === 'DISCREPANCY'
+                            ? 'bg-rose-950 text-rose-400 border-rose-500/40'
+                            : 'bg-slate-950 text-slate-400 border-slate-600';
 
                         return (
                           <TableRow
@@ -607,29 +726,36 @@ export const CompliancePage: React.FC = () => {
 
                             <TableCell className="font-sans">
                               <span className="text-white font-medium block">{ticket.customerName}</span>
-                              <span className="text-[10px] text-slate-400 font-mono">{ticket.customerIdNumber}</span>
+                              <span className="text-[10px] text-slate-400 font-mono">{ticket.customerIdNumber || "—"}</span>
                             </TableCell>
 
                             <TableCell className="font-sans">
-                              <Badge
-                                className={`text-[10px] ${
-                                  stats.score === 100
-                                    ? "bg-emerald-950 text-emerald-400 border-emerald-500/40"
-                                    : "bg-amber-950 text-amber-400 border-amber-500/40"
-                                }`}
-                              >
-                                {stats.score}% Compliant
+                              <Badge className={`text-[10px] ${readinessColor}`}>
+                                {readiness.status === 'COMPLETE' ? 'Ready' : readiness.status === 'INVALID_DATA' ? 'Invalid Data' : readiness.status === 'PENDING_EXPORT' ? 'Exported' : 'Incomplete'}
                               </Badge>
+                              {readiness.missingItems.length > 0 && (
+                                <div className="mt-1 text-[9px] text-slate-500">
+                                  Missing: {readiness.missingItems.join(', ')}
+                                </div>
+                              )}
                             </TableCell>
 
                             <TableCell className="font-sans">
-                              {isReported ? (
+                              {lifecycle === 'SUBMISSION_CONFIRMED' ? (
                                 <Badge className="bg-emerald-950 text-emerald-400 border-emerald-500/40 text-[10px] gap-1">
-                                  <CheckCircle2 className="w-3 h-3 text-emerald-400" /> Reported
+                                  <CheckCircle2 className="w-3 h-3 text-emerald-400" /> Submission Confirmed
+                                </Badge>
+                              ) : lifecycle === 'EXPORTED' ? (
+                                <Badge className="bg-amber-950 text-amber-400 border-amber-500/40 text-[10px] gap-1">
+                                  <Clock className="w-3 h-3 text-amber-400" /> Exported
+                                </Badge>
+                              ) : lifecycle === 'DISCREPANCY' ? (
+                                <Badge className="bg-rose-950 text-rose-400 border-rose-500/40 text-[10px] gap-1">
+                                  <AlertOctagon className="w-3 h-3 text-rose-400" /> Discrepancy
                                 </Badge>
                               ) : (
-                                <Badge className="bg-amber-950 text-amber-400 border-amber-500/40 text-[10px] gap-1">
-                                  <Clock className="w-3 h-3 text-amber-400" /> Pending Export
+                                <Badge className="bg-slate-950 text-slate-400 border-slate-600 text-[10px] gap-1">
+                                  <ShieldAlert className="w-3 h-3 text-slate-400" /> Ready
                                 </Badge>
                               )}
                             </TableCell>
@@ -668,6 +794,9 @@ export const CompliancePage: React.FC = () => {
                 <CardTitle className="text-base font-bold flex items-center gap-2">
                   <FileSpreadsheet className="w-5 h-5 text-blue-400" /> NMVTIS Batch Export Audit Log
                 </CardTitle>
+                <CardDescription className="text-[11px] text-slate-500 mt-1">
+                  Download = Exported. Only click "Confirm Submission" after NMVTIS has actually received the batch.
+                </CardDescription>
               </CardHeader>
               <CardContent className="p-0">
                 <Table>
@@ -678,6 +807,8 @@ export const CompliancePage: React.FC = () => {
                       <TableHead className="text-slate-400">Vehicle Records Count</TableHead>
                       <TableHead className="text-slate-400">Operator</TableHead>
                       <TableHead className="text-slate-400">Status</TableHead>
+                      <TableHead className="text-slate-400">Confirmed By</TableHead>
+                      <TableHead className="w-12"></TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -688,9 +819,41 @@ export const CompliancePage: React.FC = () => {
                         <TableCell className="text-slate-200 font-bold">{log.ticketCount} Vehicles</TableCell>
                         <TableCell className="text-slate-400 font-sans">{log.exportedBy}</TableCell>
                         <TableCell>
-                          <Badge className="bg-emerald-950 text-emerald-400 border-emerald-500/40 text-[10px]">
-                            {log.status}
+                          <Badge
+                            className={`text-[10px] ${
+                              log.status === 'SUBMISSION_CONFIRMED'
+                                ? 'bg-emerald-950 text-emerald-400 border-emerald-500/40'
+                                : log.status === 'EXPORTED'
+                                ? 'bg-amber-950 text-amber-400 border-amber-500/40'
+                                : log.status === 'DISCREPANCY'
+                                ? 'bg-rose-950 text-rose-400 border-rose-500/40'
+                                : 'bg-slate-950 text-slate-400 border-slate-600'
+                            }`}
+                          >
+                            {getReportStatusLabel(log)}
                           </Badge>
+                        </TableCell>
+                        <TableCell className="text-slate-400 font-sans">
+                          {log.submissionConfirmedBy
+                            ? `${log.submissionConfirmedBy} @ ${new Date(log.submissionConfirmedAt!).toLocaleString()}`
+                            : "—"}
+                        </TableCell>
+                        <TableCell>
+                          {log.status === 'EXPORTED' && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                setConfirmingLogId(log.id);
+                                setConfirmNote("");
+                                setConfirmOpen(true);
+                              }}
+                              className="h-7 text-xs text-sky-400 hover:text-sky-300 hover:bg-slate-800"
+                              title="Mark as submission confirmed"
+                            >
+                              <SendHorizonal className="w-3.5 h-3.5" /> Confirm
+                            </Button>
+                          )}
                         </TableCell>
                       </TableRow>
                     ))}
@@ -700,6 +863,141 @@ export const CompliancePage: React.FC = () => {
             </Card>
           </TabsContent>
         </Tabs>
+
+        {/* EXPORT PREVIEW DIALOG */}
+        <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+          <DialogContent className="max-w-4xl bg-slate-950 text-slate-100 border-slate-800 p-6 max-h-[85vh] overflow-y-auto">
+            <DialogHeader className="border-b border-slate-800 pb-3">
+              <DialogTitle className="text-lg font-bold text-white flex items-center gap-2">
+                <FileCheck className="w-5 h-5 text-blue-400" /> NMVTIS Export Preview
+              </DialogTitle>
+              <DialogDescription className="text-xs text-slate-400">
+                Review the batch before downloading. Voided records are excluded. Blocked rows must be resolved before export.
+              </DialogDescription>
+            </DialogHeader>
+
+            {exportPreview && (
+              <div className="space-y-4 pt-2">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+                  <div className="bg-slate-900 p-3 rounded-xl border border-slate-800">
+                    <p className="text-[10px] text-slate-500 uppercase">Total Selected</p>
+                    <p className="text-xl font-black text-white">{exportPreview.totalTickets}</p>
+                  </div>
+                  <div className="bg-slate-900 p-3 rounded-xl border border-slate-800">
+                    <p className="text-[10px] text-slate-500 uppercase">Included</p>
+                    <p className="text-xl font-black text-emerald-400">{exportPreview.includedTickets}</p>
+                  </div>
+                  <div className="bg-slate-900 p-3 rounded-xl border border-slate-800">
+                    <p className="text-[10px] text-slate-500 uppercase">Excluded (Voided)</p>
+                    <p className="text-xl font-black text-slate-400">{exportPreview.excludedVoided}</p>
+                  </div>
+                  <div className="bg-slate-900 p-3 rounded-xl border border-slate-800">
+                    <p className="text-[10px] text-slate-500 uppercase">Blocked</p>
+                    <p className="text-xl font-black text-rose-400">{exportPreview.blockedRows.length}</p>
+                  </div>
+                </div>
+
+                {exportPreview.warnedRows.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
+                      <AlertTriangle className="w-4 h-4" /> Review Before Export ({exportPreview.warnedRows.length} record{exportPreview.warnedRows.length === 1 ? '' : 's'})
+                    </p>
+                    <div className="max-h-32 overflow-y-auto rounded-xl border border-amber-500/30 bg-amber-950/20 p-3 space-y-1">
+                      {exportPreview.warnedRows.map((row) => (
+                        <div key={row.ticketId} className="text-[11px] font-mono">
+                          <span className="text-amber-300">{row.ticketId}</span>
+                          {row.vin && <span className="text-slate-500"> · VIN: {row.vin}</span>}
+                          <div className="text-slate-400 mt-0.5">{row.warnings.join('; ')}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {exportPreview.blockedRows.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-xs font-bold text-rose-300 flex items-center gap-1.5">
+                      <AlertOctagon className="w-4 h-4" /> Blocked Records ({exportPreview.blockedRows.length})
+                    </p>
+                    <div className="max-h-40 overflow-y-auto rounded-xl border border-rose-500/30 bg-rose-950/20 p-3 space-y-1">
+                      {exportPreview.blockedRows.map((row) => (
+                        <div key={row.ticketId} className="text-[11px] font-mono">
+                          <span className="text-rose-300">{row.ticketId}</span>
+                          {row.vin && <span className="text-slate-500"> · VIN: {row.vin}</span>}
+                          <div className="text-slate-400 mt-0.5">{row.issues.join('; ')}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPreviewOpen(false)}
+                    className="border-slate-700 text-slate-300 text-xs"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={handleExportNMVTISBatch}
+                    disabled={isExporting || !exportPreview.canExport}
+                    className="bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs gap-1.5"
+                  >
+                    {isExporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+                    {isExporting ? 'Exporting...' : `Download CSV (${exportPreview.includedTickets} records)`}
+                  </Button>
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+
+        {/* SUBMISSION CONFIRMATION DIALOG */}
+        <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+          <AlertDialogContent className="bg-slate-950 text-slate-100 border-slate-800 sm:max-w-[520px]">
+            <AlertDialogHeader>
+              <AlertDialogTitle className="flex items-center gap-2 text-base font-bold text-white">
+                <SendHorizonal className="w-5 h-5 text-emerald-400" /> Confirm NMVTIS Submission?
+              </AlertDialogTitle>
+              <AlertDialogDescription className="text-xs text-slate-400">
+                This marks the batch as <strong className="text-white">Submission Confirmed</strong> — meaning NMVTIS has
+                actually received and accepted the data. This action is attributed to <strong className="text-sky-300">{operatorName}</strong>{' '}
+                and cannot be undone. Only click confirm after verifying the external submission.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+
+            <div className="py-3">
+              <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Confirmation note (optional)</label>
+              <Input
+                placeholder="e.g. NMVTIS confirmation #12345"
+                value={confirmNote}
+                onChange={(e) => setConfirmNote(e.target.value)}
+                className="bg-slate-900 border-slate-700 text-xs mt-1"
+              />
+            </div>
+
+            <AlertDialogFooter>
+              <AlertDialogCancel
+                className="text-slate-400 text-xs"
+                onClick={() => {
+                  setConfirmNote("");
+                  setConfirmingLogId(null);
+                }}
+              >
+                Cancel
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleConfirmSubmission}
+                className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5 mr-1.5" /> Confirm Submission
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
         {/* COMPLIANCE INSPECTION & AI VISION AUDIT DIALOG */}
         {selectedTicketForModal && (
@@ -713,7 +1011,7 @@ export const CompliancePage: React.FC = () => {
                       Salvage Record Compliance Inspection - #{selectedTicketForModal.id}
                     </DialogTitle>
                   </div>
-                  
+
                   <div className="flex items-center gap-2">
                     <Button
                       size="sm"
@@ -748,7 +1046,7 @@ export const CompliancePage: React.FC = () => {
               </DialogHeader>
 
               <div className="space-y-4 pt-2">
-                
+
                 {/* AI OCR Verification Box */}
                 {(aiDlResult || aiPlateResult) && (
                   <Card className="bg-gradient-to-r from-purple-950/80 via-slate-900 to-slate-900 border-2 border-purple-500/50 text-white p-3.5 font-mono text-xs space-y-2">
@@ -848,12 +1146,13 @@ export const CompliancePage: React.FC = () => {
           <AlertDialogContent className="bg-slate-950 text-slate-100 border-slate-800 sm:max-w-[520px]">
             <AlertDialogHeader>
               <AlertDialogTitle className="flex items-center gap-2 text-base font-bold text-white">
-                <SendHorizonal className="w-5 h-5 text-blue-400" /> Report all pending vehicles to NMVTIS?
+                <SendHorizonal className="w-5 h-5 text-blue-400" /> Export all pending vehicles to NMVTIS CSV?
               </AlertDialogTitle>
               <AlertDialogDescription className="text-xs text-slate-400">
-                This marks <strong className="text-white">{pendingVehicleTickets.length}</strong> pending
-                vehicle ticket{pendingVehicleTickets.length === 1 ? "" : "s"} as reported, records one batch log
-                entry, and downloads the NMVTIS CSV.
+                This downloads a CSV for <strong className="text-white">{pendingVehicleTickets.length}</strong> pending
+                vehicle ticket{pendingVehicleTickets.length === 1 ? "" : "s"} and records them as <strong className="text-amber-300">Exported</strong>.
+                Downloading does <strong className="text-white">not</strong> confirm submission to NMVTIS — use the
+                batch log to confirm after the external submission is verified.
               </AlertDialogDescription>
             </AlertDialogHeader>
 
@@ -875,7 +1174,7 @@ export const CompliancePage: React.FC = () => {
                 onClick={handleReportAllPending}
                 className="bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs"
               >
-                <SendHorizonal className="w-3.5 h-3.5 mr-1.5" /> Report {pendingVehicleTickets.length} Vehicles
+                <SendHorizonal className="w-3.5 h-3.5 mr-1.5" /> Export {pendingVehicleTickets.length} Vehicles
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

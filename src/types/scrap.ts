@@ -276,6 +276,7 @@ export interface ComplianceCaptures {
   nmvtisBatchId?: string;
   nmvtisSubmissionConfirmedAt?: string;
   nmvtisSubmissionConfirmedBy?: string;
+  nmvtisSubmissionNote?: string;
 }
 
 export interface ScrapTicketLine {
@@ -458,6 +459,8 @@ export interface NMVTISReportLog {
   submissionConfirmedAt?: string;
   /** Human-readable note recorded at confirmation time (e.g. confirmation number). */
   submissionNote?: string;
+  /** Lifecycle schema marker; missing on stored logs from before the confirmation workflow. */
+  lifecycleVersion?: 1;
   /** True when this log predates the submission-confirmation workflow and its real submission state is unknown. */
   legacyExported?: boolean;
 }

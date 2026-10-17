@@ -102,3 +102,81 @@ export interface OperationsSnapshot {
   alerts: OperationsAlert[];
   summary: DailyManagerSummary;
 }
+
+// ── Reconciliation ──────────────────────────────────────────────────────────
+
+export type ReconciliationStatus = 'OPEN' | 'RESOLVED' | 'ADJUSTED' | 'VOIDED';
+export type ReconciliationType = 'PAYOUT' | 'CASH_DRAWER' | 'SHIPMENT_SETTLEMENT';
+
+export interface ReconciliationEntry {
+  id: string;
+  type: ReconciliationType;
+  status: ReconciliationStatus;
+  referenceId: string;
+  expectedAmount: number;
+  actualAmount: number;
+  variance: number;
+  varianceReason?: string;
+  resolvedBy?: string;
+  resolvedAt?: string;
+  adjustmentEntry?: string;
+  note?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ── Operational Hiccups ─────────────────────────────────────────────────────
+
+export type HiccupSeverity = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+export type HiccupStatus = 'OPEN' | 'ACKNOWLEDGED' | 'RESOLVED' | 'ESCALATED';
+export type HiccupCategory =
+  | 'PAYOUT_DISCREPANCY'
+  | 'CASH_DRAWER_MISMATCH'
+  | 'WEIGHT_DISCREPANCY'
+  | 'SETTLEMENT_VARIANCE'
+  | 'COMPLIANCE_GAP'
+  | 'EQUIPMENT_ISSUE'
+  | 'TOOL_OVERDUE'
+  | 'PROCESSING_DELAY';
+
+export interface OperationalHiccup {
+  id: string;
+  fingerprint: string;
+  category: HiccupCategory;
+  severity: HiccupSeverity;
+  title: string;
+  detail: string;
+  recommendedAction: string;
+  link: string;
+  createdAt: string;
+  updatedAt: string;
+  status: HiccupStatus;
+  acknowledgedBy?: string;
+  acknowledgedAt?: string;
+  resolvedBy?: string;
+  resolvedAt?: string;
+  escalatedTo?: string;
+  escalatedAt?: string;
+  snoozedUntil?: string;
+  note?: string;
+}
+
+export interface HiccupRule {
+  id: string;
+  category: HiccupCategory;
+  enabled: boolean;
+  severityThreshold: HiccupSeverity;
+  escalationMinutes: number;
+}
+
+export interface HiccupSummary {
+  id: string;
+  date: string;
+  generatedAt: string;
+  totalOpen: number;
+  totalResolved: number;
+  totalEscalated: number;
+  criticalOpen: number;
+  byCategory: Record<HiccupCategory, number>;
+  narrative: string;
+}

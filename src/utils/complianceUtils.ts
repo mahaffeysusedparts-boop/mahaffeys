@@ -1,4 +1,4 @@
-import { Ticket, ComplianceCaptures, NMVTISReportLog, NMVTISReportStatus, YardSettings, IntakeType } from "@/types/scrap";
+import { Ticket, ComplianceCaptures, NMVTISReportLog, YardSettings, IntakeType } from "@/types/scrap";
 
 export interface DLScanResult {
   fullName: string;
