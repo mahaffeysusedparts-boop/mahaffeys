@@ -17,6 +17,7 @@ const IntakePage = lazy(() => import("./pages/IntakePage"));
 const PublicInventoryPage = lazy(() => import("./pages/PublicInventoryPage"));
 const PublicVehicleDetailPage = lazy(() => import("./pages/PublicVehicleDetailPage"));
 const PublicVehicleInventoryPage = lazy(() => import("./pages/PublicVehicleInventoryPage"));
+const PublicPartsPricesPage = lazy(() => import('./pages/PublicPartsPricesPage'));
 const TicketsPage = lazy(() => import("./pages/TicketsPage"));
 const PricingPage = lazy(() => import("./pages/PricingPage"));
 const CustomersPage = lazy(() => import("./pages/CustomersPage"));
@@ -75,6 +76,7 @@ const App = () => (
               <Route path="/inventory" element={<PublicInventoryPage />} />
               <Route path="/inventory/vehicle/:vin" element={<PublicVehicleDetailPage />} />
               <Route path="/vehicles" element={<PublicVehicleInventoryPage />} />
+              <Route path="/parts-prices" element={<PublicPartsPricesPage />} />
 
               {/* PROTECTED WORKSTATION ROUTES - Wrapped with Error Boundary */}
               <Route path="/" element={guarded(<DashboardPage />, "dashboard")} />

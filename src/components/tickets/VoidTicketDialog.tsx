@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Ticket } from '@/types/scrap';
 import { storageService } from '@/services/storageService';
+import { scrapBuyingService } from '@/services/scrapBuyingService';
 import { useAuth } from '@/context/AuthContext';
 import {
   Dialog,
@@ -45,29 +46,25 @@ export const VoidTicketDialog: React.FC<VoidTicketDialogProps> = ({ ticket, open
 
   if (!ticket) return null;
 
-  const isPaid = ticket.status === 'COMPLETED';
+  const isPaid = ticket.buying ? ticket.buying.stage === 'PAID' : ticket.status === 'COMPLETED';
   const canVoidPaid = user?.role === 'admin' || user?.role === 'yard_manager';
-  const locked = isPaid && !canVoidPaid;
+  const locked = isPaid && (!!ticket.buying || !canVoidPaid);
   const hasWeighData = ticket.scaleGrossInWeight != null || (ticket.scrapLines?.length ?? 0) > 0;
   const isOther = reason === 'Other';
   const noteRequiredMissing = isOther && !note.trim();
   const canConfirm = Boolean(reason) && !noteRequiredMissing && !locked;
 
-  const handleConfirm = () => {
+  const handleConfirm = async () => {
     if (!canConfirm) return;
     const fullReason = note.trim() ? `${reason} — ${note.trim()}` : reason;
-    const voided = storageService.voidTicket(ticket.id, {
-      by: user?.fullName || user?.username || 'Unknown operator',
-      reason: fullReason,
-    });
-    if (!voided) {
-      toast.error(`Ticket #${ticket.id} could not be found — it may have been removed`);
-      onOpenChange(false);
-      return;
-    }
-    toast.success(`Ticket #${ticket.id} voided`, { description: fullReason });
-    onVoided?.(ticket.id);
-    onOpenChange(false);
+    try {
+      const voided = ticket.buying ? await scrapBuyingService.void(ticket,fullReason) : storageService.voidTicket(ticket.id, {
+        by: user?.fullName || user?.username || 'Unknown operator', reason: fullReason,
+      });
+      if (!voided) { toast.error(`Ticket #${ticket.id} could not be found`); return; }
+      toast.success(`Ticket #${ticket.id} voided`, { description: fullReason });
+      onVoided?.(ticket.id); onOpenChange(false);
+    } catch (error) { toast.error(error instanceof Error ? error.message : 'Cancellation was not confirmed'); }
   };
 
   return (

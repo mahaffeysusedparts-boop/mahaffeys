@@ -138,6 +138,7 @@ export default function PublicVehicleInventoryPage() {
         <div className="mb-8 text-center">
           <h1 className="text-4xl font-bold tracking-tight">Yard Inventory</h1>
           <p className="mt-2 text-lg text-muted-foreground">Track pending intake vehicles and cars currently available for parts.</p>
+          <a href="/parts-prices" className="mt-4 inline-block rounded-xl bg-emerald-700 px-4 py-2 font-semibold text-white hover:bg-emerald-600">Parts Prices</a>
         </div>
 
         <div className="sticky top-4 z-10 mb-8 rounded-2xl border border-slate-200 bg-white p-4 shadow-md dark:border-slate-700 dark:bg-slate-800">

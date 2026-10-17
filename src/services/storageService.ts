@@ -263,9 +263,11 @@ export const storageService = {
   getTickets: (): Ticket[] => readCached("mahaffeys_tickets", []),
   saveTicket: (ticket: Ticket) => {
     const existing = storageService.getTickets();
+    if (ticket.buying || existing.find((row) => row.id === ticket.id)?.buying) throw new Error('Use the canonical buying workflow for this ticket');
     patchCached("mahaffeys_tickets", upsertItem("mahaffeys_tickets", ticket, existing));
   },
   removeTicket: (id: string) => {
+    if (storageService.getTickets().find((row) => row.id === id)?.buying) throw new Error('Canonical financial history cannot be deleted');
     patchCached("mahaffeys_tickets", removeItem("mahaffeys_tickets", id, storageService.getTickets()));
   },
 
@@ -278,6 +280,7 @@ export const storageService = {
     const tickets = storageService.getTickets();
     const index = tickets.findIndex((t) => t.id === id);
     if (index === -1) return null;
+    if (tickets[index].buying) throw new Error('Canonical tickets require acknowledged cancellation; paid evidence cannot be voided');
     const voided: Ticket = {
       ...tickets[index],
       status: "VOIDED",
@@ -404,6 +407,7 @@ export const storageService = {
 
   /** Appends a ledger entry, deriving balanceAfter from the most recent log. */
   addCashDrawerEntry: (entry: Omit<CashDrawerLog, "id" | "timestamp" | "balanceAfter">): CashDrawerLog => {
+    if (entry.type === 'PAYOUT_DISBURSEMENT' && storageService.getTickets().find((ticket) => ticket.id === entry.ticketId)?.buying) throw new Error('Canonical payments require the transactional buying payment action');
     const logs = storageService.getCashDrawerLogs();
     const latest = [...logs].sort((a, b) => b.timestamp.localeCompare(a.timestamp))[0];
     const currentBalance = latest ? latest.balanceAfter : 0;

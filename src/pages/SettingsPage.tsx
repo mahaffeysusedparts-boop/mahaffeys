@@ -1077,7 +1077,18 @@ export default function SettingsPage() {
                           <SelectItem value="SINGLE_WEIGHT">Small-load / single-weight scale</SelectItem>
                         </SelectContent>
                       </Select>
-                      <p className="mt-1 text-[10px] text-slate-500">Controls the default intake workflow for this platform.</p>
+                      <p className="mt-1 text-[10px] text-slate-300">Legacy scale purpose. Operators explicitly select their weighing type before capture.</p>
+                      <Label className="mt-3 block text-[11px] text-slate-300">Compatible buying modes</Label>
+                      <Select value={scale.supportedWeighingTypes?.includes('PLATFORM') && scale.supportedWeighingTypes?.includes('VEHICLE_IN_OUT') ? 'BOTH' : (scale.supportedWeighingTypes ?? [scale.weighingMode === 'SINGLE_WEIGHT' ? 'PLATFORM' : 'VEHICLE_IN_OUT'])[0]}
+                        onValueChange={(value) => updateScaleField(scale.id, { supportedWeighingTypes: value === 'BOTH' ? ['PLATFORM', 'VEHICLE_IN_OUT'] : [value as 'PLATFORM' | 'VEHICLE_IN_OUT'] })}>
+                        <SelectTrigger className="mt-1 h-10 rounded-xl border-slate-700 bg-slate-900 text-xs text-white"><SelectValue /></SelectTrigger>
+                        <SelectContent className="border-slate-700 bg-slate-900 text-white">
+                          <SelectItem value="PLATFORM">Platform batches only</SelectItem>
+                          <SelectItem value="VEHICLE_IN_OUT">Whole-vehicle IN/OUT only</SelectItem>
+                          <SelectItem value="BOTH">Platform batches and whole-vehicle IN/OUT</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <p className="mt-1 text-[10px] text-amber-200">Select only methods suitable for this installation. Split commercial completion remains disabled; this setting is not certification.</p>
                     </div>
 
                     <div>

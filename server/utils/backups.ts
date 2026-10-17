@@ -1,7 +1,9 @@
 import { createHash } from "node:crypto";
 import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { query } from "./db";
+import { withTransaction } from "./db";
+import { canonicalBackupTables } from './buyingPriceSchema';
+import { lockFinancialState } from './financialState';
 
 /**
  * Server-side app-state backups.
@@ -35,25 +37,24 @@ export interface BackupResult {
 
 /** Dumps every app_state row to one timestamped JSON file, then prunes old files. */
 export async function runBackup(): Promise<BackupResult> {
-  const result = await query<{ key: string; value: unknown }>("SELECT key, value FROM app_state ORDER BY key");
-  const state: Record<string, unknown> = {};
-  const keyCounts: Record<string, number> = {};
-  for (const row of result.rows) {
-    state[row.key] = row.value;
-    keyCounts[row.key] = Array.isArray(row.value) ? row.value.length : 1;
-  }
-
-  const checksum = createHash("sha256").update(JSON.stringify(state)).digest("hex");
-  const snapshot = {
-    meta: {
-      generatedAt: new Date().toISOString(),
-      recordCount: result.rows.length,
-      keyCounts,
-      checksum,
-      format: "mahaffeys-app-state-v1",
-    },
-    state,
-  };
+  const data = await withTransaction(async (client) => {
+    await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
+    await lockFinancialState(client);
+    await client.query('SELECT pg_advisory_xact_lock(114682)');
+    const result = await client.query<{key:string;value:unknown}>('SELECT key,value FROM app_state ORDER BY key');
+    const state = Object.fromEntries(result.rows.map((row)=>[row.key,row.value]));
+    const tables: Record<string,unknown[]> = {};
+    for (const table of canonicalBackupTables) {
+      const rows = await client.query(`SELECT * FROM "${table}"`);
+      tables[table] = rows.rows.map((row)=>Object.fromEntries(Object.entries(row).map(([key,value])=>[key,Buffer.isBuffer(value)?{base64:value.toString('base64')}:value])));
+    }
+    return JSON.parse(JSON.stringify({state,tables})) as {state:Record<string,unknown>;tables:Record<string,unknown[]>};
+  });
+  const keyCounts = Object.fromEntries(Object.entries(data.state).map(([key,value])=>[key,Array.isArray(value)?value.length:1]));
+  const tableCounts = Object.fromEntries(Object.entries(data.tables).map(([table,rows])=>[table,rows.length]));
+  const recordCount = Object.keys(data.state).length+Object.values(tableCounts).reduce((sum,count)=>sum+count,0);
+  const checksum = createHash('sha256').update(JSON.stringify(data)).digest('hex');
+  const snapshot = {meta:{generatedAt:new Date().toISOString(),recordCount,keyCounts,tableCounts,checksum,format:'mahaffeys-app-state-v2'},...data};
 
   const now = new Date();
   const pad = (n: number) => String(n).padStart(2, "0");
@@ -68,7 +69,7 @@ export async function runBackup(): Promise<BackupResult> {
 
   await pruneBackups();
 
-  return { fileName, recordCount: result.rows.length, sizeBytes };
+  return { fileName, recordCount, sizeBytes };
 }
 
 export interface BackupFileInfo {

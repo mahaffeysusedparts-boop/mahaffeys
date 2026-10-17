@@ -2,8 +2,14 @@ import React, { useEffect, useRef, useState } from 'react';
 import { MetalGrade, ScaleStatus, ScrapTicketLine, Ticket, WeightTransaction, ScaleConfig, ScaleWeighingMode } from '@/types/scrap';
 import { scaleService } from '@/services/scaleService';
 import { storageService } from '@/services/storageService';
+import { authService } from '@/services/authService';
+import { scrapBuyingService } from '@/services/scrapBuyingService';
+import { useQuery } from '@tanstack/react-query';
 import { calculateComplianceScore } from '@/utils/complianceUtils';
 import { computeWeightBreakdown, buildScrapTicketLine } from '@/utils/weightCalculations';
+import { normalizeWeight, validateScaleReading } from '@/utils/weighingContract';
+import type { WeightCapture, WeighingType } from '@/types/scrapBuying';
+import { WeighingTypeSelector } from './WeighingTypeSelector';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -54,12 +60,6 @@ import { toast } from 'sonner';
 const MAX_ACTIVE_LOADS = 10;
 
 type SingleTareMode = 'NONE' | 'SCALE_TARE' | 'MANUAL';
-
-interface SingleCapture {
-  capturedLbs: number;
-  tareLbs: number;
-  isManual: boolean;
-}
 
 // Auto-capture tuning: a reading only fires after it stays stable this long,
 // and must exceed this floor so idle platform drift never auto-logs.
@@ -115,24 +115,33 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
   // the IN (or OUT) weight after the settle window elapses.
   const [autoCapture, setAutoCapture] = useState(false);
   const stableSinceRef = useRef<number | null>(null);
+  const autoCaptureContextRef = useRef<string | null>(null);
   // Manual capture attempted while the reading was still in MOTION — parked
   // here until the operator confirms or waits for stability.
-  const [pendingUnstable, setPendingUnstable] = useState<{ direction: 'IN' | 'OUT' | 'SINGLE'; lbs: number } | null>(null);
+  const [pendingUnstable, setPendingUnstable] = useState<{ direction: 'IN' | 'OUT' | 'SINGLE'; lbs: number; capture: WeightCapture } | null>(null);
+  const [correctionTarget, setCorrectionTarget] = useState<{ action: 'TRUCK' | 'PLATFORM' | 'LINE'; lineId?: string } | null>(null);
+  const [correctionReason, setCorrectionReason] = useState('');
+  const [deductionReason, setDeductionReason] = useState('');
+  const [remoteConflict, setRemoteConflict] = useState(false);
+  const [saveState, setSaveState] = useState<'SAVED'|'PENDING'|'ERROR'>('SAVED');
+  const [saveError, setSaveError] = useState('');
+  const busyRef = useRef(false);
+  const [reviewConfirmed, setReviewConfirmed] = useState(false);
+  const serverQueue = useQuery({queryKey:['scrap-buying-queue'],queryFn:() => scrapBuyingService.queue(),refetchInterval:5000});
 
   const [payoutMethod, setPayoutMethod] = useState<'Cash' | 'Check'>('Cash');
   const [checkNumber, setCheckNumber] = useState(`CHK-${Math.floor(1000 + Math.random() * 9000)}`);
   const [notes, setNotes] = useState('');
 
-  // Small-load single-weight mode keeps the review pending until the operator
-  // confirms the grade, deduction, and payout details.
-  const [weighingMode, setWeighingMode] = useState<ScaleWeighingMode>(
-    scaleService.isCurrentScaleSingleWeight() ? 'SINGLE_WEIGHT' : 'VEHICLE_IN_OUT',
-  );
-  const [singleCapture, setSingleCapture] = useState<SingleCapture | null>(null);
+  const singleCapture = activeTicket?.pendingPlatformCapture ?? null;
+  const selectedWeighingType: WeighingType | null = singleCapture ? 'PLATFORM'
+    : activeTicket?.scaleGrossInWeight != null ? 'VEHICLE_IN_OUT'
+    : activeTicket?.selectedWeighingType ?? null;
+  const weighingMode: ScaleWeighingMode | null = selectedWeighingType === 'PLATFORM' ? 'SINGLE_WEIGHT'
+    : selectedWeighingType === 'VEHICLE_IN_OUT' ? 'VEHICLE_IN_OUT' : null;
   const [singleTareMode, setSingleTareMode] = useState<SingleTareMode>('NONE');
   const [singleManualTare, setSingleManualTare] = useState('');
   const [singleManualWeight, setSingleManualWeight] = useState('');
-  const [pendingSingleDiscard, setPendingSingleDiscard] = useState(false);
 
   useEffect(() => {
     const unsub = scaleService.subscribe((s) => {
@@ -148,12 +157,25 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
   const activeScale = scales.find((s) => s.id === currentScaleId) ?? null;
   const accent = scaleAccent(activeScale?.accentColor);
   const activeScaleIsSmall = activeScale?.weighingMode === 'SINGLE_WEIGHT';
+  const supportedTypes = activeScale?.supportedWeighingTypes ?? (activeScale ? [activeScaleIsSmall ? 'PLATFORM' : 'VEHICLE_IN_OUT'] : ['PLATFORM', 'VEHICLE_IN_OUT']);
+  const modeCompatible = selectedWeighingType !== null && supportedTypes.includes(selectedWeighingType);
 
-  useEffect(() => {
-    if (!singleCapture) {
-      setWeighingMode(activeScaleIsSmall ? 'SINGLE_WEIGHT' : 'VEHICLE_IN_OUT');
+  const canEdit = () => {
+    if (busyRef.current) return false;
+    const latest = storageService.getTickets().find((ticket) => ticket.id === activeTicket?.id);
+    if (remoteConflict || !latest || latest.status !== 'PENDING' || JSON.stringify(latest) !== JSON.stringify(activeTicket)) {
+      setRemoteConflict(true);
+      toast.error('This ticket changed or closed on another workstation. Review it before continuing.');
+      return false;
     }
-  }, [activeScaleIsSmall, singleCapture]);
+    return true;
+  };
+
+  const selectWeighingType = async (type: WeighingType) => {
+    if (!activeTicket || !canEdit() || singleCapture || activeTicket.scaleGrossInWeight != null) return;
+    if (type === 'SPLIT_GROUPS' || !supportedTypes.includes(type)) return;
+    await persist({ ...activeTicket, selectedWeighingType: type });
+  };
 
   const applyScaleSwitch = (id: string | null) => {
     const next = scales.find((s) => s.id === id);
@@ -195,12 +217,12 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
         e.preventDefault();
         cycleActiveScale();
       } else if (key === 'i') {
-        if (weighState === 'AWAITING_IN') {
+        if (weighingMode === 'VEHICLE_IN_OUT' && weighState === 'AWAITING_IN') {
           e.preventDefault();
           handleLogIn();
         }
       } else if (key === 'o') {
-        if (weighState === 'AWAITING_OUT') {
+        if (weighingMode === 'VEHICLE_IN_OUT' && weighState === 'AWAITING_OUT') {
           e.preventDefault();
           handleLogOut();
         }
@@ -244,21 +266,19 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
           .getTickets()
           .find((t) => t.id === activeTicketId && t.ticketType === 'SCRAP_METAL');
         const stillOpen = latest?.status === 'PENDING';
-        if (!stillOpen) {
-          setActiveTicket(null);
-          onActiveTicketChange(null);
-          toast.info(
-            latest?.status === 'VOIDED'
-              ? `Intake #${activeTicketId} was voided on another workstation`
-              : `Intake #${activeTicketId} was completed on another workstation`
-          );
+        if (!stillOpen || (activeTicket && JSON.stringify(latest) !== JSON.stringify(activeTicket))) {
+          setRemoteConflict(true);
+          setAutoCapture(false);
+          toast.warning(`Intake #${activeTicketId} changed or closed on another workstation`, {
+            description: 'Your current review is preserved. Further writes are blocked; return to the queue to review the current ticket.',
+          });
         }
       }
     };
     window.addEventListener('mahaffeys:remote-sync', onRemoteSync);
     return () => window.removeEventListener('mahaffeys:remote-sync', onRemoteSync);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTicketId]);
+  }, [activeTicketId, activeTicket]);
 
   const syncEditorState = (ticket: Ticket) => {
     setPayoutMethod(ticket.payoutMethod === 'Check' ? 'Check' : 'Cash');
@@ -267,24 +287,48 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
   };
 
   useEffect(() => {
-    if (activeTicketId) {
-      const found = storageService
-        .getTickets()
-        .find((t) => t.id === activeTicketId && t.ticketType === 'SCRAP_METAL' && t.status === 'PENDING');
-      if (found) {
-        setActiveTicket(found);
-        syncEditorState(found);
-        return;
-      }
-    }
+    setRemoteConflict(false);
+    setSingleTareMode('NONE');
+    setSingleManualTare('');
+    setSingleManualWeight('');
+    setDeductionPercent(0);
+    setDeductionReason('');
+    setManualWeight('');
+    setReviewConfirmed(false);
     setActiveTicket(null);
+    let mounted = true;
+    if (activeTicketId) {
+      setSaveState('PENDING');
+      scrapBuyingService.adopt(activeTicketId).then((ticket) => {
+        if (!mounted) return;
+        if (ticket.buying?.stage !== 'DRAFT') { setSaveState('ERROR'); setSaveError('This ticket is no longer a draft. Review it in the payment queue.'); return; }
+        setActiveTicket(ticket); syncEditorState(ticket); setSaveState('SAVED'); setSaveError('');
+      }).catch((error) => { if (mounted) { setSaveState('ERROR'); setSaveError(error instanceof Error ? error.message : 'Unable to resume draft'); } });
+    } else setSaveState('SAVED');
+    return () => { mounted = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTicketId]);
 
-  const persist = (ticket: Ticket): Ticket => {
-    storageService.saveTicket(ticket);
+  useEffect(() => {
     refreshQueue();
-    return ticket;
+    if (activeTicket && serverQueue.data) {
+      const latest = serverQueue.data.tickets.find((ticket) => ticket.id === activeTicket.id);
+      if (latest && latest.buying?.revision !== activeTicket.buying?.revision && !busyRef.current) setRemoteConflict(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [serverQueue.data]);
+
+  const persist = async (ticket: Ticket): Promise<Ticket | null> => {
+    if (busyRef.current) return null;
+    busyRef.current = true; setSaveState('PENDING'); setSaveError('');
+    try {
+      const saved = await scrapBuyingService.save(ticket);
+      setActiveTicket(saved); refreshQueue(); setSaveState('SAVED'); setReviewConfirmed(false);
+      return saved;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Server did not confirm the update';
+      setSaveState('ERROR'); setSaveError(message); toast.error(message); return null;
+    } finally { busyRef.current = false; }
   };
 
   // After a confirmed void: clear the desk if it was the active transaction,
@@ -300,10 +344,31 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
     refreshQueue();
   };
 
-  const currentLbs = scale.unit === 'KG'
-    ? Math.round(scale.grossWeight * 2.20462)
-    : Math.round(scale.grossWeight);
+  const currentLbs = Number.isFinite(scale.grossWeight) && scale.grossWeight >= 0 && scale.grossWeight <= 1000000000
+    ? normalizeWeight(scale.grossWeight, scale.unit) : 0;
   const selectedMetal = metals.find((m) => m.id === selectedMetalId);
+  const nextLoadNumber = Math.max(0, ...(activeTicket?.scrapLines ?? []).map((line) => line.loadNumber ?? 0),
+    ...(activeTicket?.weighingCorrections ?? []).map((correction) => correction.originalLine?.loadNumber ?? 0)) + 1;
+  const makeCapture = (lbs: number, isManual: boolean): WeightCapture => ({
+    id: crypto.randomUUID(), scaleId: currentScaleId,
+    originalWeight: isManual ? lbs : scale.grossWeight,
+    originalUnit: isManual ? 'LBS' : scale.unit, normalizedLbs: lbs,
+    actorId: authService.getCurrentUser()?.id ?? 'legacy-unverified',
+    capturedAt: new Date().toISOString(), stable: !isManual && scale.isStable,
+    source: isManual ? 'MANUAL' : 'SCALE',
+  });
+  const validateCapture = (lbs: number) => {
+    try {
+      if (!canEdit() || !modeCompatible) return false;
+      if (lbs <= 0) throw new Error('Weight must be greater than zero');
+      validateScaleReading(lbs, activeScale?.capacityLbs, activeScale?.resolutionLbs);
+      if (normalizeWeight(lbs, 'LBS') !== lbs) throw new Error('Manual weights support at most six decimal places');
+      return true;
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Invalid weight');
+      return false;
+    }
+  };
 
   // ---- Weighing state machine -------------------------------------------------
   const weighState: WeighState | null = !activeTicket
@@ -314,22 +379,20 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
         ? 'AWAITING_OUT'
         : 'AWAITING_IN';
 
-  const singleCapturedNet = singleCapture
-    ? Math.max(0, singleCapture.capturedLbs - singleCapture.tareLbs)
-    : 0;
-  const selectedSingleBreakdown = selectedMetal
-    ? computeWeightBreakdown(singleCapture?.capturedLbs ?? 0, singleCapture?.tareLbs ?? 0, deductionPercent, selectedMetal)
-    : null;
+  const previewBreakdown = (gross: number, tare: number) => {
+    if (!selectedMetal) return null;
+    try { return computeWeightBreakdown(gross, tare, deductionPercent, selectedMetal); }
+    catch { return null; }
+  };
+  const selectedSingleBreakdown = singleCapture ? previewBreakdown(singleCapture.capturedLbs, singleCapture.tareLbs) : null;
+  const singleCapturedNet = selectedSingleBreakdown?.netWeight ?? 0;
 
-  const recordTransaction = (ticket: Ticket, type: WeightTransaction['type'], weightLbs: number): WeightTransaction[] => [
+  const recordTransaction = (ticket: Ticket, type: WeightTransaction['type'], capture: WeightCapture): WeightTransaction[] => [
     ...(ticket.weightTransactions || []),
     {
-      id: `wt-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-      type,
-      weightLbs,
-      recordedAt: new Date().toISOString(),
-      operatorName: storageService.getSettings().operatorName,
-      // Audit stamp — which platform captured this reading.
+      id: capture.id, type, weightLbs: capture.normalizedLbs,
+      recordedAt: capture.capturedAt,
+      operatorName: authService.getCurrentUser()?.fullName ?? storageService.getSettings().operatorName, capture,
       scaleName: scaleService.getCurrentScale()?.name,
     },
   ];
@@ -346,29 +409,28 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
     return true;
   };
 
-  const commitInWeight = (lbs: number) => {
-    if (!activeTicket) return;
+  const commitInWeight = async (lbs: number, capture = makeCapture(lbs, false)) => {
+    if (!activeTicket || weighingMode !== 'VEHICLE_IN_OUT' || !validateCapture(lbs)) return;
     if (activeTicket.scaleGrossInWeight != null) {
       toast.error('This intake already has an IN weight logged');
       return;
     }
-    const now = new Date().toISOString();
     const next: Ticket = {
       ...activeTicket,
       scaleGrossInWeight: lbs,
-      scaleGrossInAt: now,
+      scaleGrossInAt: capture.capturedAt,
       scaleTareOutWeight: undefined,
       scaleTareOutAt: undefined,
-      weightTransactions: recordTransaction(activeTicket, 'SCALE_IN', lbs),
+      weightTransactions: recordTransaction(activeTicket, 'SCALE_IN', capture),
     };
-    setActiveTicket(persist(next));
+    if (!await persist(next)) return;
     toast.success(`IN weight logged: ${fmtLbs(lbs)} LBS`, {
       description: `${activeTicket.customerName} is on the yard. Pick the metal grade below, then log the OUT weight after the load dumps.`,
     });
   };
 
-  const commitOutWeight = (lbs: number) => {
-    if (!activeTicket) return;
+  const commitOutWeight = async (lbs: number, capture = makeCapture(lbs, false)) => {
+    if (!activeTicket || weighingMode !== 'VEHICLE_IN_OUT' || weighState !== 'AWAITING_OUT' || !validateCapture(lbs)) return;
     const grossIn = activeTicket.scaleGrossInWeight ?? 0;
     const net = grossIn - lbs;
     if (net <= 0) {
@@ -377,14 +439,13 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
       });
       return;
     }
-    const now = new Date().toISOString();
     const next: Ticket = {
       ...activeTicket,
       scaleTareOutWeight: lbs,
-      scaleTareOutAt: now,
-      weightTransactions: recordTransaction(activeTicket, 'SCALE_OUT', lbs),
+      scaleTareOutAt: capture.capturedAt,
+      weightTransactions: recordTransaction(activeTicket, 'SCALE_OUT', capture),
     };
-    setActiveTicket(persist(next));
+    if (!await persist(next)) return;
     toast.success(`OUT weight logged: ${fmtLbs(lbs)} LBS`, {
       description: `Net scrap weight: ${fmtLbs(net)} LBS — review the grade and add the load to the ticket.`,
     });
@@ -393,7 +454,7 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
   const handleLogIn = () => {
     if (!assertScaleReady()) return;
     if (!scale.isStable) {
-      setPendingUnstable({ direction: 'IN', lbs: currentLbs });
+      setPendingUnstable({ direction: 'IN', lbs: currentLbs, capture: makeCapture(currentLbs, false) });
       return;
     }
     commitInWeight(currentLbs);
@@ -402,7 +463,7 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
   const handleLogOut = () => {
     if (!assertScaleReady()) return;
     if (!scale.isStable) {
-      setPendingUnstable({ direction: 'OUT', lbs: currentLbs });
+      setPendingUnstable({ direction: 'OUT', lbs: currentLbs, capture: makeCapture(currentLbs, false) });
       return;
     }
     commitOutWeight(currentLbs);
@@ -410,7 +471,7 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
 
   // Manual fallback for when the live scale is offline or mis-reading.
   const parseManualWeight = (): number | null => {
-    const lbs = Math.round(parseFloat(manualWeight));
+    const lbs = Number(manualWeight);
     if (!Number.isFinite(lbs) || lbs <= 0) {
       toast.error('Enter a weight in pounds greater than zero');
       return null;
@@ -421,36 +482,33 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
   const handleManualLogIn = () => {
     const lbs = parseManualWeight();
     if (lbs === null) return;
-    commitInWeight(lbs);
+    commitInWeight(lbs, makeCapture(lbs, true));
     setManualWeight('');
   };
 
   const handleManualLogOut = () => {
     const lbs = parseManualWeight();
     if (lbs === null) return;
-    commitOutWeight(lbs);
+    commitOutWeight(lbs, makeCapture(lbs, true));
     setManualWeight('');
   };
 
   const handleDiscardWeighing = () => {
-    if (!activeTicket) return;
-    const next: Ticket = {
-      ...activeTicket,
-      scaleGrossInWeight: undefined,
-      scaleGrossInAt: undefined,
-      scaleTareOutWeight: undefined,
-      scaleTareOutAt: undefined,
-    };
-    setActiveTicket(persist(next));
-    setDeductionPercent(0);
-    toast.info('Open weighing cleared');
+    setCorrectionReason('');
+    setCorrectionTarget({ action: 'TRUCK' });
   };
 
   // ---- Auto-capture engine -----------------------------------------------------
   // Watches the live poll: once a reading holds stable (and above the floor)
   // for the settle window, it commits itself as the armed IN/OUT weight.
   useEffect(() => {
-    if (!autoCapture || !activeTicket) return;
+    if (!autoCapture || !activeTicket || remoteConflict || weighingMode !== 'VEHICLE_IN_OUT' || !modeCompatible) return;
+    const context = `${activeTicket.id}:${weighingMode}:${currentScaleId}:${weighState}`;
+    if (autoCaptureContextRef.current !== context) {
+      setAutoCapture(false);
+      stableSinceRef.current = null;
+      return;
+    }
     if (!scale.connected || !scale.isStable || currentLbs <= AUTO_CAPTURE_MIN_LBS) {
       stableSinceRef.current = null;
       return;
@@ -480,94 +538,95 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
       commitOutWeight(currentLbs);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scale, currentLbs, autoCapture, activeTicket, weighState]);
+  }, [scale, currentLbs, autoCapture, activeTicket, weighState, weighingMode, currentScaleId, remoteConflict, modeCompatible]);
 
-  // Any transition (ticket switch, step change, cleared weighing) disarms.
+  // Context changes must disarm and discard any unconfirmed hardware prompt.
   useEffect(() => {
     setAutoCapture(false);
     stableSinceRef.current = null;
-  }, [activeTicket?.id, weighState]);
+    autoCaptureContextRef.current = null;
+    setPendingUnstable(null);
+    setCorrectionTarget(null);
+  }, [activeTicket?.id, weighState, currentScaleId, weighingMode]);
 
   // ---- Grade commit -----------------------------------------------------------
-  const pendingNet = activeTicket && weighState === 'PENDING_GRADE'
-    ? Math.max(0, (activeTicket.scaleGrossInWeight ?? 0) - (activeTicket.scaleTareOutWeight ?? 0))
-    : 0;
-  const pendingDeductionLbs = Math.round(pendingNet * (deductionPercent / 100) * 10) / 10;
-  const pendingBillable = Math.max(0, Math.round((pendingNet - pendingDeductionLbs) * 10) / 10);
-  const pendingTotal = selectedMetal ? Math.round(pendingBillable * selectedMetal.ratePerLb * 100) / 100 : 0;
+  const pendingBreakdown = activeTicket && weighState === 'PENDING_GRADE'
+    ? previewBreakdown(activeTicket.scaleGrossInWeight ?? 0, activeTicket.scaleTareOutWeight ?? 0) : null;
+  const pendingNet = pendingBreakdown?.netWeight ?? 0;
+  const pendingDeductionLbs = pendingBreakdown?.deductionLbs ?? 0;
+  const pendingBillable = pendingBreakdown?.billableWeight ?? 0;
+  const pendingTotal = pendingBreakdown?.lineTotal ?? 0;
+  const deductionReady = deductionPercent === 0 || deductionReason.trim().length > 0;
 
-  const handleCommitLoad = () => {
-    if (!activeTicket || weighState !== 'PENDING_GRADE') return;
-    const metal = metals.find((m) => m.id === selectedMetalId);
-    if (!metal) {
-      toast.error('Select a metal grade for this load');
+  const handleCommitLoad = async () => {
+    if (!activeTicket || !canEdit() || weighState !== 'PENDING_GRADE') return;
+    if (!selectedMetal || !pendingBreakdown || !deductionReady) {
+      toast.error('Review valid weights, grade and a reason for any deduction');
       return;
     }
-    if (deductionPercent < 0 || deductionPercent > 100) {
-      toast.error('Deduction must be between 0 and 100 percent');
+    const latestRate = storageService.getMetals().find((metal) => metal.id === selectedMetalId)?.ratePerLb;
+    if (latestRate !== selectedMetal.ratePerLb) {
+      toast.error('Buying rate changed. Reload this workstation and review the current rate before confirming.');
       return;
     }
-
-    const gross = activeTicket.scaleGrossInWeight ?? 0;
-    const tare = activeTicket.scaleTareOutWeight ?? 0;
-    const net = Math.max(0, gross - tare);
-    const deductionLbs = Math.round(net * (deductionPercent / 100) * 10) / 10;
-    const billableWeight = Math.max(0, Math.round((net - deductionLbs) * 10) / 10);
-    const lineTotal = Math.round(billableWeight * metal.ratePerLb * 100) / 100;
     const lines = activeTicket.scrapLines || [];
-
-    const newLine: ScrapTicketLine = {
-      id: `line-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-      loadNumber: lines.length + 1,
-      capturedAt: new Date().toISOString(),
-      metalGradeId: metal.id,
-      metalName: metal.name,
-      metalCategory: metal.category,
-      grossWeight: gross,
-      tareWeight: tare,
-      netWeight: net,
-      deductionPercent,
-      deductionLbs,
-      billableWeight,
-      ratePerLb: metal.ratePerLb,
-      lineTotal,
-    };
-
+    const newLine = buildScrapTicketLine(pendingBreakdown, selectedMetal, nextLoadNumber, 'VEHICLE_IN_OUT');
+    newLine.sourceCaptureIds = (activeTicket.weightTransactions ?? []).filter((tx) =>
+      (tx.type === 'SCALE_IN' && tx.recordedAt === activeTicket.scaleGrossInAt) ||
+      (tx.type === 'SCALE_OUT' && tx.recordedAt === activeTicket.scaleTareOutAt)).map((tx) => tx.id);
+    if (lines.some((line) => line.sourceCaptureIds?.some((id) => newLine.sourceCaptureIds?.includes(id)))) {
+      toast.error('An IN/OUT capture has already been used in a payable line');
+      return;
+    }
+    newLine.deductionReason = deductionPercent > 0 ? deductionReason.trim() : undefined;
     const next: Ticket = {
       ...activeTicket,
       scrapLines: [...lines, newLine],
-      scaleGrossInWeight: undefined,
-      scaleGrossInAt: undefined,
-      scaleTareOutWeight: undefined,
-      scaleTareOutAt: undefined,
+      scaleGrossInWeight: undefined, scaleGrossInAt: undefined,
+      scaleTareOutWeight: undefined, scaleTareOutAt: undefined,
     };
-    setActiveTicket(persist(next));
+    if (!await persist(next)) return;
     setDeductionPercent(0);
-    toast.success(`Load ${newLine.loadNumber}: ${fmtLbs(billableWeight)} LBS of ${metal.name} added`);
+    setDeductionReason('');
+    toast.success(`Load ${newLine.loadNumber} added — add another load or review the ticket`);
   };
 
   // ---- Single-weight (small-load) capture --------------------------------------
-  const scaleTareLbs = scale.unit === 'KG' ? Math.round(scale.tareWeight * 2.20462) : Math.round(scale.tareWeight);
+  const scaleTareLbs = Number.isFinite(scale.tareWeight) && scale.tareWeight >= 0 && scale.tareWeight <= 1000000000
+    ? normalizeWeight(scale.tareWeight, scale.unit) : NaN;
   const resolveSingleTare = (): number | null => {
     if (singleTareMode === 'NONE') return 0;
-    if (singleTareMode === 'SCALE_TARE') return scaleTareLbs;
-    const lbs = Math.round(parseFloat(singleManualTare));
-    if (!Number.isFinite(lbs) || lbs < 0) {
+    if (singleTareMode === 'SCALE_TARE') {
+      if (!scale.connected || !Number.isFinite(scaleTareLbs)) {
+        toast.error('Scale-applied tare requires a connected scale with a valid tare');
+        return null;
+      }
+      return scaleTareLbs;
+    }
+    const lbs = Number(singleManualTare);
+    if (!singleManualTare.trim() || !Number.isFinite(lbs) || lbs < 0) {
       toast.error('Enter a valid tare weight in pounds');
       return null;
     }
     return lbs;
   };
 
-  const captureSingle = (lbs: number, isManual: boolean) => {
+  const captureSingle = async (lbs: number, isManual: boolean, capture = makeCapture(lbs, isManual)) => {
+    if (!activeTicket || weighingMode !== 'SINGLE_WEIGHT' || singleCapture || !validateCapture(lbs)) return;
     const tareLbs = resolveSingleTare();
     if (tareLbs === null) return;
     if (tareLbs > lbs) {
-      toast.error('Tare exceeds the captured weight', { description: `Tare (${fmtLbs(tareLbs)} LBS) is greater than the reading (${fmtLbs(lbs)} LBS).` });
+      toast.error('Tare exceeds the captured gross weight');
       return;
     }
-    setSingleCapture({ capturedLbs: lbs, tareLbs, isManual });
-    toast.success(`Captured ${fmtLbs(lbs)} LBS${isManual ? ' (manual)' : ''} — review the load details below`);
+    if (!isManual && scaleTareLbs > 0 && singleTareMode !== 'SCALE_TARE') {
+      toast.error('Scale tare is active. Select scale-applied tare or clear it before capture.');
+      return;
+    }
+    const draft = { capturedLbs: lbs, tareLbs, tareTreatment: singleTareMode, isManual, capture };
+    if (!await persist({ ...activeTicket, pendingPlatformCapture: draft,
+      weightTransactions: recordTransaction(activeTicket, 'SINGLE_WEIGHT', capture) })) return;
+    toast.success(`Captured ${fmtLbs(lbs)} LBS${isManual ? ' (manual)' : ''} — review this batch`);
   };
 
   const handleSingleCapture = () => {
@@ -580,14 +639,14 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
       return;
     }
     if (!scale.isStable) {
-      setPendingUnstable({ direction: 'SINGLE', lbs: currentLbs });
+      setPendingUnstable({ direction: 'SINGLE', lbs: currentLbs, capture: makeCapture(currentLbs, false) });
       return;
     }
     captureSingle(currentLbs, false);
   };
 
   const handleSingleManualCapture = () => {
-    const lbs = Math.round(parseFloat(singleManualWeight));
+    const lbs = Number(singleManualWeight);
     if (!Number.isFinite(lbs) || lbs <= 0) {
       toast.error('Enter a weight in pounds greater than zero');
       return;
@@ -595,51 +654,71 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
     captureSingle(lbs, true);
   };
 
-  const handleCommitSingleLoad = () => {
-    if (!activeTicket || !singleCapture || !selectedMetal) return;
-    const breakdown = computeWeightBreakdown(singleCapture.capturedLbs, singleCapture.tareLbs, deductionPercent, selectedMetal);
+  const handleCommitSingleLoad = async () => {
+    if (!activeTicket || !canEdit() || !singleCapture || !selectedMetal) return;
+    if (!selectedSingleBreakdown || !deductionReady) {
+      toast.error('Review valid weights and a reason for any deduction');
+      return;
+    }
+    if (storageService.getMetals().find((metal) => metal.id === selectedMetalId)?.ratePerLb !== selectedMetal.ratePerLb) {
+      toast.error('Buying rate changed. Reload this workstation and review the current rate before confirming.');
+      return;
+    }
     const lines = activeTicket.scrapLines || [];
-    const newLine = buildScrapTicketLine(breakdown, selectedMetal, lines.length + 1, 'SINGLE_WEIGHT');
-    const next: Ticket = {
-      ...activeTicket,
-      scrapLines: [...lines, newLine],
-      weightTransactions: [...(activeTicket.weightTransactions || []), {
-        id: `wt-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-        type: 'SINGLE_WEIGHT',
-        weightLbs: singleCapture.capturedLbs,
-        recordedAt: new Date().toISOString(),
-        operatorName: storageService.getSettings().operatorName,
-        scaleName: scaleService.getCurrentScale()?.name,
-      }],
-    };
-    setActiveTicket(persist(next));
-    setSingleCapture(null);
+    if (lines.some((line) => line.sourceCaptureIds?.includes(singleCapture.capture.id))) {
+      toast.error('This capture has already been added to a payable line');
+      return;
+    }
+    const newLine = buildScrapTicketLine(selectedSingleBreakdown, selectedMetal, nextLoadNumber, 'SINGLE_WEIGHT');
+    newLine.sourceCaptureIds = [singleCapture.capture.id];
+    newLine.tareTreatment = singleCapture.tareTreatment;
+    newLine.deductionReason = deductionPercent > 0 ? deductionReason.trim() : undefined;
+    if (!await persist({ ...activeTicket, scrapLines: [...lines, newLine], pendingPlatformCapture: undefined })) return;
     setSingleTareMode('NONE');
     setSingleManualTare('');
     setSingleManualWeight('');
     setDeductionPercent(0);
-    toast.success(`Small load ${newLine.loadNumber}: ${fmtLbs(breakdown.billableWeight)} LBS of ${selectedMetal.name} added`);
+    setDeductionReason('');
+    toast.success(`Batch ${newLine.loadNumber} added — add another weight or review the ticket`);
   };
 
   const handleDiscardSingleCapture = () => {
-    setSingleCapture(null);
-    setSingleTareMode('NONE');
-    setSingleManualTare('');
-    setSingleManualWeight('');
-    toast.info('Small-load capture discarded');
+    setCorrectionReason('');
+    setCorrectionTarget({ action: 'PLATFORM' });
   };
 
   const handleRemoveLine = (id: string) => {
-    if (!activeTicket) return;
-    const lines = (activeTicket.scrapLines || [])
-      .filter((l) => l.id !== id)
-      .map((l, index) => ({ ...l, loadNumber: index + 1 }));
-    setActiveTicket(persist({ ...activeTicket, scrapLines: lines }));
+    setCorrectionReason('');
+    setCorrectionTarget({ action: 'LINE', lineId: id });
+  };
+
+  const confirmCorrection = async () => {
+    if (!activeTicket || !canEdit() || !correctionTarget || !correctionReason.trim()) return;
+    const originalLine = activeTicket.scrapLines?.find((line) => line.id === correctionTarget.lineId);
+    const truckIds = (activeTicket.weightTransactions ?? []).filter((tx) =>
+      tx.recordedAt === activeTicket.scaleGrossInAt || tx.recordedAt === activeTicket.scaleTareOutAt).map((tx) => tx.id);
+    const next: Ticket = { ...activeTicket, weighingCorrections: [...(activeTicket.weighingCorrections ?? []), {
+      id: crypto.randomUUID(), at: new Date().toISOString(), actor: storageService.getSettings().operatorName,
+      reason: correctionReason.trim(), action: originalLine ? 'REMOVE_LINE' : 'CANCEL_WEIGHING',
+      sourceCaptureIds: originalLine?.sourceCaptureIds ?? (correctionTarget.action === 'PLATFORM' && singleCapture ? [singleCapture.capture.id] : truckIds),
+      originalLine, originalGrossLbs: correctionTarget.action === 'PLATFORM' ? singleCapture?.capturedLbs : activeTicket.scaleGrossInWeight,
+      originalTareLbs: correctionTarget.action === 'PLATFORM' ? singleCapture?.tareLbs : activeTicket.scaleTareOutWeight,
+    }] };
+    if (correctionTarget.action === 'LINE') next.scrapLines = (activeTicket.scrapLines ?? []).filter((line) => line.id !== correctionTarget.lineId);
+    else if (correctionTarget.action === 'PLATFORM') next.pendingPlatformCapture = undefined;
+    else { next.scaleGrossInWeight = undefined; next.scaleGrossInAt = undefined; next.scaleTareOutWeight = undefined; next.scaleTareOutAt = undefined; }
+    if (!await persist(next)) return;
+    setCorrectionTarget(null);
+    setSingleTareMode('NONE'); setSingleManualTare(''); setSingleManualWeight('');
+    setDeductionPercent(0); setDeductionReason('');
+    toast.info('Correction recorded; original readings retained');
   };
 
   // ---- Queue ------------------------------------------------------------------
   const handleSwitch = (ticket: Ticket) => {
+    if (ticket.id === activeTicket?.id) return;
     setActiveTicket(ticket);
+    setRemoteConflict(false);
     syncEditorState(ticket);
     onActiveTicketChange(ticket.id);
     toast.success(`Switched to intake #${ticket.id}`, {
@@ -653,6 +732,9 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
   };
 
   const queueStatus = (t: Ticket): { label: string; badge: React.ReactNode } => {
+    if (t.pendingPlatformCapture || (t.scaleGrossInWeight == null && (t.scrapLines?.length ?? 0) > 0)) {
+      return { label: t.pendingPlatformCapture ? 'REVIEW PLATFORM BATCH' : 'REVIEW TICKET / ADD LOAD', badge: <Badge className="border border-teal-500/50 bg-teal-950 text-[9px] text-teal-200">{t.pendingPlatformCapture ? 'REVIEW BATCH' : 'REVIEW TICKET'}</Badge> };
+    }
     if (t.scaleGrossInWeight != null && t.scaleTareOutWeight != null) {
       return {
         label: 'PENDING GRADE',
@@ -710,54 +792,32 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
     }
   }, [exceedsCashLimit, payoutMethod]);
 
-  const handleNotesBlur = () => {
-    if (!activeTicket) return;
+  const handleNotesBlur = async () => {
+    if (!activeTicket || !canEdit()) return;
     const trimmed = notes.trim();
     if (trimmed !== (activeTicket.notes || '')) {
-      setActiveTicket(persist({ ...activeTicket, notes: trimmed || activeTicket.notes }));
+      await persist({ ...activeTicket, notes: trimmed || activeTicket.notes });
     }
   };
 
-  const handleComplete = () => {
-    if (!activeTicket) return;
-    if (lines.length === 0) {
-      toast.error('Weigh at least one load before completing this ticket');
-      return;
+  const handleComplete = async () => {
+    if (!activeTicket || !canEdit() || busyRef.current) return;
+    if (!reviewConfirmed || singleCapture || activeTicket.scaleGrossInWeight != null || lines.length === 0) {
+      toast.error('Complete every cycle and explicitly confirm final seller/material review first'); return;
     }
-    if (activeTicket.scaleGrossInWeight != null) {
-      toast.error('An open weighing is in progress', {
-        description: 'Finish or clear the IN/OUT weighing before completing the ticket.',
-      });
-      return;
-    }
-    if (payoutMethod === 'Cash' && exceedsCashLimit) {
-      toast.error(`Cash payouts are capped at $${maxCashLimit.toFixed(2)} by law — issue a Check.`);
-      return;
-    }
-    if (payoutMethod === 'Check' && !checkNumber.trim()) {
-      toast.error('Enter a check number before completing the ticket');
-      return;
-    }
-
-    const completed: Ticket = {
-      ...activeTicket,
-      status: 'COMPLETED',
-      scrapLines: lines,
-      grossTotal: Math.round(totalPayout * 100) / 100,
-      totalDeductions: 0,
-      finalPayout: Math.round(totalPayout * 100) / 100,
-      payoutMethod,
-      checkNumber: payoutMethod === 'Check' ? checkNumber.trim() : undefined,
-      operatorName: storageService.getSettings().operatorName,
-      notes: notes.trim() || activeTicket.notes,
-    };
-
-    persist(completed);
-    toast.success(`Ticket #${completed.id} completed — voucher issued`);
-    setActiveTicket(null);
-    onActiveTicketChange(null);
-    setNotes('');
-    onTicketCreated(completed);
+    if (notes.trim() !== (activeTicket.notes ?? '').trim() && !await persist({...activeTicket,notes:notes.trim()})) return;
+    busyRef.current = true; setSaveState('PENDING'); setSaveError('');
+    try {
+      const current = storageService.getTickets().find((ticket) => ticket.id === activeTicket.id) ?? activeTicket;
+      const completed = await scrapBuyingService.finalize(current);
+      setSaveState('SAVED'); refreshQueue();
+      toast.success(`Ticket #${completed.id} finalized — UNPAID voucher. Payment is a separate manager action.`);
+      setActiveTicket(null); onActiveTicketChange(null); setNotes(''); onTicketCreated(completed);
+      void serverQueue.refetch();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Finalization was not confirmed';
+      setSaveState('ERROR'); setSaveError(message); toast.error(message);
+    } finally { busyRef.current = false; }
   };
 
   const compliance = calculateComplianceScore(activeTicket?.complianceCaptures, 'SCRAP_METAL');
@@ -804,12 +864,23 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
     </div>
   );
 
+  const deductionReasonField = deductionPercent > 0 ? (
+    <div className="space-y-1">
+      <Label htmlFor={`deduction-reason-${weighingMode}`} className="text-xs text-amber-200">Deduction reason (required)</Label>
+      <Input id={`deduction-reason-${weighingMode}`} value={deductionReason} onChange={(event) => setDeductionReason(event.target.value)} placeholder="e.g. visible dirt or non-metal contamination" className="h-11 rounded-xl border-amber-500/50 bg-slate-950 text-white" />
+    </div>
+  ) : null;
+
   // Hands-free capture arm — used in both the IN and OUT steps.
   const autoCaptureToggle = (
     <button
       type="button"
-      onClick={() => setAutoCapture((v) => !v)}
-      disabled={!scale.connected}
+      onClick={() => {
+        autoCaptureContextRef.current = autoCapture ? null : `${activeTicket?.id}:${weighingMode}:${currentScaleId}:${weighState}`;
+        stableSinceRef.current = null;
+        setAutoCapture(!autoCapture);
+      }}
+      disabled={!scale.connected || !modeCompatible || remoteConflict}
       className={`flex w-full items-center justify-center gap-2 rounded-xl border px-4 py-2.5 text-xs font-bold transition-all active:scale-[0.99] ${
         autoCapture
           ? 'border-emerald-500 bg-emerald-950/80 text-emerald-300 ring-1 ring-emerald-500/40'
@@ -856,6 +927,9 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
   // ---- Render -----------------------------------------------------------------
   return (
     <div className="mx-auto max-w-6xl space-y-6 pb-24 font-sans sm:pb-12">
+      <div role="status" aria-live="polite" className={`rounded-xl border p-3 text-sm ${saveState === 'ERROR' || serverQueue.isError ? 'border-amber-500 bg-amber-950 text-amber-100' : 'border-emerald-800 bg-emerald-950 text-emerald-100'}`}>
+        {saveState === 'PENDING' ? 'Saving / loading server draft — not yet confirmed' : saveState === 'ERROR' ? `Not confirmed: ${saveError}` : serverQueue.isError ? 'Shared queue refresh failed. Current work remains on this desk.' : 'Server draft acknowledged · payments are separate'}
+      </div>
       {/* Header */}
       <div className="flex flex-col gap-4 rounded-2xl border border-slate-800 bg-slate-900 p-4 shadow-xl sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
@@ -875,7 +949,7 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
               </Badge>
             </div>
             <p className="mt-0.5 text-xs text-slate-400">
-              Log the IN weight when the vehicle drives on, switch transactions freely, then log the OUT weight to net the load.
+              Check in the seller, choose a weighing type, then add as many reviewed batches or load cycles as needed.
             </p>
           </div>
         </div>
@@ -905,14 +979,6 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
               ))}
             </SelectContent>
           </Select>
-          <Button
-            size="sm"
-            variant={weighingMode === 'SINGLE_WEIGHT' ? 'default' : 'outline'}
-            onClick={() => setWeighingMode((mode) => mode === 'SINGLE_WEIGHT' ? 'VEHICLE_IN_OUT' : 'SINGLE_WEIGHT')}
-            className={`h-8 gap-1.5 text-xs font-bold ${weighingMode === 'SINGLE_WEIGHT' ? 'bg-violet-600 text-white hover:bg-violet-500' : 'border-violet-500/50 bg-violet-950/30 text-violet-300 hover:bg-violet-950/60'}`}
-          >
-            <PackageCheck className="h-3.5 w-3.5" /> Small Load — Single Weight
-          </Button>
           <Button
             size="sm"
             onClick={onNewIntake}
@@ -989,6 +1055,8 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
                     </div>
 
                     <div className="space-y-0.5 font-mono text-[11px] text-slate-400">
+                      <div className="text-slate-300">{Math.max(0, Math.floor((Date.now() - Date.parse(ticket.createdAt)) / 60000))} min · {ticket.operatorName || 'Unassigned'}</div>
+                      <div className="text-teal-200">{ticket.pendingPlatformCapture ? 'Platform' : ticket.scaleGrossInWeight != null ? 'Truck IN/OUT' : ticket.selectedWeighingType === 'PLATFORM' ? 'Platform' : ticket.selectedWeighingType === 'VEHICLE_IN_OUT' ? 'Truck IN/OUT' : 'Choose weighing type'} · {status.label}</div>
                       {ticket.customerPhone && (
                         <div>
                           Phone: <span className="font-bold text-emerald-400">{ticket.customerPhone}</span>
@@ -1126,17 +1194,23 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
             </div>
           </div>
 
+          {remoteConflict && <div role="alert" className="rounded-xl border border-amber-500 bg-amber-950 p-4 text-sm text-amber-100">This ticket changed or closed remotely. Your review is preserved, but writes are blocked. Use Save &amp; Switch Transaction to return to the queue.</div>}
+          <WeighingTypeSelector value={selectedWeighingType} scale={activeScale}
+            locked={remoteConflict || singleCapture !== null || activeTicket.scaleGrossInWeight != null} onSelect={selectWeighingType} />
+          {selectedWeighingType && !modeCompatible && <p role="alert" className="rounded-xl border border-amber-500/60 bg-amber-950 p-3 text-sm text-amber-100">Selected mode is incompatible with this scale. Select a compatible scale; existing readings have not been changed.</p>}
+
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
             {/* Left: weighing + lines */}
             <div className="space-y-6 lg:col-span-2">
+              <fieldset disabled={!modeCompatible || remoteConflict || saveState === 'PENDING'} className="min-w-0 space-y-6">
               {weighingMode === 'SINGLE_WEIGHT' && (
                 <Card className="border-violet-500/40 bg-slate-900 text-white shadow-lg">
                   <CardHeader className="flex flex-row items-center justify-between border-b border-violet-500/30 bg-violet-950/20 px-4 py-3">
                     <CardTitle className="flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-violet-200">
-                      <PackageCheck className="h-4 w-4 text-violet-400" /> Small Load — Single Weight
+                      <PackageCheck className="h-4 w-4 text-violet-400" /> Platform Batch #{nextLoadNumber}
                     </CardTitle>
-                    <Badge className={`${activeScaleIsSmall ? 'border-violet-500/50 bg-violet-500/15 text-violet-300' : 'border-amber-500/50 bg-amber-500/15 text-amber-300'} font-mono text-[10px]`}>
-                      {activeScaleIsSmall ? 'CONFIGURED SMALL SCALE' : 'QUICK MODE OVERRIDE'}
+                    <Badge className="border border-emerald-500/50 bg-emerald-950 text-emerald-300 font-mono text-[10px]">
+                      {singleCapture ? 'REVIEW BATCH' : 'ADD ANOTHER WEIGHT'}
                     </Badge>
                   </CardHeader>
                   <CardContent className="space-y-4 p-4">
@@ -1156,14 +1230,15 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
 
                     {!singleCapture ? (
                       <>
+                        {gradeSelector}
                         <div className="space-y-2">
                           <Label className="text-xs font-semibold text-slate-300">Tare for this load</Label>
                           <Select value={singleTareMode} onValueChange={(v) => setSingleTareMode(v as SingleTareMode)}>
                             <SelectTrigger className="h-11 border-slate-800 bg-slate-950 text-xs text-white"><SelectValue /></SelectTrigger>
                             <SelectContent className="border-slate-800 bg-slate-900 text-white">
-                              <SelectItem value="NONE">No tare — reading is final net</SelectItem>
-                              <SelectItem value="SCALE_TARE">Use current scale tare ({fmtLbs(scaleTareLbs)} LBS)</SelectItem>
-                              <SelectItem value="MANUAL">Enter tare manually</SelectItem>
+                              <SelectItem value="NONE">No container tare — gross equals net</SelectItem>
+                              <SelectItem value="SCALE_TARE">Scale-applied tare ({fmtLbs(scaleTareLbs)} LBS) — subtract once from gross</SelectItem>
+                              <SelectItem value="MANUAL">Manual container tare — gross reading required</SelectItem>
                             </SelectContent>
                           </Select>
                           {singleTareMode === 'MANUAL' && (
@@ -1192,18 +1267,21 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
                         </div>
                         {gradeSelector}
                         <div><Label className="text-[11px] text-slate-400">Contamination %</Label><Input type="number" min={0} max={100} value={deductionPercent} onChange={(e) => setDeductionPercent(Math.min(100, Math.max(0, parseFloat(e.target.value) || 0)))} className="mt-1 h-11 border-slate-800 bg-slate-950 font-mono text-base text-red-400" /></div>
+                        {deductionReasonField}
+                        <p className="text-xs text-slate-300">Tare treatment: {singleCapture.tareTreatment === 'NONE' ? 'no container tare' : singleCapture.tareTreatment === 'SCALE_TARE' ? 'scale-applied tare, subtracted once from gross' : 'manual container tare'}. Tare and deduction settings reset for every new batch.</p>
+                        {!selectedSingleBreakdown && <p role="alert" className="text-sm text-amber-200">Invalid weights or rate. Correct this batch before confirming.</p>}
                         <div className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-950 px-4 py-3 font-mono text-xs"><span className="text-slate-400">{fmtLbs(singleCapturedNet)} lb net − {fmtLbs(selectedSingleBreakdown?.deductionLbs)} lb ded = <span className="font-bold text-white">{fmtLbs(selectedSingleBreakdown?.billableWeight)} lb billable</span></span><span className="font-extrabold text-emerald-400">${(selectedSingleBreakdown?.lineTotal || 0).toFixed(2)}</span></div>
-                        <div className="flex gap-2"><Button onClick={handleCommitSingleLoad} className="h-12 flex-1 gap-2 bg-emerald-600 text-sm font-extrabold text-white hover:bg-emerald-500"><PackagePlus className="h-5 w-5" /> Add Small Load to Ticket</Button><Button variant="outline" onClick={handleDiscardSingleCapture} className="h-12 border-slate-700 bg-slate-950 text-xs text-slate-400 hover:text-red-400"><Trash2 className="h-4 w-4" /> Discard</Button></div>
+                        <div className="flex gap-2"><Button onClick={handleCommitSingleLoad} disabled={!selectedSingleBreakdown || !deductionReady} className="h-12 flex-1 gap-2 bg-emerald-600 text-sm font-extrabold text-white hover:bg-emerald-500"><PackagePlus className="h-5 w-5" /> Add Weight · Keep Ticket Open</Button><Button variant="outline" onClick={handleDiscardSingleCapture} className="h-12 border-slate-700 bg-slate-950 text-xs text-slate-400 hover:text-red-400"><Trash2 className="h-4 w-4" /> Cancel</Button></div>
                       </div>
                     )}
                   </CardContent>
                 </Card>
               )}
 
-              <Card className={`${weighingMode === 'SINGLE_WEIGHT' ? 'hidden ' : ''}border-slate-800 bg-slate-900 text-white shadow-lg`}>
+              <Card className={`${weighingMode !== 'VEHICLE_IN_OUT' ? 'hidden ' : ''}border-slate-800 bg-slate-900 text-white shadow-lg`}>
                 <CardHeader className="flex flex-row items-center justify-between border-b border-slate-800 bg-slate-950/60 px-4 py-3">
                   <CardTitle className="flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-slate-300">
-                    <Scale className="h-4 w-4 text-emerald-400" /> Vehicle Weighing
+                    <Scale className="h-4 w-4 text-emerald-400" /> Truck Load Cycle #{nextLoadNumber}
                   </CardTitle>
                   <Badge
                     className={`font-mono text-[10px] ${
@@ -1338,6 +1416,7 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
                       {autoCaptureToggle}
                       <p className="text-center text-[11px] text-slate-400">
                         After the load is dumped, the empty vehicle drives back ON. Net = IN − OUT.
+                        Different grades require separately measured, non-overlapping loads; do not assign this net to multiple grades.
                         <span className="ml-1 whitespace-nowrap rounded border border-slate-700 bg-slate-900 px-1.5 py-0.5 font-mono text-[9px] text-slate-300">Alt+O</span>
                       </p>
                       {manualEntryRow('OUT')}
@@ -1378,6 +1457,8 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
                           className="mt-1 h-11 border-slate-800 bg-slate-950 font-mono text-base text-red-400"
                         />
                       </div>
+                      {deductionReasonField}
+                      {!pendingBreakdown && <p role="alert" className="text-sm text-amber-200">Invalid weights or rate. Correct this weighing before confirming.</p>}
 
                       <div className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-950 px-4 py-2.5 font-mono text-xs">
                         <span className="text-slate-400">
@@ -1390,9 +1471,10 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
                       <div className="flex gap-2">
                         <Button
                           onClick={handleCommitLoad}
+                          disabled={!pendingBreakdown || !deductionReady}
                           className="h-12 flex-1 gap-2 bg-emerald-600 text-sm font-extrabold text-white shadow-md hover:bg-emerald-500"
                         >
-                          <PackagePlus className="h-5 w-5" /> Add Load to Ticket
+                          <PackagePlus className="h-5 w-5" /> Add Load · Keep Ticket Open
                         </Button>
                         <Button
                           variant="outline"
@@ -1407,6 +1489,7 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
                   )}
                 </CardContent>
               </Card>
+              </fieldset>
 
               {/* Lines table */}
               <Card className="overflow-hidden border-slate-800 bg-slate-900 text-white shadow-lg">
@@ -1418,9 +1501,8 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
 
                 <CardContent className="p-0">
                   {lines.length === 0 ? (
-                    <div className="p-8 text-center text-xs text-slate-500">
-                      No loads weighed yet. Log the IN weight when the vehicle arrives, then the OUT weight after it dumps —
-                      the net becomes a weighed load line.
+                    <div className="p-8 text-center text-xs text-slate-300">
+                      No reviewed lines yet. Choose a weighing type, capture a batch or complete a load cycle, then review and add it here. Each separately measured batch or load keeps its own weight and payout.
                     </div>
                   ) : (
                     <Table>
@@ -1444,7 +1526,7 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
                             <TableCell className="font-sans font-semibold text-white">
                               <div className="flex items-center gap-2">
                                 {line.metalName}
-                                {line.weighingMode === 'SINGLE_WEIGHT' && <Badge className="border border-violet-500/40 bg-violet-500/15 text-[9px] text-violet-300">SINGLE</Badge>}
+                                <Badge className="border border-violet-500/40 bg-violet-500/15 text-[9px] text-violet-300">{line.weighingMode === 'SINGLE_WEIGHT' ? 'PLATFORM' : line.weighingMode === 'VEHICLE_IN_OUT' ? 'TRUCK IN/OUT' : 'LEGACY / UNSPECIFIED'}</Badge>
                               </div>
                               <span className="block text-[10px] text-slate-400">{line.metalCategory}</span>
                             </TableCell>
@@ -1454,6 +1536,7 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
                             <TableCell className="text-right text-slate-300">{fmtLbs(line.netWeight)} lb</TableCell>
                             <TableCell className="text-right text-red-400">
                               {line.deductionPercent > 0 ? `−${fmtLbs(line.deductionLbs)} lb (${line.deductionPercent}%)` : '—'}
+                              {line.deductionReason && <span className="block text-[10px] text-slate-300">{line.deductionReason}</span>}
                             </TableCell>
                             <TableCell className="text-right font-bold text-emerald-300">{fmtLbs(line.billableWeight)} lb</TableCell>
                             <TableCell className="text-right text-slate-300">${line.ratePerLb.toFixed(2)}</TableCell>
@@ -1505,6 +1588,7 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
                             </Badge>
                             <span className="font-bold text-white">{fmtLbs(tx.weightLbs)} LBS</span>
                             <span className="text-slate-400">{tx.scaleName || 'Unstamped platform'}</span>
+                            {tx.capture && <span className="text-amber-200">{tx.capture.originalWeight} {tx.capture.originalUnit} · {tx.capture.source === 'MANUAL' ? 'MANUAL' : tx.capture.stable ? 'STABLE' : 'UNSTABLE OVERRIDE'}</span>}
                           </div>
                           <span className="text-slate-500">
                             {tx.operatorName || '—'} ·{' '}
@@ -1519,143 +1603,29 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
                         </div>
                       ))}
                     </div>
-                    <p className="border-t border-slate-800 px-4 py-2 text-[10px] text-slate-500">
-                      Readings are never deleted — clearing or re-weighing keeps every audit row for compliance review.
+                    {(activeTicket.weighingCorrections ?? []).map((correction) => <div key={correction.id} className="border-t border-amber-500/30 px-4 py-3 text-xs text-amber-100"><strong>{correction.action === 'REMOVE_LINE' ? 'Line removed' : 'Weighing cancelled'}</strong> · {correction.reason}<span className="mt-1 block text-slate-300">{correction.actor} · {new Date(correction.at).toLocaleString()} · {correction.sourceCaptureIds.length} linked reading(s)</span></div>)}
+                    <p className="border-t border-slate-800 px-4 py-2 text-[10px] text-slate-300">
+                      This workstation preserves original readings and audited cancellations. Server-enforced immutability and transactional migration remain a release gate.
                     </p>
                   </CardContent>
                 </Card>
               )}
             </div>
 
-            {/* Right: payout */}
-            <div className="space-y-6">
-              <Card className="border-slate-800 bg-slate-900 text-white shadow-xl">
-                <CardHeader className="border-b border-slate-800 bg-slate-950/60 px-4 py-3">
-                  <CardTitle className="flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-slate-300">
-                    <DollarSign className="h-4 w-4 text-emerald-400" /> Payout &amp; Statutory Limits
-                  </CardTitle>
-                </CardHeader>
-
-                <CardContent className="space-y-4 p-4">
-                  <div className="space-y-2 rounded-xl border border-slate-800 bg-slate-950 p-4 font-mono text-xs">
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Receipt #:</span>
-                      <span className="font-bold text-amber-400">{activeTicket.id}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Total Billable:</span>
-                      <span className="font-bold text-white">{fmtLbs(totalBillableWeight)} LBS</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Cash Limit:</span>
-                      <span className="font-bold text-amber-400">
-                        ${maxCashLimit.toFixed(2)} ({hasNonFerrous ? 'Non-Ferrous' : 'Ferrous'})
-                      </span>
-                    </div>
-                    <div className="flex items-baseline justify-between border-t border-slate-800 pt-3">
-                      <span className="text-sm font-bold text-slate-200">TOTAL PAYOUT:</span>
-                      <span className="font-mono text-3xl font-black text-emerald-400">${totalPayout.toFixed(2)}</span>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      disabled={exceedsCashLimit}
-                      onClick={() => setPayoutMethod('Cash')}
-                      className={`flex flex-col justify-between rounded-xl border p-3 text-left transition-all ${
-                        payoutMethod === 'Cash'
-                          ? 'border-emerald-500 bg-emerald-950/80 text-white'
-                          : exceedsCashLimit
-                            ? 'cursor-not-allowed border-slate-800 bg-slate-950 text-slate-500 opacity-40'
-                            : 'border-slate-800 bg-slate-950 text-slate-300 hover:border-slate-700'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold">1. CASH PAYOUT</span>
-                        {payoutMethod === 'Cash' && <Check className="h-4 w-4 text-emerald-400" />}
-                      </div>
-                      <span className="mt-1 block text-[10px] text-slate-400">
-                        Max ${maxCashLimit.toFixed(0)} ({hasNonFerrous ? 'Non-Ferrous' : 'Ferrous'})
-                      </span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setPayoutMethod('Check')}
-                      className={`flex flex-col justify-between rounded-xl border p-3 text-left transition-all ${
-                        payoutMethod === 'Check'
-                          ? 'border-emerald-500 bg-emerald-950/80 text-white'
-                          : 'border-slate-800 bg-slate-950 text-slate-300 hover:border-slate-700'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold">2. CHECK ISSUE</span>
-                        {payoutMethod === 'Check' && <Check className="h-4 w-4 text-emerald-400" />}
-                      </div>
-                      <span className="mt-1 block text-[10px] text-slate-400">Any amount over limits</span>
-                    </button>
-                  </div>
-
-                  {exceedsCashLimit && (
-                    <div className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-950/40 p-3 text-xs text-amber-200">
-                      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
-                      <div>
-                        <span className="block font-bold">State Scrap Metal Theft Law Capping</span>
-                        <p className="text-[11px] text-slate-300">
-                          Cash is capped at <strong className="text-amber-300">$25.00 Non-Ferrous</strong> /{' '}
-                          <strong className="text-amber-300">$100.00 Ferrous</strong>. This ${totalPayout.toFixed(2)} payout
-                          defaults to <strong className="text-emerald-400">CHECK ISSUE</strong>.
-                        </p>
-                      </div>
-                    </div>
-                  )}
-
-                  {payoutMethod === 'Check' && (
-                    <div className="space-y-2 rounded-xl border-2 border-emerald-500/40 bg-slate-950 p-3">
-                      <div className="flex items-center justify-between">
-                        <Label className="flex items-center gap-1.5 text-xs font-bold text-emerald-400">
-                          <FileCheck className="h-4 w-4 text-emerald-400" /> Check Number *
-                        </Label>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          onClick={() => setCheckNumber(`CHK-${Math.floor(10000 + Math.random() * 90000)}`)}
-                          className="h-7 bg-slate-900 text-[10px] text-slate-300"
-                        >
-                          Auto-Generate
-                        </Button>
-                      </div>
-                      <Input
-                        value={checkNumber}
-                        onChange={(e) => setCheckNumber(e.target.value)}
-                        placeholder="e.g. 9042"
-                        className="h-11 border-slate-800 bg-slate-900 font-mono text-sm font-bold text-amber-300"
-                      />
-                    </div>
-                  )}
-
-                  <div>
-                    <Label className="mb-1.5 block text-xs text-slate-300">Ticket Notes</Label>
-                    <Textarea
-                      value={notes}
-                      onChange={(e) => setNotes(e.target.value)}
-                      onBlur={handleNotesBlur}
-                      placeholder="Optional material or transaction notes"
-                      className="min-h-20 rounded-xl border-slate-700 bg-slate-950 text-white"
-                    />
-                  </div>
-
-                  <Button
-                    onClick={handleComplete}
-                    disabled={lines.length === 0}
-                    className="h-12 w-full gap-2 bg-gradient-to-r from-emerald-500 to-teal-600 text-sm font-extrabold tracking-wide text-slate-950 shadow-lg shadow-emerald-950 hover:from-emerald-400 hover:to-teal-500 disabled:from-slate-700 disabled:to-slate-700 disabled:text-slate-400"
-                  >
-                    <CheckCircle2 className="h-5 w-5" /> Complete Ticket #{activeTicket.id} &amp; Issue Voucher
-                  </Button>
-                </CardContent>
-              </Card>
+            {/* Finalize purchase separately from disbursement */}
+            <div className="space-y-4 rounded-2xl border border-slate-700 bg-slate-900 p-4 text-white">
+              <h2 className="text-base font-bold">Final purchase review</h2>
+              <p className="rounded-xl border border-amber-500/40 bg-amber-950 p-3 text-xs text-amber-100">Finalization creates an UNPAID voucher. A manager records actual cash disbursement or check issuance separately in the buying payment queue.</p>
+              <div className="space-y-2 rounded-xl bg-slate-950 p-4 font-mono text-sm">
+                <div className="flex justify-between"><span>Reviewed lines</span><strong>{lines.length}</strong></div>
+                <div className="flex justify-between"><span>Payable pounds</span><strong>{fmtLbs(totalBillableWeight)} lb</strong></div>
+                <div className="flex justify-between text-emerald-300"><span>Purchase amount</span><strong>${totalPayout.toFixed(2)}</strong></div>
+              </div>
+              <Label htmlFor="canonical-ticket-notes">Ticket notes</Label>
+              <Textarea id="canonical-ticket-notes" value={notes} onChange={(event) => setNotes(event.target.value)} onBlur={handleNotesBlur} disabled={saveState === 'PENDING' || remoteConflict} className="rounded-xl border-slate-700 bg-slate-950 text-white" />
+              {(singleCapture || activeTicket.scaleGrossInWeight != null) && <p role="alert" className="text-sm text-amber-200">Unfinished weighing blocks finalization. Finish or explicitly cancel it first.</p>}
+              <label className="flex items-start gap-2 rounded-xl border border-slate-700 p-3 text-xs leading-relaxed"><input type="checkbox" checked={reviewConfirmed} onChange={(event) => setReviewConfirmed(event.target.checked)} className="mt-0.5 accent-emerald-500" />I reviewed the current seller ID/contact/address, required photos, each separately measured grade, rates and deductions.</label>
+              <Button onClick={handleComplete} disabled={!reviewConfirmed || !lines.length || !!singleCapture || activeTicket.scaleGrossInWeight != null || remoteConflict || saveState === 'PENDING'} className="h-12 w-full rounded-xl bg-emerald-600 font-bold text-white hover:bg-emerald-500">Finalize purchase · unpaid voucher</Button>
             </div>
           </div>
         </>
@@ -1673,14 +1643,8 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
               Switch scale mid-weighing?
             </AlertDialogTitle>
             <AlertDialogDescription className="text-slate-300">
-              Intake <span className="font-mono font-bold text-white">#{activeTicket?.id}</span> for{' '}
-              <span className="font-bold text-white">{activeTicket?.customerName}</span> has an IN weight of{' '}
-              <span className="font-mono font-bold text-emerald-400">{fmtLbs(activeTicket?.scaleGrossInWeight)} LBS</span> but no OUT yet —
-              the OUT reading will come from{' '}
-              <span className="font-bold text-amber-300">
-                {pendingScaleSwitch ? (scales.find((s) => s.id === pendingScaleSwitch.id)?.name ?? 'No Scale') : ''}
-              </span>
-              . Switch anyway?
+              Intake <span className="font-mono font-bold text-white">#{activeTicket?.id}</span> has unfinished weighing work.
+              {singleCapture ? ' Finish the platform batch or explicitly cancel it with a reason before switching scales. No reading will be discarded.' : ' The IN reading is already saved. Switching changes the platform used for the OUT reading; the selected mode must remain compatible. Confirm the equipment is appropriate before proceeding.'}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -1688,12 +1652,12 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
               Keep Current Platform
             </AlertDialogCancel>
             <AlertDialogAction
+              disabled={singleCapture !== null}
               onClick={() => {
-                if (pendingScaleSwitch) applyScaleSwitch(pendingScaleSwitch.id);
-                if (singleCapture) handleDiscardSingleCapture();
+                if (pendingScaleSwitch && !singleCapture) applyScaleSwitch(pendingScaleSwitch.id);
                 setPendingScaleSwitch(null);
               }}
-              className="bg-amber-600 font-bold text-white hover:bg-amber-500"
+              className="bg-amber-600 font-bold text-white hover:bg-amber-500 disabled:opacity-50"
             >
               Switch Platform
             </AlertDialogAction>
@@ -1729,9 +1693,9 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
             <AlertDialogAction
               onClick={() => {
                 if (pendingUnstable) {
-                  if (pendingUnstable.direction === 'IN') commitInWeight(pendingUnstable.lbs);
-                  else if (pendingUnstable.direction === 'OUT') commitOutWeight(pendingUnstable.lbs);
-                  else captureSingle(pendingUnstable.lbs, false);
+                  if (pendingUnstable.direction === 'IN') commitInWeight(pendingUnstable.lbs, pendingUnstable.capture);
+                  else if (pendingUnstable.direction === 'OUT') commitOutWeight(pendingUnstable.lbs, pendingUnstable.capture);
+                  else captureSingle(pendingUnstable.lbs, false, pendingUnstable.capture);
                 }
                 setPendingUnstable(null);
               }}
@@ -1739,6 +1703,21 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
             >
               Capture {pendingUnstable?.direction === 'IN' ? 'IN' : pendingUnstable?.direction === 'OUT' ? 'OUT' : 'Single'} Anyway
             </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={correctionTarget !== null} onOpenChange={(open) => { if (!open) setCorrectionTarget(null); }}>
+        <AlertDialogContent className="rounded-2xl border-slate-700 bg-slate-900 text-white">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Record weighing correction</AlertDialogTitle>
+            <AlertDialogDescription className="text-slate-300">{correctionTarget?.action === 'LINE' ? 'Remove this reviewed line from the payable total?' : 'Cancel this unfinished weighing?'} Original readings and the correction reason will remain in this ticket’s audit history.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <Label htmlFor="weighing-correction-reason">Reason (required)</Label>
+          <Textarea id="weighing-correction-reason" value={correctionReason} onChange={(event) => setCorrectionReason(event.target.value)} className="rounded-xl border-slate-700 bg-slate-950 text-white" />
+          <AlertDialogFooter>
+            <AlertDialogCancel className="border-slate-700 bg-slate-800 text-white hover:bg-slate-700">Keep weighing</AlertDialogCancel>
+            <AlertDialogAction disabled={!correctionReason.trim() || remoteConflict} onClick={confirmCorrection} className="bg-amber-700 text-white hover:bg-amber-600">Confirm audited correction</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

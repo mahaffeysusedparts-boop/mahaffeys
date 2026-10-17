@@ -363,6 +363,8 @@ const GROWING_ARRAY_FIELDS = ["scrapLines", "weightTransactions"];
 const PENDING_WEIGH_FIELDS = ["scaleGrossInWeight", "scaleGrossInAt", "scaleTareOutWeight", "scaleTareOutAt"];
 
 function mergeRecord(localRecord: Record<string, unknown>, serverRecord: Record<string, unknown>) {
+  if (serverRecord.buying) return serverRecord;
+  if (localRecord.buying) return localRecord;
   const localUpdatedAt = Date.parse(String(localRecord.updatedAt ?? "")) || 0;
   const serverUpdatedAt = Date.parse(String(serverRecord.updatedAt ?? "")) || 0;
   if (localUpdatedAt || serverUpdatedAt) {
@@ -562,6 +564,11 @@ function readMtime(key: string): number {
 export const sharedStorage = {
   getItem(key: string) {
     return localStorage.getItem(key);
+  },
+
+  applyServerValue(key: string, value: unknown) {
+    persistLocalSnapshot(key, JSON.stringify(value));
+    notifyKey(key);
   },
 
   setItem(key: string, value: string) {

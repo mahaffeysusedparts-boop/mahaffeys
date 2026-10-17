@@ -92,9 +92,7 @@ export default function PublicVehicleDetailPage() {
               <span className="block max-w-[190px] truncate text-xs font-semibold text-slate-400 sm:max-w-sm">{settings.yardName}</span>
             </span>
           </Link>
-          <Badge className="rounded-full border-emerald-500/40 bg-emerald-500/15 text-[10px] font-black uppercase tracking-widest text-emerald-300">
-            <Scale className="mr-1.5 size-3" /> Public catalog
-          </Badge>
+          <Link to="/parts-prices" className="rounded-xl border border-emerald-700 bg-emerald-950 px-3 py-2 text-xs font-bold text-emerald-100 hover:bg-emerald-900">Parts Prices</Link>
         </div>
       </header>
 

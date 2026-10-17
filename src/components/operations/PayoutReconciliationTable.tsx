@@ -60,6 +60,10 @@ export function PayoutReconciliationTable({ canManage }: { canManage: boolean })
 
   const handleAdjustmentSubmit = () => {
     if (!adjustmentOpen) return;
+    if (storageService.getTickets().find((ticket) => ticket.id === adjustmentOpen.referenceId)?.buying) {
+      toast.error('Canonical payment evidence cannot be changed through a generic adjustment. Reconcile the existing payment without creating another ticket disbursement.');
+      return;
+    }
     
     const adjustmentAmountNum = parseFloat(adjustmentAmount);
     const isPositive = adjustmentOpen.variance > 0;

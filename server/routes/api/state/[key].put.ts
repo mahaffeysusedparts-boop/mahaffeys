@@ -2,7 +2,8 @@ import { defineHandler } from "nitro";
 import { createError, getRouterParam, readBody } from "nitro/h3";
 import { requireUser } from "../../../utils/auth";
 import { auditFor, recordAudit } from "../../../utils/audit";
-import { query } from "../../../utils/db";
+import { withTransaction } from "../../../utils/db";
+import { protectFinancialState } from '../../../utils/financialState';
 
 const ALLOWED_KEYS = new Set([
   "mahaffeys_metals", "mahaffeys_car_rates", "mahaffeys_customers", "mahaffeys_tickets",
@@ -22,10 +23,13 @@ export default defineHandler(async (event) => {
   if (!("value" in body)) throw createError({ statusCode: 400, statusMessage: "A value is required" });
   const now = new Date();
   const serialized = JSON.stringify(body.value);
-  await query(`
-    INSERT INTO app_state (key, value, updated_at, updated_by) VALUES ($1, $2::jsonb, $3, $4)
-    ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at, updated_by = EXCLUDED.updated_by
-  `, [key, serialized, now, user.id]);
+  await withTransaction(async (client) => {
+    const value = await protectFinancialState(client,key,body.value,user.role);
+    await client.query(`
+      INSERT INTO app_state (key, value, updated_at, updated_by) VALUES ($1, $2::jsonb, $3, $4)
+      ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at, updated_by = EXCLUDED.updated_by
+    `, [key, JSON.stringify(value), now, user.id]);
+  });
   await recordAudit(auditFor(user, {
     action: "state.write",
     entity: "app_state",

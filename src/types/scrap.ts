@@ -283,6 +283,9 @@ export interface ScrapTicketLine {
   id: string;
   /** Explicitly distinguishes a single small-load capture from legacy vehicle lines. */
   weighingMode?: ScaleWeighingMode;
+  sourceCaptureIds?: string[];
+  tareTreatment?: import('./scrapBuying').TareTreatment;
+  deductionReason?: string;
   loadNumber?: number;
   capturedAt?: string;
   metalGradeId: string;
@@ -426,6 +429,11 @@ export interface Ticket {
   notes?: string;
   operatorName: string;
 
+  pendingPlatformCapture?: import('./scrapBuying').PlatformCaptureDraft;
+  selectedWeighingType?: import('./scrapBuying').WeighingType;
+  weighingCorrections?: import('./scrapBuying').WeighingCorrection[];
+  buying?: import('./buyingPayments').BuyingState;
+
   /** Audit trail stamped when a transaction is voided at any stage of intake. */
   voidedAt?: string;
   voidedBy?: string;
@@ -438,6 +446,7 @@ export interface WeightTransaction {
   weightLbs: number;
   recordedAt: string;
   operatorName?: string;
+  capture?: import('./scrapBuying').WeightCapture;
   /** Platform that captured this reading — audit trail for multi-scale yards. */
   scaleName?: string;
 }
@@ -482,6 +491,9 @@ export interface ScaleConfig {
   accentColor?: ScaleAccentColor;
   /** Older saved scales omit this and remain vehicle/two-weight platforms. */
   weighingMode?: ScaleWeighingMode;
+  supportedWeighingTypes?: import('./scrapBuying').WeighingType[];
+  capacityLbs?: number;
+  resolutionLbs?: number;
 }
 
 /**

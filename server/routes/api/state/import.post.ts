@@ -2,6 +2,7 @@ import { defineHandler } from "nitro";
 import { createError, readBody } from "nitro/h3";
 import { requireAdmin } from "../../../utils/auth";
 import { withTransaction } from "../../../utils/db";
+import { protectFinancialState } from '../../../utils/financialState';
 
 const ALLOWED_KEYS = new Set([
   "mahaffeys_metals", "mahaffeys_car_rates", "mahaffeys_customers", "mahaffeys_tickets",
@@ -21,10 +22,11 @@ export default defineHandler(async (event) => {
   await withTransaction(async (client) => {
     for (const [key, value] of Object.entries(body.state!)) {
       if (!ALLOWED_KEYS.has(key)) continue;
+      const protectedValue = await protectFinancialState(client,key,value,admin.role);
       await client.query(`
         INSERT INTO app_state (key, value, updated_at, updated_by) VALUES ($1, $2::jsonb, $3, $4)
         ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at, updated_by = EXCLUDED.updated_by
-      `, [key, JSON.stringify(value), now, admin.id]);
+      `, [key, JSON.stringify(protectedValue), now, admin.id]);
     }
   });
   return { ok: true, updatedAt: now.toISOString() };

@@ -1,4 +1,5 @@
 import type { MetalGrade, ScrapTicketLine } from '@/types/scrap';
+import { validatedBreakdown } from './weighingContract';
 
 /**
  * Shared weight math used by both the vehicle IN/OUT workflow and the
@@ -16,9 +17,9 @@ export interface WeightBreakdown {
   lineTotal: number;
 }
 
-/** Net = max(0, gross - tare). */
+/** Invalid negative or non-finite net inputs are rejected. */
 export function computeNetWeight(grossWeight: number, tareWeight: number): number {
-  return Math.max(0, grossWeight - tareWeight);
+  return validatedBreakdown(grossWeight, tareWeight, 0, 0).netWeight;
 }
 
 /** Deduction pounds, rounded to 1 decimal place. */
@@ -43,20 +44,7 @@ export function computeWeightBreakdown(
   deductionPercent: number,
   metal: MetalGrade,
 ): WeightBreakdown {
-  const netWeight = computeNetWeight(grossWeight, tareWeight);
-  const deductionLbs = computeDeductionLbs(netWeight, deductionPercent);
-  const billableWeight = computeBillableWeight(netWeight, deductionLbs);
-  const lineTotal = computeLineTotal(billableWeight, metal.ratePerLb);
-  return {
-    grossWeight,
-    tareWeight,
-    netWeight,
-    deductionPercent,
-    deductionLbs,
-    billableWeight,
-    ratePerLb: metal.ratePerLb,
-    lineTotal,
-  };
+  return validatedBreakdown(grossWeight, tareWeight, deductionPercent, metal.ratePerLb);
 }
 
 /** Build a ScrapTicketLine from a weight breakdown. */
@@ -67,7 +55,7 @@ export function buildScrapTicketLine(
   weighingMode?: ScrapTicketLine['weighingMode'],
 ): ScrapTicketLine {
   return {
-    id: `line-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+    id: `line-${crypto.randomUUID()}`,
     loadNumber,
     capturedAt: new Date().toISOString(),
     metalGradeId: metal.id,

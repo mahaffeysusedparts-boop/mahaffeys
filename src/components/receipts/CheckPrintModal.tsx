@@ -51,6 +51,9 @@ export const CheckPrintModal: React.FC<CheckPrintModalProps> = ({ ticket, open, 
   }, [ticket?.id, ticket?.checkNumber, open]);
 
   if (!ticket || !open) return null;
+  if (ticket.buying && (ticket.buying.stage !== 'PAID' || ticket.buying.payment?.method !== 'Check')) return (
+    <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="rounded-2xl border-amber-500 bg-slate-950 text-white"><DialogHeader><DialogTitle>Check not issued</DialogTitle><DialogDescription className="text-amber-100">This is an unpaid voucher or a cash payment. Record actual check issuance in the buying payment queue first. Printing never pays a ticket.</DialogDescription></DialogHeader></DialogContent></Dialog>
+  );
 
   const amountWords = (() => {
     try {
@@ -66,8 +69,8 @@ export const CheckPrintModal: React.FC<CheckPrintModalProps> = ({ ticket, open, 
   const operator = ticket.operatorName || settings.operatorName;
 
   const handlePrint = () => {
-    // Stamp the check number on the ticket's payout record for the audit trail.
-    if (!ticket.checkNumber) {
+    // Canonical references are assigned only by the acknowledged payment API.
+    if (!ticket.buying && !ticket.checkNumber) {
       const stamped: Ticket = { ...ticket, checkNumber };
       storageService.saveTicket(stamped);
       setPrintedNumber(checkNumber);
@@ -128,6 +131,7 @@ export const CheckPrintModal: React.FC<CheckPrintModalProps> = ({ ticket, open, 
 
         {/* ── PRINTABLE CHECK ─────────────────────────────────────────── */}
         <div className="check-sheet bg-white text-black mx-auto w-full rounded-lg border border-slate-300 shadow-inner overflow-hidden print:rounded-none print:border-slate-900 print:shadow-none">
+          {ticket.buying && <p className="border-b-2 border-slate-900 p-3 text-center text-lg font-black">DUPLICATE COPY · NOT A NEGOTIABLE CHECK<br/><span className="text-xs">Recorded payment {ticket.buying.payment?.id} · printing does not issue or pay again</span></p>}
           {/* Perforated voucher stubs */}
           <div className="grid grid-cols-3 border-b-2 border-dashed border-slate-500">
             {renderStub('Payer', settings.yardName)}

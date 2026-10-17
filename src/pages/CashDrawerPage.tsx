@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { EndOfDayReport } from "@/components/receipts/EndOfDayReport";
+import { BuyingPaymentsPanel } from '@/components/intake/BuyingPaymentsPanel';
 import {
   Banknote,
   Plus,
@@ -116,7 +117,7 @@ export default function CashDrawerPage() {
       <Navbar />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
-        
+        <BuyingPaymentsPanel onPaid={loadData}/>
         {/* Header Bar */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-900 p-5 rounded-2xl border border-slate-800 shadow-xl">
           <div className="flex items-center gap-3">

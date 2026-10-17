@@ -345,6 +345,7 @@ export default function PublicInventoryPage() {
             </div>
 
             <div className="flex flex-col sm:flex-row items-center gap-3 shrink-0">
+              <a href="/parts-prices" className="rounded-xl border border-emerald-700 bg-emerald-950 px-4 py-3 text-xs font-bold text-emerald-100 hover:bg-emerald-900">Parts Prices</a>
               <Button
                 onClick={() => setInterchangeOpen(true)}
                 className="w-full sm:w-auto bg-purple-600 hover:bg-purple-500 text-white font-extrabold text-xs px-5 h-10 gap-1.5 shadow-lg shadow-purple-950"

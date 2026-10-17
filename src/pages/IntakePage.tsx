@@ -49,9 +49,7 @@ export default function IntakePage() {
     setScrapStage('SCALE');
   };
 
-  // Cross-workstation sync: when another device (e.g. the iPad) creates a new
-  // pending scrap intake, automatically navigate to the scale workstation so
-  // the operator can weigh it without manually switching views.
+  // Remote queue activity must not navigate away from unsaved seller/car forms.
   useEffect(() => {
     const onRemoteSync = (event: Event) => {
       const detail = (event as CustomEvent<{ key?: string }>).detail;
@@ -60,17 +58,9 @@ export default function IntakePage() {
         .getTickets()
         .some((t) => t.ticketType === 'SCRAP_METAL' && t.status === 'PENDING');
       if (!hasPending) return;
-      // Only auto-navigate when the operator isn't already mid-intake.
       if (activeMode === 'SCRAP_METAL' && scrapStage === 'SCALE') return;
-      if (activeMode === null) {
-        setActiveMode('SCRAP_METAL');
-      }
-      if (scrapStage !== 'SCALE') {
-        setScrapStage('SCALE');
-        setScrapTicketId(null);
-      }
-      toast.info('New pending scrap intake arrived from another workstation', {
-        description: 'Switched to the scale workstation to weigh it.',
+      toast.info('Pending scrap intakes updated on another workstation', {
+        description: 'The scale queue is refreshed. Your current workspace has not changed.',
         duration: 3000,
       });
     };
@@ -83,6 +73,7 @@ export default function IntakePage() {
       <Navbar />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        {activeMode === null && <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-emerald-800 bg-emerald-950 p-4 text-sm text-emerald-100"><span>Buying drafts are server-backed. Finalization issues an unpaid voucher; payment is a separate manager action.</span><div className="flex gap-3"><a href="/cash-drawer" className="font-bold underline">Buying payment queue</a><a href="/parts-prices" className="font-bold underline">Public parts prices</a></div></div>}
         {/* If an intake mode is active, show quick switcher bar */}
         {activeMode !== null && (
           <div className="mb-6 flex items-center gap-2 overflow-x-auto rounded-xl border border-slate-800 bg-slate-900 p-2.5 sm:justify-between">

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { ComplianceCaptures, Customer, Ticket } from '@/types/scrap';
 import { storageService } from '@/services/storageService';
 import { customerService, type CustomerInput } from '@/services/customerService';
+import { scrapBuyingService } from '@/services/scrapBuyingService';
 import { ComplianceCaptureModal } from '@/components/compliance/ComplianceCaptureModal';
 import { calculateComplianceScore } from '@/utils/complianceUtils';
 import { Button } from '@/components/ui/button';
@@ -62,6 +63,7 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [customerIdNumber, setCustomerIdNumber] = useState('');
+  const [customerIdState, setCustomerIdState] = useState('SC');
   const [vehicleLicensePlate, setVehicleLicensePlate] = useState('');
   const [notes, setNotes] = useState('');
 
@@ -109,6 +111,7 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
     setCustomerName(customer.fullName);
     setCustomerPhone(customer.phone || '');
     setCustomerIdNumber(customer.idNumber);
+    setCustomerIdState(customer.idState);
     setVehicleLicensePlate(customer.vehicleLicensePlate || '');
     // The selected customer's registry photo always wins — freshly retaking it
     // in the compliance studio below will overwrite this again.
@@ -147,7 +150,7 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
         phone: customerPhone.trim(),
         idType: selectedCustomer?.idType ?? 'Driver License',
         idNumber: customerIdNumber.trim(),
-        idState: selectedCustomer?.idState ?? 'GA',
+        idState: customerIdState.trim().toUpperCase(),
         address: selectedCustomer?.address ?? '',
         vehicleLicensePlate: vehicleLicensePlate.trim().toUpperCase(),
         vehicleState: selectedCustomer?.vehicleState,
@@ -194,7 +197,7 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
         notes: notes.trim() || 'Seller info & photos collected — awaiting scale IN weighing.',
       };
 
-      storageService.saveTicket(ticket);
+      await scrapBuyingService.create(ticket);
 
       if (!customerPhone.trim() || !customerIdNumber.trim()) {
         toast.warning('Phone or ID number is missing', {
@@ -389,6 +392,12 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
                     className="mt-1 h-11 border-slate-800 bg-slate-950 font-mono text-xs uppercase text-slate-200"
                   />
                 </div>
+              </div>
+
+              <div className="space-y-1">
+                <Label htmlFor="seller-id-state" className="text-xs text-slate-300">Actual ID issuing state / jurisdiction</Label>
+                <Input id="seller-id-state" value={customerIdState} onChange={(event) => setCustomerIdState(event.target.value.toUpperCase())} maxLength={40} className="h-11 max-w-xs rounded-xl border-slate-700 bg-slate-950 text-white" />
+                <p className="text-xs text-slate-300">South Carolina is the local-entry default. Confirm against the actual ID; returning sellers keep their saved jurisdiction.</p>
               </div>
 
               <div>

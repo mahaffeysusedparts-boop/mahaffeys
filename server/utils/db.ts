@@ -1,4 +1,5 @@
 import { Pool, type PoolClient, type QueryResultRow } from "pg";
+import { buyingPriceSchema } from './buyingPriceSchema';
 
 let pool: Pool | undefined;
 let schemaReady: Promise<void> | undefined;
@@ -194,6 +195,8 @@ async function initializeSchema() {
     );
     CREATE INDEX IF NOT EXISTS network_printers_kind_idx ON network_printers (kind);
   `);
+
+  await getPool().query(buyingPriceSchema);
 
   await getPool().query(`
     INSERT INTO customers (

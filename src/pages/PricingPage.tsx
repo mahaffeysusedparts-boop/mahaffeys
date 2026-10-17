@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { MetalGrade, AutoSalvageCategoryRate, CatalyticConverterCode } from '@/types/scrap';
 import { storageService } from '@/services/storageService';
 import { Navbar } from '@/components/layout/Navbar';
+import { PriceSheetManager } from '@/components/pricing/PriceSheetManager';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -337,9 +338,11 @@ export default function PricingPage() {
             <TabsTrigger value="cats" className="text-xs font-bold flex items-center gap-1.5">
               <Sparkles className="w-4 h-4 text-purple-400" /> Catalytic Converter OEM Serial Lookup
             </TabsTrigger>
+            <TabsTrigger value="parts-pdf" className="rounded-xl text-xs font-bold data-[state=active]:bg-emerald-700 data-[state=active]:text-white">PDF Parts Prices</TabsTrigger>
           </TabsList>
+          <TabsContent value="parts-pdf"><PriceSheetManager/></TabsContent>
 
-          {/* TAB 1: Scrap Metals Catalog */}
+          {/* TAB 1: Scrap Metals Catalog */
           <TabsContent value="metals" className="space-y-6">
             
             {/* Quick Bulk Bump Toolbar */}

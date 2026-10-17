@@ -1,0 +1,20 @@
+@media print {
+  .parts-prices-public {
+    background: white !important;
+    color: #172b35 !important;
+  }
+  .parts-prices-public .parts-prices-sheet thead {
+    display: table-header-group;
+  }
+  .parts-prices-public .parts-prices-sheet tr {
+    break-inside: avoid;
+  }
+  .parts-prices-public .parts-prices-sheet table {
+    width: 100%;
+    font-size: 10pt;
+  }
+  .parts-prices-public .parts-prices-sheet th,
+  .parts-prices-public .parts-prices-sheet td {
+    padding: 6pt;
+  }
+}

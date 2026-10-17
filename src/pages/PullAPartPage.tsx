@@ -12,6 +12,7 @@ import { holdStatus, isCrushLocked, HoldOptions } from "@/utils/holdUtils";
 import { analyzeVinImage } from "@/services/aiVisionService";
 import { decodeVin, VinDecodeResult } from "@/services/vinService";
 import { PartsInterchangeModal } from "@/components/inventory/PartsInterchangeModal";
+import { PublishedPartsPrices } from '@/components/pricing/PublishedPartsPrices';
 import { Navbar } from "@/components/layout/Navbar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -624,8 +625,8 @@ export default function PullAPartPage() {
             <TabsTrigger value="finder" className="data-[state=active]:bg-amber-600 data-[state=active]:text-white text-xs gap-1.5">
               <Car className="w-3.5 h-3.5" /> Yard Vehicle Inventory & Dismantling Workstation ({vehicles.length})
             </TabsTrigger>
-            <TabsTrigger value="catalog" className="data-[state=active]:bg-amber-600 data-[state=active]:text-white text-xs gap-1.5">
-              <DollarSign className="w-3.5 h-3.5" /> Flat Parts Price Catalog ({parts.length})
+            <TabsTrigger value="catalog" className="data-[state=active]:bg-emerald-700 data-[state=active]:text-white text-xs gap-1.5">
+              <DollarSign className="w-3.5 h-3.5" /> Published Parts Prices
             </TabsTrigger>
             <TabsTrigger value="cores" className="data-[state=active]:bg-amber-600 data-[state=active]:text-white text-xs gap-1.5">
               <RotateCcw className="w-3.5 h-3.5" /> Core Deposit Refunds ({cores.length})
@@ -882,76 +883,8 @@ export default function PullAPartPage() {
             </Card>
           </TabsContent>
 
-          {/* TAB 2: FLAT PARTS PRICE SHEET */}
           <TabsContent value="catalog" className="space-y-4">
-            <Card className="bg-slate-900 border-slate-800 text-white overflow-hidden shadow-xl">
-              <CardHeader className="py-4 px-6 bg-slate-950/60 border-b border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div>
-                  <CardTitle className="text-base font-bold text-white flex items-center gap-2">
-                    <DollarSign className="w-5 h-5 text-emerald-400" /> Pull-A-Part Flat Part Price & Core Deposit Sheet
-                  </CardTitle>
-                </div>
-
-                <div className="relative">
-                  <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-500" />
-                  <Input
-                    placeholder="Search part name or category..."
-                    value={partSearch}
-                    onChange={(e) => setPartSearch(e.target.value)}
-                    className="bg-slate-950 border-slate-800 text-xs pl-8 w-64"
-                  />
-                </div>
-              </CardHeader>
-
-              <CardContent className="p-0">
-                <Table>
-                  <TableHeader className="bg-slate-950">
-                    <TableRow className="border-slate-800 text-xs">
-                      <TableHead className="text-slate-400">Part Category</TableHead>
-                      <TableHead className="text-slate-400">Part Description</TableHead>
-                      <TableHead className="text-slate-400">Interchange Notes</TableHead>
-                      <TableHead className="text-slate-400 text-right">Core Deposit ($)</TableHead>
-                      <TableHead className="text-slate-400 text-right">Warranty Fee ($)</TableHead>
-                      <TableHead className="text-slate-400 text-right">Part Price ($)</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredParts.map((part) => (
-                      <TableRow key={part.id} className="border-slate-800 hover:bg-slate-800/40 text-xs font-mono">
-                        <TableCell className="font-sans">
-                          <Badge variant="outline" className="border-slate-700 text-slate-300 text-[10px]">
-                            {part.category}
-                          </Badge>
-                        </TableCell>
-
-                        <TableCell className="font-sans font-bold text-white text-sm">
-                          {part.partName}
-                          {part.isPopular && (
-                            <Badge className="ml-2 bg-amber-950 text-amber-300 border-amber-800 text-[9px]">POPULAR</Badge>
-                          )}
-                        </TableCell>
-
-                        <TableCell className="font-sans text-slate-400 text-[11px] max-w-xs truncate">
-                          {part.interchangeNotes}
-                        </TableCell>
-
-                        <TableCell className="text-right text-amber-400 font-bold">
-                          {part.coreDeposit > 0 ? `+$${part.coreDeposit.toFixed(2)}` : "-"}
-                        </TableCell>
-
-                        <TableCell className="text-right text-slate-400">
-                          {part.warrantyFee > 0 ? `+$${part.warrantyFee.toFixed(2)}` : "Included"}
-                        </TableCell>
-
-                        <TableCell className="text-right font-black text-emerald-400 text-base">
-                          ${part.price.toFixed(2)}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
+            <PublishedPartsPrices/>
           </TabsContent>
 
           {/* TAB 3: CORE RETURN REFUNDS */}

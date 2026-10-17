@@ -60,7 +60,7 @@ export default defineHandler(async (event) => {
     text(body.phone, 40),
     body.idType as CustomerIdType,
     idNumber,
-    text(body.idState, 12) || "GA",
+    text(body.idState, 12) || "SC",
     text(body.address, 300),
     plate,
     text(body.vehicleState, 12),

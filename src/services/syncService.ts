@@ -72,6 +72,8 @@ const GROWING_ARRAY_FIELDS = ["scrapLines", "weightTransactions"];
 const PENDING_WEIGH_FIELDS = ["scaleGrossInWeight", "scaleGrossInAt", "scaleTareOutWeight", "scaleTareOutAt"];
 
 function mergeRecord(local: Record<string, unknown>, remote: Record<string, unknown>) {
+  if (remote.buying) return remote;
+  if (local.buying) return local;
   const localUpdatedAt = Date.parse(String(local.updatedAt ?? "")) || 0;
   const remoteUpdatedAt = Date.parse(String(remote.updatedAt ?? "")) || 0;
   if (localUpdatedAt || remoteUpdatedAt) {
