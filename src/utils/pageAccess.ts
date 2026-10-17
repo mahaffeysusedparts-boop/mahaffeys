@@ -9,7 +9,7 @@ import { UserRole } from '@/types/scrap';
  */
 
 export const PAGE_KEYS = [
-  'dashboard', 'operations', 'intake', 'scale-log', 'tickets', 'cash-drawer', 'customers', 'cameras',
+  'dashboard', 'operations', 'operations-review', 'intake', 'scale-log', 'tickets', 'cash-drawer', 'customers', 'cameras',
   'yard-map', 'pull-a-part', 'containers', 'public-inventory', 'compliance', 'pricing', 'shipments',
   'reports', 'team', 'system-status', 'users', 'server-admin', 'settings', 'fleet',
 ] as const;
@@ -19,6 +19,7 @@ export type PageKey = (typeof PAGE_KEYS)[number];
 export const PAGE_LABELS: Record<PageKey, string> = {
   dashboard: 'Dashboard',
   operations: 'Operations',
+  'operations-review': 'Operations Review',
   intake: 'Intake (Scale)',
   'scale-log': 'Scale Log',
   tickets: 'Tickets',

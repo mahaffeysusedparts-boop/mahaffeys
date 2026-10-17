@@ -1,5 +1,7 @@
 import { Ticket, ComplianceCaptures, NMVTISReportLog, YardSettings, IntakeType } from "@/types/scrap";
 
+export type { Ticket, NMVTISReportLog, NMVTISReportStatus } from "@/types/scrap";
+
 export interface DLScanResult {
   fullName: string;
   idNumber: string;

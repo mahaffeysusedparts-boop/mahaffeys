@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Check, AlertCircle, TrendingUp, TrendingDown, DollarSign, Banknote } from 'lucide-react';
+import { Check, AlertCircle, TrendingUp, TrendingDown, DollarSign, Banknote, Badge } from 'lucide-react';
 import { downloadCsv } from '@/utils/exportUtils';
 import { ReconciliationEntry, ReconciliationStatus, ReconciliationType } from '@/types/operations';
 import { storageService } from '@/services/storageService';
