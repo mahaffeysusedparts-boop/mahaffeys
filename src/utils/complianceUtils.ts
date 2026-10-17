@@ -1,4 +1,4 @@
-import { Ticket, ComplianceCaptures, NMVTISReportLog, YardSettings, IntakeType } from "@/types/scrap";
+import { Ticket, ComplianceCaptures, NMVTISReportLog, NMVTISReportStatus, YardSettings, IntakeType } from "@/types/scrap";
 
 export interface DLScanResult {
   fullName: string;
@@ -195,7 +195,7 @@ export function generateNMVTISCsv(tickets: Ticket[], reportingEntityId: string =
       // state prefix (e.g. "GA 123ABC"). Otherwise leave blank — never invent a
       // jurisdiction. DispositionCode, SellerIDType, SellerIDState, and
       // SellerAddress are only emitted when the source data actually exists.
-      const plateState = c.titleState || t.vehicleLicensePlate?.split(' ')[1] || '';
+      const plateState = t.vehicleLicensePlate?.split(' ')[1] || '';
 
       return [
         escapeCsv(reportingEntityId),
@@ -376,10 +376,9 @@ export function isNmvtisBannerActive(status: NmvtisStatus): boolean {
  * - COMPLETE: all required evidence present and data valid (ready to export)
  * - INCOMPLETE: required evidence/photos missing
  * - INVALID_DATA: VIN or other critical data is invalid/missing
- * - PENDING_EXPORT: CSV exported, awaiting operator submission confirmation
- * - SUBMISSION_CONFIRMED: operator recorded that the batch was submitted externally
+ * - PENDING_EXPORT: already exported (CSV downloaded) but not yet confirmed
  */
-export type ReadinessStatus = 'COMPLETE' | 'INCOMPLETE' | 'INVALID_DATA' | 'PENDING_EXPORT' | 'SUBMISSION_CONFIRMED';
+export type ReadinessStatus = 'COMPLETE' | 'INCOMPLETE' | 'INVALID_DATA' | 'PENDING_EXPORT';
 
 export interface ReadinessResult {
   status: ReadinessStatus;
@@ -417,18 +416,13 @@ function getRequirements(intakeType: IntakeType): Array<{ key: keyof ComplianceC
 function getReportFlags(ticket: Ticket): {
   isExported: boolean;
   isConfirmed: boolean;
-  isLegacy: boolean;
   confirmedAt?: string;
   confirmedBy?: string;
 } {
   const caps = ticket.complianceCaptures || ticket.carRecord?.complianceCaptures;
-  const explicitlyMarkedLegacy = ticket.complianceCaptures?.nmvtisWorkflowVersion !== 2 && ticket.carRecord?.complianceCaptures?.nmvtisWorkflowVersion !== 2;
-  const isConfirmed = !!caps?.nmvtisSubmissionConfirmedAt;
-  const isExported = !!caps?.nmvtisReported;
   return {
-    isExported,
-    isConfirmed,
-    isLegacy: isExported && !isConfirmed && explicitlyMarkedLegacy,
+    isExported: !!(caps?.nmvtisReported),
+    isConfirmed: !!(caps?.nmvtisSubmissionConfirmedAt),
     confirmedAt: caps?.nmvtisSubmissionConfirmedAt,
     confirmedBy: caps?.nmvtisSubmissionConfirmedBy,
   };
@@ -488,7 +482,7 @@ export function calculateReadiness(ticket: Ticket): ReadinessResult {
   if (isVoided) {
     status = 'INCOMPLETE';
   } else if (flags.isConfirmed) {
-    status = 'SUBMISSION_CONFIRMED';
+    status = 'PENDING_EXPORT';
   } else if (flags.isExported) {
     status = 'PENDING_EXPORT';
   } else if (ticket.ticketType === 'CAR_SALVAGE' && ticket.carRecord) {
@@ -518,12 +512,11 @@ export function calculateReadiness(ticket: Ticket): ReadinessResult {
  * - SUBMISSION_CONFIRMED: operator explicitly confirmed external submission
  * - DISCREPANCY: VIN or critical data invalid
  */
-export type ReportLifecycleStatus = 'READY' | 'EXPORTED' | 'LEGACY_UNVERIFIED' | 'SUBMISSION_CONFIRMED' | 'DISCREPANCY';
+export type ReportLifecycleStatus = 'READY' | 'EXPORTED' | 'SUBMISSION_CONFIRMED' | 'DISCREPANCY';
 
 export function getReportStatus(ticket: Ticket): ReportLifecycleStatus {
   const flags = getReportFlags(ticket);
   if (flags.isConfirmed) return 'SUBMISSION_CONFIRMED';
-  if (flags.isLegacy) return 'LEGACY_UNVERIFIED';
   if (flags.isExported) return 'EXPORTED';
   if (ticket.ticketType === 'CAR_SALVAGE' && ticket.carRecord) {
     if (!validateVin(ticket.carRecord.vin).isValid) return 'DISCREPANCY';
