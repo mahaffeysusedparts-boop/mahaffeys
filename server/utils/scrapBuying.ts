@@ -7,6 +7,8 @@ import { lockFinancialState, putState, stateValue } from './financialState';
 import { serverScale } from './scale';
 import { normalizeWeight, validateScaleReading, validatedBreakdown } from '../../src/utils/weighingContract';
 import { yardDate } from '../../src/utils/yardDates';
+import { intakeRequirementReview } from '../../src/utils/intakeRequirements';
+import { DEFAULT_INTAKE_REQUIREMENTS, type IntakeRequirements } from '../../src/types/intakeRequirements';
 import type { Ticket, MetalGrade, ScaleConfig, CashDrawerLog } from '../../src/types/scrap';
 import type { BuyingPolicy, LegacyBuyingReview } from '../../src/types/buyingPayments';
 import type { PoolClient } from 'pg';
@@ -293,12 +295,13 @@ export async function executeBuyingCommand(command: z.infer<typeof buyingCommand
         next = await validateSave(client,previous,command.ticket as unknown as Ticket,user);
       } else if (command.action === 'FINALIZE') {
         if (previous.buying.stage !== 'DRAFT' || previous.buying.activeCycleId || previous.pendingPlatformCapture || previous.scaleGrossInWeight != null || !previous.scrapLines?.length) fail('Finish every weighing cycle before final review');
-        if (!previous.customerId || !previous.customerIdNumber || !previous.customerPhone || !previous.vehicleLicensePlate || !command.reviewed) fail('Seller ID, phone, vehicle plate and explicit review are required');
+        if (!previous.customerId || !previous.customerIdNumber || !previous.vehicleLicensePlate || !command.reviewed) fail('Seller ID, vehicle plate and explicit review are required');
         const seller = await client.query('SELECT id_type,id_state,id_number,address,phone FROM customers WHERE id=$1',[previous.customerId]);
-        if (!seller.rows[0]?.id_state || !seller.rows[0]?.address || !seller.rows[0]?.phone) fail('Complete the seller issuing jurisdiction, phone and address in the customer registry');
+        if (!seller.rows[0]?.id_type || !seller.rows[0]?.id_state || !seller.rows[0]?.id_number) fail('Complete the seller identity and issuing jurisdiction in the customer registry');
         if (seller.rows[0].id_number!==previous.customerIdNumber) fail('Seller ID conflicts with the confirmed customer profile');
-        const photos = previous.complianceCaptures;
-        if (['personPhotoUrl','idPhotoUrl','vehiclePhotoUrl','licensePlatePhotoUrl','loadPhotoUrl'].some((key) => !photos?.[key as keyof typeof photos])) fail('Complete the current seller/ID/vehicle/plate/load verification photos');
+        const requirements = await stateValue<IntakeRequirements>(client, 'mahaffeys_intake_requirements', DEFAULT_INTAKE_REQUIREMENTS);
+        const evidenceReview = intakeRequirementReview(requirements, { captures: previous.complianceCaptures, phone: previous.customerPhone?.trim() ? seller.rows[0].phone : undefined, address: seller.rows[0].address });
+        if (evidenceReview.blockers.length) fail(`Required before finalization: ${evidenceReview.blockers.join(', ')}. An administrator can change yard requirements in Settings.`);
         if (previous.scrapLines.some((line) => !line.sourceCaptureIds?.length)) fail('Legacy weighed lines must be explicitly corrected and reweighed before canonical finalization');
         const lineIds = previous.scrapLines.map((line) => line.id);
         const stored = await client.query('SELECT id FROM scrap_buying_lines WHERE ticket_id=$1 AND active=TRUE AND id=ANY($2::text[])',[previous.id,lineIds]);
@@ -306,7 +309,7 @@ export async function executeBuyingCommand(command: z.infer<typeof buyingCommand
         const cents = previous.scrapLines.reduce((sum,line) => sum+Math.round(line.lineTotal*100),0);
         if (!Number.isSafeInteger(cents) || cents > 99999999999999) fail('Ticket amount exceeds supported limits');
         next = { ...previous,status:'COMPLETED',grossTotal:cents/100,finalPayout:cents/100,totalDeductions:0,
-          buying:{...previous.buying,stage:'FINALIZED',finalizedAt:new Date().toISOString(),sellerIdentity:{idType:seller.rows[0].id_type.toUpperCase(),idState:seller.rows[0].id_state.toUpperCase(),idNumber:seller.rows[0].id_number.toUpperCase()}} };
+          buying:{...previous.buying,stage:'FINALIZED',finalizedAt:new Date().toISOString(),intakeRequirementReview:{revision:requirements.revision,requirePhotos:requirements.requirePhotos,requirePhone:requirements.requirePhone,requireAddress:requirements.requireAddress,optionalMissing:evidenceReview.optionalMissing},sellerIdentity:{idType:seller.rows[0].id_type.toUpperCase(),idState:seller.rows[0].id_state.toUpperCase(),idNumber:seller.rows[0].id_number.toUpperCase()}} };
       } else if (command.action === 'PAY') next = await pay(client,previous,command,user);
       else if (command.action === 'VOID') {
         if (previous.buying.stage === 'PAID') fail('A paid ticket cannot be voided through draft cancellation; reconcile payment evidence separately');

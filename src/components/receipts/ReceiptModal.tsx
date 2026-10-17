@@ -76,6 +76,8 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ ticket, open, onOpen
           </div>
         </div>
 
+        {!!ticket.buying?.intakeRequirementReview?.optionalMissing.length && <div className="rounded-lg border border-amber-600 bg-amber-50 p-2 text-[11px] text-amber-950"><strong>Missing optional yard information:</strong> {ticket.buying.intakeRequirementReview.optionalMissing.join(', ')}. Finalized under administrator-configured requirement revision {ticket.buying.intakeRequirementReview.revision}; this is not verification of missing evidence or a legal exemption.</div>}
+
         {/* Ticket Metadata Bar with Customer Phone */}
         <div className="grid grid-cols-2 gap-4 border-b border-slate-300 pb-2 text-[11px]">
           <div>

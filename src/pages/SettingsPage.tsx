@@ -18,6 +18,7 @@ import { Switch } from '@/components/ui/switch';
 import { SCALE_ACCENT_COLORS } from '@/types/scrap';
 import { scaleAccent } from '@/components/scale/scaleAccent';
 import { NetworkPrinterManager } from '@/components/settings/NetworkPrinterManager';
+import { IntakeRequirementsSettings } from '@/components/settings/IntakeRequirementsSettings';
 import {
   PAGE_KEYS,
   PAGE_LABELS,
@@ -363,6 +364,7 @@ export default function SettingsPage() {
       <Navbar />
 
       <main className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+        <IntakeRequirementsSettings />
         
         {/* Hidden File Input for Importing Backup */}
         <input

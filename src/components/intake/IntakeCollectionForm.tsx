@@ -3,6 +3,7 @@ import { ComplianceCaptures, Customer, Ticket } from '@/types/scrap';
 import { storageService } from '@/services/storageService';
 import { customerService, type CustomerInput } from '@/services/customerService';
 import { scrapBuyingService } from '@/services/scrapBuyingService';
+import { useIntakeRequirements } from '@/services/intakeRequirementsService';
 import { ComplianceCaptureModal } from '@/components/compliance/ComplianceCaptureModal';
 import { calculateComplianceScore } from '@/utils/complianceUtils';
 import { Button } from '@/components/ui/button';
@@ -49,6 +50,7 @@ const emptyCaptures: ComplianceCaptures = {
 };
 
 export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBack, onSaved }) => {
+  const requirements = useIntakeRequirements();
   const [ticketNumber, setTicketNumber] = useState<string>(() => storageService.generateScrapReceiptNumber());
   const [customerSearchOpen, setCustomerSearchOpen] = useState(false);
   const [customerSearch, setCustomerSearch] = useState('');
@@ -199,10 +201,10 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
 
       await scrapBuyingService.create(ticket);
 
-      if (!customerPhone.trim() || !customerIdNumber.trim()) {
-        toast.warning('Phone or ID number is missing', {
+      if (!customerIdNumber.trim() || (!customerPhone.trim() && requirements.data?.requirePhone !== false)) {
+        toast.warning('Required seller information is missing', {
           description: customerIdNumber.trim()
-            ? 'Capture the phone number before the final payout is issued.'
+            ? 'Phone is currently required by the yard before finalization. An administrator can make it optional in Settings.'
             : 'An ID number is required to add this seller to the customer registry.',
         });
       }
@@ -418,7 +420,7 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
               <div className="flex items-center gap-2">
                 <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-950 text-sm font-black text-blue-300 ring-1 ring-blue-500/30">2</span>
                 <CardTitle className="text-sm font-bold uppercase tracking-wide text-white">
-                  Compliance Photo Capture
+                  Intake Photos {requirements.data?.requirePhotos === false ? '· Optional' : ''}
                 </CardTitle>
               </div>
               <Badge
@@ -530,12 +532,13 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
             </CardContent>
           </Card>
 
-          <div className="flex items-start gap-3 rounded-2xl border border-slate-800 bg-slate-900/60 p-4 text-xs text-slate-400">
-            <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-blue-400" />
-            <p>
-              Photos and seller details satisfy the state 5-point record. Signatures are completed on the printed
-              voucher at payout.
-            </p>
+          <div className="flex items-start gap-3 rounded-2xl border border-emerald-800 bg-emerald-950 p-4 text-xs text-emerald-100">
+            <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-emerald-300" />
+            <div>
+              <p>{requirements.data ? `Yard finalization settings — Photos: ${requirements.data.requirePhotos ? 'required' : 'optional'} · Phone: ${requirements.data.requirePhone ? 'required' : 'optional'} · Address: ${requirements.data.requireAddress ? 'required' : 'optional'}.` : 'Loading yard finalization settings…'}</p>
+              <p className="mt-2">Missing optional information will not block finalization. Seller identity and applicable legal/payment requirements remain protected. Finalize opens your printable voucher.</p>
+              <a href="/settings#intake-requirements" className="mt-2 inline-block font-semibold underline">Administrator requirement settings</a>
+            </div>
           </div>
         </div>
       </div>

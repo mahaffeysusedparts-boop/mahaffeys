@@ -5,6 +5,13 @@ export interface BuyingState {
   activeCycleId?: string;
   cycleNumber?: number;
   finalizedAt?: string;
+  intakeRequirementReview?: {
+    revision: number;
+    requirePhotos: boolean;
+    requirePhone: boolean;
+    requireAddress: boolean;
+    optionalMissing: string[];
+  };
   sellerIdentity?: {idType:string;idState:string;idNumber:string};
   payment?: {
     id: string;

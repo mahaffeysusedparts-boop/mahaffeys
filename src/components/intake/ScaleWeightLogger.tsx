@@ -4,6 +4,7 @@ import { scaleService } from '@/services/scaleService';
 import { storageService } from '@/services/storageService';
 import { authService } from '@/services/authService';
 import { scrapBuyingService } from '@/services/scrapBuyingService';
+import { useIntakeRequirements } from '@/services/intakeRequirementsService';
 import { useQuery } from '@tanstack/react-query';
 import { calculateComplianceScore } from '@/utils/complianceUtils';
 import { computeWeightBreakdown, buildScrapTicketLine } from '@/utils/weightCalculations';
@@ -88,6 +89,7 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
   onActiveTicketChange,
   onTicketCreated,
 }) => {
+  const requirements = useIntakeRequirements();
   const [metals] = useState<MetalGrade[]>(() => storageService.getMetals());
   const [popularMetals] = useState<MetalGrade[]>(() => {
     const popular = metals.filter((m) => m.isPopular);
@@ -1608,8 +1610,13 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
               <Label htmlFor="canonical-ticket-notes">Ticket notes</Label>
               <Textarea id="canonical-ticket-notes" value={notes} onChange={(event) => setNotes(event.target.value)} onBlur={handleNotesBlur} disabled={saveState === 'PENDING' || remoteConflict} className="rounded-xl border-slate-700 bg-slate-950 text-white" />
               {(singleCapture || activeTicket.scaleGrossInWeight != null) && <p role="alert" className="text-sm text-amber-200">Unfinished weighing blocks finalization. Finish or explicitly cancel it first.</p>}
-              <label className="flex items-start gap-2 rounded-xl border border-slate-700 p-3 text-xs leading-relaxed"><input type="checkbox" checked={reviewConfirmed} onChange={(event) => setReviewConfirmed(event.target.checked)} className="mt-0.5 accent-emerald-500" />I reviewed the current seller ID/contact/address, required photos, each separately measured grade, rates and deductions.</label>
-              <Button onClick={handleComplete} disabled={!reviewConfirmed || !lines.length || !!singleCapture || activeTicket.scaleGrossInWeight != null || remoteConflict || saveState === 'PENDING'} className="h-12 w-full rounded-xl bg-emerald-600 font-bold text-white hover:bg-emerald-500">Finalize purchase · unpaid voucher</Button>
+              <div className="rounded-xl border border-slate-700 bg-slate-950 p-3 text-xs leading-relaxed text-slate-100">
+                {requirements.data ? <><p className="font-semibold">Yard requirements · revision {requirements.data.revision}</p><p className="mt-1">Photos: {requirements.data.requirePhotos ? 'Required' : 'Optional'} · Phone: {requirements.data.requirePhone ? 'Required' : 'Optional'} · Address: {requirements.data.requireAddress ? 'Required' : 'Optional'}</p><p className="mt-2 text-amber-100">Missing optional information is recorded on the voucher; identity, completed weights and payment checks stay protected.</p></> : <p role="status">Loading yard requirements…</p>}
+                <a href="/settings#intake-requirements" className="mt-2 inline-block text-emerald-200 underline">Administrator requirement settings</a>
+                {requirements.isError && <p role="alert" className="mt-2 text-amber-200">Requirements could not refresh. <button onClick={() => void requirements.refetch()} className="underline">Retry</button> before finalizing.</p>}
+              </div>
+              <label className="flex items-start gap-2 rounded-xl border border-slate-700 p-3 text-xs leading-relaxed"><input type="checkbox" checked={reviewConfirmed} onChange={(event) => setReviewConfirmed(event.target.checked)} className="mt-0.5 accent-emerald-500" />I reviewed seller identity, the required information above, each separately measured grade, rates and deductions. Any missing optional information will remain clearly recorded.</label>
+              <Button onClick={handleComplete} disabled={!reviewConfirmed || !requirements.data || requirements.isError || !lines.length || !!singleCapture || activeTicket.scaleGrossInWeight != null || remoteConflict || saveState === 'PENDING'} className="h-12 w-full rounded-xl bg-emerald-600 font-bold text-white hover:bg-emerald-500">Finalize intake & open voucher</Button>
             </div>
           </div>
         </>
