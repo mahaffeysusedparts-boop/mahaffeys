@@ -276,6 +276,9 @@ export interface ComplianceCaptures {
   nmvtisBatchId?: string;
   nmvtisSubmissionConfirmedAt?: string;
   nmvtisSubmissionConfirmedBy?: string;
+  nmvtisSubmissionNote?: string;
+  /** Set on tickets updated by the export/confirmation workflow introduced in v2. */
+  nmvtisWorkflowVersion?: 2;
 }
 
 export interface ScrapTicketLine {
@@ -384,6 +387,7 @@ export interface CarIntakeRecord {
   purchasePrice?: number;
   originSource?: string;
   customerAddress?: string;
+  titleState?: string;
   notes?: string;
   photoUrl?: string;
 
@@ -458,6 +462,8 @@ export interface NMVTISReportLog {
   submissionConfirmedAt?: string;
   /** Human-readable note recorded at confirmation time (e.g. confirmation number). */
   submissionNote?: string;
+  /** Set on logs created by the explicit export/confirmation workflow. */
+  workflowVersion?: 2;
   /** True when this log predates the submission-confirmation workflow and its real submission state is unknown. */
   legacyExported?: boolean;
 }

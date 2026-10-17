@@ -389,7 +389,7 @@ export const storageService = {
   /** Stamps tickets (and their car records) as reported in an NMVTIS batch. */
   markTicketsAsNMVTISReported: (ticketIds: string[], batchId: string): void => {
     const now = new Date().toISOString();
-    const reported = { nmvtisReported: true, nmvtisReportedAt: now, nmvtisBatchId: batchId };
+    const reported = { nmvtisReported: true, nmvtisReportedAt: now, nmvtisBatchId: batchId, nmvtisWorkflowVersion: 2 as const };
     const tickets = storageService.getTickets().map((t) =>
       ticketIds.includes(t.id)
         ? {
@@ -406,13 +406,14 @@ export const storageService = {
 
   /** Records the operator who confirmed an NMVTIS batch was actually submitted. */
   markTicketsAsNMVTISConfirmed: (ticketIds: string[], confirmedBy: string, confirmedAt: string, note?: string): void => {
+    const confirmation = { nmvtisSubmissionConfirmedAt: confirmedAt, nmvtisSubmissionConfirmedBy: confirmedBy, nmvtisWorkflowVersion: 2 as const, ...(note ? { nmvtisSubmissionNote: note } : {}) };
     const tickets = storageService.getTickets().map((t) =>
       ticketIds.includes(t.id)
         ? {
             ...t,
-            complianceCaptures: { ...t.complianceCaptures, nmvtisSubmissionConfirmedAt: confirmedAt, nmvtisSubmissionConfirmedBy: confirmedBy, ...(note ? { nmvtisSubmissionNote: note } : {}) },
+            complianceCaptures: { ...t.complianceCaptures, ...confirmation },
             carRecord: t.carRecord
-              ? { ...t.carRecord, complianceCaptures: { ...t.carRecord.complianceCaptures, nmvtisSubmissionConfirmedAt: confirmedAt, nmvtisSubmissionConfirmedBy: confirmedBy, ...(note ? { nmvtisSubmissionNote: note } : {}) } }
+              ? { ...t.carRecord, complianceCaptures: { ...t.carRecord.complianceCaptures, ...confirmation } }
               : t.carRecord,
           }
         : t
