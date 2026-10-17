@@ -1,16 +1,12 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { storageService } from "@/services/storageService";
 import { useAuth } from "@/context/AuthContext";
-import { Ticket, NMVTISReportLog } from "@/types/scrap";
+import { Ticket, NMVTISReportLog, NMVTISReportStatus, ReportLifecycleStatus, ReadinessResult, calculateReadiness, getReportStatus, validateExportBatch, getReportStatusLabel } from "@/utils/complianceUtils";
 import {
   validateVin,
   generateNMVTISCsv,
   generateLawEnforcementLogCsv,
   downloadFile,
-  calculateReadiness,
-  getReportStatus,
-  validateExportBatch,
-  getReportStatusLabel,
   getCurrentOperatorName,
   getNmvtisStatus,
   isNmvtisBannerActive,
@@ -226,9 +222,11 @@ export const CompliancePage: React.FC = () => {
   // ── Export workflow: preview → download (Exported) → confirm (Submission confirmed) ──
 
   const getExportTargets = () => {
-    return selectedTicketIds.length > 0
-      ? vehicleTickets.filter((t) => selectedTicketIds.includes(t.id))
-      : filteredTickets;
+    if (selectedTicketIds.length > 0) {
+      return vehicleTickets.filter((t) => selectedTicketIds.includes(t.id));
+    }
+    // Export from the filtered view — only Ready records
+    return filteredTickets.filter((t) => getReportStatus(t) === ReportLifecycleStatus.READY);
   };
 
   const handleOpenExportPreview = () => {
@@ -269,7 +267,7 @@ export const CompliancePage: React.FC = () => {
       exportedAt: new Date().toISOString(),
       ticketCount: targets.length,
       ticketIds: targetIds,
-      status: "EXPORTED",
+      status: ReportLifecycleStatus.EXPORTED,
       exportedBy: operatorName,
       downloadUrl: filename,
     };
@@ -321,7 +319,7 @@ export const CompliancePage: React.FC = () => {
       exportedAt: new Date().toISOString(),
       ticketCount: targetIds.length,
       ticketIds: targetIds,
-      status: "EXPORTED",
+      status: ReportLifecycleStatus.EXPORTED,
       exportedBy: operatorName,
       downloadUrl: `${batchId}.csv`,
     });
@@ -335,19 +333,19 @@ export const CompliancePage: React.FC = () => {
   };
 
   // Mark a batch as submission-confirmed by an operator
-  const handleConfirmSubmission = () => {
-    if (!confirmingLogId) return;
-    const log = logs.find((l) => l.id === confirmingLogId);
-    if (!log) return;
-
-    const now = new Date().toISOString();
-    const updatedLog: NMVTISReportLog = {
-      ...log,
-      status: "SUBMISSION_CONFIRMED",
-      submissionConfirmedBy: operatorName,
-      submissionConfirmedAt: now,
-      submissionNote: confirmNote || undefined,
-    };
+    const handleConfirmSubmission = () => {
+      if (!confirmingLogId) return;
+      const log = logs.find((l) => l.id === confirmingLogId);
+      if (!log) return;
+  
+      const now = new Date().toISOString();
+      const updatedLog: NMVTISReportLog = {
+        ...log,
+        status: ReportLifecycleStatus.SUBMISSION_CONFIRMED,
+        submissionConfirmedBy: operatorName,
+        submissionConfirmedAt: now,
+        submissionNote: confirmNote || undefined,
+      };
     storageService.saveNMVTISLog(updatedLog);
     storageService.markTicketsAsNMVTISConfirmed(log.ticketIds, operatorName, now, confirmNote || undefined);
 
