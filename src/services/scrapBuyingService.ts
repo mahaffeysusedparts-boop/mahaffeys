@@ -2,7 +2,7 @@ import { apiRequest } from './apiClient';
 import { sharedStorage } from './sharedStorage';
 import { storageService } from './storageService';
 import type { Ticket } from '@/types/scrap';
-import type { BuyingPolicy } from '@/types/buyingPayments';
+import type { BuyingPolicy, LegacyBuyingReview } from '@/types/buyingPayments';
 
 const pendingKeys = new Map<string,string>();
 function cacheTicket(ticket: Ticket) {
@@ -32,7 +32,7 @@ export const scrapBuyingService = {
     return result;
   },
   async queue() {
-    const response = await apiRequest<{tickets:Ticket[];policy:BuyingPolicy|null}>('/api/scrap-buying/queue');
+    const response = await apiRequest<{tickets:Ticket[];policy:BuyingPolicy|null;legacyReviews:LegacyBuyingReview[]}>('/api/scrap-buying/queue');
     const local = storageService.getTickets();
     response.tickets = response.tickets.map((ticket) => {
       const acknowledged = local.find((row) => row.id === ticket.id);
@@ -42,5 +42,6 @@ export const scrapBuyingService = {
     sharedStorage.applyServerValue('mahaffeys_tickets',[...local.filter((ticket) => !ids.has(ticket.id)),...response.tickets]);
     return response;
   },
+  legacyReview: (review: {ticketId:string;revision:number;disbursed:boolean;method?:'Cash'|'Check';paidAt?:string;evidenceReference:string;idType:string;idState:string;idNumber:string}) => apiRequest<LegacyBuyingReview>('/api/scrap-buying/legacy-review',{method:'POST',body:JSON.stringify({...review,reviewed:true})}),
   policy: (policy: BuyingPolicy) => apiRequest<BuyingPolicy>('/api/scrap-buying/policy',{method:'POST',body:JSON.stringify(policy)}),
 };

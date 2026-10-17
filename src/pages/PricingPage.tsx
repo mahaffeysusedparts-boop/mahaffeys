@@ -342,7 +342,7 @@ export default function PricingPage() {
           </TabsList>
           <TabsContent value="parts-pdf"><PriceSheetManager/></TabsContent>
 
-          {/* TAB 1: Scrap Metals Catalog */
+          {/* TAB 1: Scrap Metals Catalog */}
           <TabsContent value="metals" className="space-y-6">
             
             {/* Quick Bulk Bump Toolbar */}

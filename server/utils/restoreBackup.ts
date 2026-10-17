@@ -3,7 +3,7 @@ import { createError } from 'nitro/h3';
 import { canonicalBackupTables } from './buyingPriceSchema';
 import { readBackupFile } from './backups';
 import { withTransaction } from './db';
-import { legacyFinancialFields, lockFinancialState, protectFinancialState, putState, stableFinancialJSON, stateValue } from './financialState';
+import { legacyFinancialFields, lockFinancialState, putState, stableFinancialJSON, stateValue } from './financialState';
 
 const reject = (message: string): never => {throw createError({statusCode:409,statusMessage:message});};
 const rowHash = (row: unknown) => createHash('sha256').update(stableFinancialJSON(row)).digest('hex');
@@ -11,7 +11,7 @@ const wireRows = (rows:Array<Record<string,unknown>>) => JSON.parse(JSON.stringi
 const mutableKeys:Record<string,string> = {customers:'id',scrap_buying_tickets:'ticket_id',scrap_buying_cycles:'id',scrap_buying_passes:'id',price_sheet_drafts:'id',price_sheet_active:'singleton'};
 
 export async function restoreServerBackup(fileName: string,userId: string) {
-  const file = await readBackupFile(fileName);
+  const file = await readBackupFile(fileName,128*1024*1024);
   if (!file) throw createError({statusCode:404,statusMessage:'Backup file not found'});
   if (file.sizeBytes>128*1024*1024) reject('Snapshot is too large for in-app restore. Use the yard’s database recovery procedure.');
   const backup = JSON.parse(file.content) as {meta:{format:string;checksum:string};state:Record<string,unknown>;tables:Record<string,Array<Record<string,unknown>>>};
@@ -62,7 +62,11 @@ export async function restoreServerBackup(fileName: string,userId: string) {
         const canonical = (await client.query('SELECT ticket_id,document FROM scrap_buying_tickets')).rows;
         const ids = new Set(canonical.map((row)=>row.ticket_id));
         restored = [...(Array.isArray(value)?value:[]).filter((row)=>!ids.has(row.id)),...canonical.map((row)=>row.document)];
-      } else if (key==='mahaffeys_cash_drawer') restored = await protectFinancialState(client,key,value,'admin');
+      } else if (key==='mahaffeys_cash_drawer') {
+        const payments = (await client.query('SELECT drawer_entry_id,document FROM scrap_buying_payments WHERE drawer_entry_id IS NOT NULL')).rows;
+        const ids = new Set(payments.map((row)=>row.drawer_entry_id));
+        restored = [...(Array.isArray(value)?value:[]).filter((row)=>!ids.has(row.id)),...payments.map((row)=>row.document.drawerEntry)].sort((a,b)=>String(a.timestamp).localeCompare(String(b.timestamp)));
+      }
       await putState(client,key,restored,userId);
     }
     return {restored:true,tableCount:canonicalBackupTables.length};

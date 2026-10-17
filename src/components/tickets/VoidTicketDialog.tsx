@@ -58,7 +58,8 @@ export const VoidTicketDialog: React.FC<VoidTicketDialogProps> = ({ ticket, open
     if (!canConfirm) return;
     const fullReason = note.trim() ? `${reason} — ${note.trim()}` : reason;
     try {
-      const voided = ticket.buying ? await scrapBuyingService.void(ticket,fullReason) : storageService.voidTicket(ticket.id, {
+      const canonical = ticket.ticketType==='SCRAP_METAL' && ticket.status==='PENDING' && !ticket.buying ? await scrapBuyingService.adopt(ticket.id) : ticket;
+      const voided = canonical.buying ? await scrapBuyingService.void(canonical,fullReason) : storageService.voidTicket(ticket.id, {
         by: user?.fullName || user?.username || 'Unknown operator', reason: fullReason,
       });
       if (!voided) { toast.error(`Ticket #${ticket.id} could not be found`); return; }

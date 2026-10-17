@@ -1,10 +1,11 @@
 import { defineHandler } from 'nitro';
-import { readBody, createError } from 'nitro/h3';
+import { assertBodySize, readBody, createError } from 'nitro/h3';
 import { buyingCommandSchema, buyingUser, executeBuyingCommand } from '../../../utils/scrapBuying';
 
 export default defineHandler(async (event) => {
   const user = await buyingUser(event);
-  const parsed = buyingCommandSchema.safeParse(await readBody(event, { limit: 8 * 1024 * 1024 }));
+  assertBodySize(event, 8 * 1024 * 1024);
+  const parsed = buyingCommandSchema.safeParse(await readBody(event));
   if (!parsed.success) throw createError({statusCode:400,statusMessage:parsed.error.issues[0]?.message ?? 'Invalid buying command'});
   try { return await executeBuyingCommand(parsed.data,user); }
   catch (error) {

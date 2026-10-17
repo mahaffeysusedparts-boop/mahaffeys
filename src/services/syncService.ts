@@ -72,7 +72,7 @@ const GROWING_ARRAY_FIELDS = ["scrapLines", "weightTransactions"];
 const PENDING_WEIGH_FIELDS = ["scaleGrossInWeight", "scaleGrossInAt", "scaleTareOutWeight", "scaleTareOutAt"];
 
 function mergeRecord(local: Record<string, unknown>, remote: Record<string, unknown>) {
-  if (remote.buying) return remote;
+  if (remote.buying) return Number((local.buying as {revision?:number})?.revision ?? 0)>Number((remote.buying as {revision?:number}).revision ?? 0)?local:remote;
   if (local.buying) return local;
   const localUpdatedAt = Date.parse(String(local.updatedAt ?? "")) || 0;
   const remoteUpdatedAt = Date.parse(String(remote.updatedAt ?? "")) || 0;
@@ -265,7 +265,7 @@ class SyncService {
       let applied = 0;
       for (const entry of response.entries) {
         if (!(SHARED_KEYS as readonly string[]).includes(entry.key)) continue;
-        if (currentUserId && entry.updatedBy === currentUserId) continue;
+        if (currentUserId && entry.updatedBy === currentUserId && !['mahaffeys_tickets','mahaffeys_cash_drawer'].includes(entry.key)) continue;
         const localValue = readLocalValue(entry.key);
         const merged = MERGE_KEYS.has(entry.key) && localValue
           ? mergeArrays(localValue, entry.value)

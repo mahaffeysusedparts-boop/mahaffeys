@@ -94,7 +94,7 @@ export default defineHandler(async (event) => {
     }
 
     const now = new Date();
-    value = await protectFinancialState(client,key,value,user.role);
+    value = await protectFinancialState(client,key,value,user.role,user.fullName);
     await client.query(`
       INSERT INTO app_state (key, value, updated_at, updated_by) VALUES ($1, $2::jsonb, $3, $4)
       ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at, updated_by = EXCLUDED.updated_by

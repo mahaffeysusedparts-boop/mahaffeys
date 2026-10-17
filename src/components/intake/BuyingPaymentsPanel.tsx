@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { ReceiptModal } from '@/components/receipts/ReceiptModal';
+import { LegacyBuyingReviewPanel } from './LegacyBuyingReviewPanel';
 import { ShieldCheck, Banknote } from 'lucide-react';
 import { toast } from 'sonner';
 import type { BuyingPolicy } from '@/types/buyingPayments';
@@ -41,6 +42,7 @@ export function BuyingPaymentsPanel({onPaid}: {onPaid?: () => void}) {
     setPolicyJson(JSON.stringify(policy,null,2));setPolicyConfirmed(false);
   };
   return <section className="space-y-4 rounded-2xl border border-emerald-800 bg-slate-900 p-4 text-white sm:p-6">
+    {allowed && <LegacyBuyingReviewPanel/>}
     <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="flex items-center gap-2 text-xl font-bold"><Banknote className="text-emerald-300"/> Buying payments</h2><Button variant="outline" onClick={() => void queue.refetch()} className="rounded-xl border-slate-600 bg-slate-800 text-white">Refresh queue</Button></div>
     <p className="text-sm text-slate-200">Finalized purchases remain unpaid until actual cash disbursement or check issuance is acknowledged here. Historical tickets are excluded until reconciled; no payment status is inferred from legacy completion.</p>
     {queue.isError && <p role="alert" className="text-amber-200">{queue.error.message}</p>}

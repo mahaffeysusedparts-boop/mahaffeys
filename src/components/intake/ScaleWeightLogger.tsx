@@ -129,8 +129,6 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
   const [reviewConfirmed, setReviewConfirmed] = useState(false);
   const serverQueue = useQuery({queryKey:['scrap-buying-queue'],queryFn:() => scrapBuyingService.queue(),refetchInterval:5000});
 
-  const [payoutMethod, setPayoutMethod] = useState<'Cash' | 'Check'>('Cash');
-  const [checkNumber, setCheckNumber] = useState(`CHK-${Math.floor(1000 + Math.random() * 9000)}`);
   const [notes, setNotes] = useState('');
 
   const singleCapture = activeTicket?.pendingPlatformCapture ?? null;
@@ -163,7 +161,7 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
   const canEdit = () => {
     if (busyRef.current) return false;
     const latest = storageService.getTickets().find((ticket) => ticket.id === activeTicket?.id);
-    if (remoteConflict || !latest || latest.status !== 'PENDING' || JSON.stringify(latest) !== JSON.stringify(activeTicket)) {
+    if (remoteConflict || !latest || latest.status !== 'PENDING' || latest.buying?.revision !== activeTicket?.buying?.revision) {
       setRemoteConflict(true);
       toast.error('This ticket changed or closed on another workstation. Review it before continuing.');
       return false;
@@ -266,7 +264,7 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
           .getTickets()
           .find((t) => t.id === activeTicketId && t.ticketType === 'SCRAP_METAL');
         const stillOpen = latest?.status === 'PENDING';
-        if (!stillOpen || (activeTicket && JSON.stringify(latest) !== JSON.stringify(activeTicket))) {
+        if (!busyRef.current && (!stillOpen || (activeTicket && (latest?.buying?.revision ?? 0) > (activeTicket.buying?.revision ?? 0)))) {
           setRemoteConflict(true);
           setAutoCapture(false);
           toast.warning(`Intake #${activeTicketId} changed or closed on another workstation`, {
@@ -281,8 +279,6 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
   }, [activeTicketId, activeTicket]);
 
   const syncEditorState = (ticket: Ticket) => {
-    setPayoutMethod(ticket.payoutMethod === 'Check' ? 'Check' : 'Cash');
-    if (ticket.checkNumber) setCheckNumber(ticket.checkNumber);
     setNotes(ticket.notes && !ticket.notes.startsWith('Seller info') ? ticket.notes : '');
   };
 
@@ -313,7 +309,7 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
     refreshQueue();
     if (activeTicket && serverQueue.data) {
       const latest = serverQueue.data.tickets.find((ticket) => ticket.id === activeTicket.id);
-      if (latest && latest.buying?.revision !== activeTicket.buying?.revision && !busyRef.current) setRemoteConflict(true);
+      if (latest && (latest.buying?.revision ?? 0) > (activeTicket.buying?.revision ?? 0) && !busyRef.current) setRemoteConflict(true);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [serverQueue.data]);
@@ -780,18 +776,6 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
   const lines = activeTicket?.scrapLines || [];
   const totalBillableWeight = lines.reduce((acc, l) => acc + l.billableWeight, 0);
   const totalPayout = lines.reduce((acc, l) => acc + l.lineTotal, 0);
-  const hasNonFerrous = lines.some((l) =>
-    l.metalCategory === 'Non-Ferrous' || l.metalCategory === 'Precious' || l.metalCategory === 'E-Waste' || l.metalCategory === 'Batteries & Auto'
-  );
-  const maxCashLimit = hasNonFerrous ? 25.0 : 100.0;
-  const exceedsCashLimit = totalPayout > maxCashLimit;
-
-  useEffect(() => {
-    if (exceedsCashLimit && payoutMethod === 'Cash') {
-      setPayoutMethod('Check');
-    }
-  }, [exceedsCashLimit, payoutMethod]);
-
   const handleNotesBlur = async () => {
     if (!activeTicket || !canEdit()) return;
     const trimmed = notes.trim();

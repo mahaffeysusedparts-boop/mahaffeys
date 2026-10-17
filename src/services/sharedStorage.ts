@@ -363,7 +363,7 @@ const GROWING_ARRAY_FIELDS = ["scrapLines", "weightTransactions"];
 const PENDING_WEIGH_FIELDS = ["scaleGrossInWeight", "scaleGrossInAt", "scaleTareOutWeight", "scaleTareOutAt"];
 
 function mergeRecord(localRecord: Record<string, unknown>, serverRecord: Record<string, unknown>) {
-  if (serverRecord.buying) return serverRecord;
+  if (serverRecord.buying) return Number((localRecord.buying as {revision?:number})?.revision ?? 0)>Number((serverRecord.buying as {revision?:number}).revision ?? 0)?localRecord:serverRecord;
   if (localRecord.buying) return localRecord;
   const localUpdatedAt = Date.parse(String(localRecord.updatedAt ?? "")) || 0;
   const serverUpdatedAt = Date.parse(String(serverRecord.updatedAt ?? "")) || 0;

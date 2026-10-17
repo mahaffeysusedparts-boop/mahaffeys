@@ -32,5 +32,19 @@ export interface BuyingPolicy {
     requirePermit: boolean;
     cashAtOrAboveCents: number | null;
     sellerDayCashLimitCents: number | null;
+    definition?: {name:string;code:string;category:string};
   }>;
+}
+
+export interface LegacyBuyingReview {
+  ticketId:string;
+  revision:number;
+  disbursed:boolean;
+  method?:'Cash'|'Check';
+  paidAt?:string;
+  amount:number;
+  evidenceReference:string;
+  sellerIdentity:{idType:string;idState:string;idNumber:string};
+  reviewedBy:string;
+  reviewedAt:string;
 }

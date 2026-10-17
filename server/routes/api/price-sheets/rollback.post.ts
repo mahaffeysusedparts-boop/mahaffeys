@@ -1,13 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import { defineHandler } from 'nitro';
-import { readBody, createError } from 'nitro/h3';
+import { assertBodySize, readBody, createError } from 'nitro/h3';
 import { z } from 'zod';
 import { priceSheetUser } from '../../../utils/priceSheets';
 import { withTransaction } from '../../../utils/db';
 
 export default defineHandler(async (event) => {
   const user = await priceSheetUser(event);
-  const body = z.object({version:z.string().uuid(),expectedActiveVersion:z.string().uuid()}).safeParse(await readBody(event,{limit:4096}));
+  assertBodySize(event, 4096);
+  const body = z.object({version:z.string().uuid(),expectedActiveVersion:z.string().uuid()}).safeParse(await readBody(event));
   if (!body.success) throw createError({statusCode:400,statusMessage:'Invalid rollback target'});
   return withTransaction(async (client) => {
     await client.query('SELECT pg_advisory_xact_lock(114682)');

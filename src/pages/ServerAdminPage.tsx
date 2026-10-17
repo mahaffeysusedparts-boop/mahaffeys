@@ -5,6 +5,7 @@ import { AlarmComManager } from "@/components/server/AlarmComManager";
 import { ScaleServerManager } from "@/components/server/ScaleServerManager";
 import { StoplightServerManager } from "@/components/server/StoplightServerManager";
 import { StorageBayManager } from "@/components/server/StorageBayManager";
+import { RestoreBackupButton } from '@/components/server/RestoreBackupButton';
 import { BusinessIntelligenceDashboard } from "@/components/admin/BusinessIntelligenceDashboard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -393,6 +394,7 @@ export default function ServerAdminPage() {
                                         >
                                           <Download className="w-4 h-4" />
                                         </Button>
+                                        <RestoreBackupButton fileName={backup.name}/>
                                       </TableCell>
                                     </TableRow>
                                   ))}
@@ -402,8 +404,8 @@ export default function ServerAdminPage() {
                           )}
                         </div>
 
-                        <p className="text-xs text-slate-500 mt-4">
-                          Restore = import the JSON via the existing Settings restore flow. Backups embed photo bytes.
+                        <p className="mt-4 rounded-xl border border-amber-800 bg-amber-950 p-3 text-xs text-amber-100">
+                          New v2 server snapshots include relational buying, payment, customer and price-sheet tables plus private PDF originals. Use Restore v2 here, not Settings’ workstation JSON import. External camera/ID upload files still need the yard’s separate media backup and recovery procedure. Recovery is not permission to pay historical tickets again.
                         </p>
                       </>
                     )}

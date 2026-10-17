@@ -22,7 +22,7 @@ export default defineHandler(async (event) => {
   await withTransaction(async (client) => {
     for (const [key, value] of Object.entries(body.state!)) {
       if (!ALLOWED_KEYS.has(key)) continue;
-      const protectedValue = await protectFinancialState(client,key,value,admin.role);
+      const protectedValue = await protectFinancialState(client,key,value,admin.role,admin.fullName);
       await client.query(`
         INSERT INTO app_state (key, value, updated_at, updated_by) VALUES ($1, $2::jsonb, $3, $4)
         ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at, updated_by = EXCLUDED.updated_by

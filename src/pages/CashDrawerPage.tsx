@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { storageService } from "@/services/storageService";
+import { recordDrawerEntry } from '@/services/cashDrawerService';
+import { yardDate } from '@/utils/yardDates';
 import { CashDrawerLog } from "@/types/scrap";
 import { Navbar } from "@/components/layout/Navbar";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -38,6 +40,7 @@ export default function CashDrawerPage() {
   const [logs, setLogs] = useState<CashDrawerLog[]>([]);
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [reconcileModalOpen, setReconcileModalOpen] = useState(false);
+  const [auditExpectedBalance,setAuditExpectedBalance] = useState<number|null>(null);
   const [zReportOpen, setZReportOpen] = useState(false);
 
   // Replenish form
@@ -58,25 +61,21 @@ export default function CashDrawerPage() {
 
   useEffect(() => {
     loadData();
+    return storageService.subscribe('mahaffeys_cash_drawer',loadData);
   }, []);
 
   const currentBalance = logs[0] ? logs[0].balanceAfter : 0;
-  const today = new Date().toDateString();
-  const todaysLogs = logs.filter((log) => new Date(log.timestamp).toDateString() === today);
+  const today = yardDate(new Date());
+  const todaysLogs = logs.filter((log) => Number.isFinite(Date.parse(log.timestamp)) && yardDate(log.timestamp) === today);
 
   // Add Cash Replenishment
-  const handleAddCash = () => {
-    if (addAmount <= 0) {
+  const handleAddCash = async () => {
+    if (addAmount <= 0 || !Number.isFinite(addAmount)) {
       toast.error("Please enter a valid cash amount");
       return;
     }
-    const currentOp = storageService.getSettings().operatorName;
-    storageService.addCashDrawerEntry({
-      type: "VAULT_REPLENISHMENT",
-      amount: Math.abs(addAmount),
-      operatorName: currentOp,
-      notes: addNotes,
-    });
+    try {await recordDrawerEntry({type:'VAULT_REPLENISHMENT',amount:Math.abs(addAmount),notes:addNotes,expectedBalance:currentBalance});}
+    catch(error) {toast.error(error instanceof Error?error.message:'Drawer update was not confirmed; refresh before another physical cash transfer');return;}
     loadData();
     setAddModalOpen(false);
     toast.success(`Added $${addAmount.toFixed(2)} to Cash Drawer Vault`);
@@ -91,16 +90,12 @@ export default function CashDrawerPage() {
     bills5 * 5 +
     bills1 * 1;
 
-  const discrepancy = countedTotal - currentBalance;
+  const discrepancy = countedTotal - (auditExpectedBalance ?? currentBalance);
 
-  const handlePerformAudit = () => {
-    const currentOp = storageService.getSettings().operatorName;
-    storageService.addCashDrawerEntry({
-      type: "CLOSING_AUDIT",
-      amount: Math.round(discrepancy * 100) / 100,
-      operatorName: currentOp,
-      notes: `End-of-day physical count audit (${discrepancy >= 0 ? "+" : ""}$${discrepancy.toFixed(2)} discrepancy)`,
-    });
+  const handlePerformAudit = async () => {
+    if (auditExpectedBalance!==currentBalance) {toast.error('Drawer activity changed after the count began. Close, reopen and recount before confirming.');return;}
+    try {await recordDrawerEntry({type:'CLOSING_AUDIT',amount:Math.round(discrepancy*100)/100,expectedBalance:auditExpectedBalance,notes:`End-of-day physical count audit (${discrepancy>=0?'+':''}$${discrepancy.toFixed(2)} discrepancy)`});}
+    catch(error) {toast.error(error instanceof Error?error.message:'Audit was not confirmed; refresh and recount');return;}
     loadData();
     setReconcileModalOpen(false);
     toast.success(`End-of-day cash reconciliation completed!`, {
@@ -149,7 +144,7 @@ export default function CashDrawerPage() {
             </Button>
 
             <Button
-              onClick={() => setReconcileModalOpen(true)}
+              onClick={() => {setAuditExpectedBalance(currentBalance);setReconcileModalOpen(true);}}
               variant="outline"
               className="border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold gap-1.5"
             >

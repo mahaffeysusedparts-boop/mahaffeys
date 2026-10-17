@@ -23,12 +23,13 @@ export default defineHandler(async (event) => {
   if (!("value" in body)) throw createError({ statusCode: 400, statusMessage: "A value is required" });
   const now = new Date();
   const serialized = JSON.stringify(body.value);
-  await withTransaction(async (client) => {
-    const value = await protectFinancialState(client,key,body.value,user.role);
+  const committed = await withTransaction(async (client) => {
+    const value = await protectFinancialState(client,key,body.value,user.role,user.fullName);
     await client.query(`
       INSERT INTO app_state (key, value, updated_at, updated_by) VALUES ($1, $2::jsonb, $3, $4)
       ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at, updated_by = EXCLUDED.updated_by
     `, [key, JSON.stringify(value), now, user.id]);
+    return value;
   });
   await recordAudit(auditFor(user, {
     action: "state.write",
@@ -36,5 +37,5 @@ export default defineHandler(async (event) => {
     entityId: key,
     detail: { sizeBytes: serialized.length, workstation: user.username },
   }));
-  return { ok: true, updatedAt: now.toISOString() };
+  return { ok: true, updatedAt: now.toISOString(), value: committed };
 });

@@ -138,11 +138,13 @@ export async function pruneBackups(): Promise<number> {
  * Reads one backup file by exact name. The name is validated against the
  * strict file pattern so path traversal is impossible.
  */
-export async function readBackupFile(name: string): Promise<{ content: string; sizeBytes: number } | null> {
+export async function readBackupFile(name: string, maxBytes = Infinity): Promise<{ content: string; sizeBytes: number } | null> {
   if (!BACKUP_FILE_PATTERN.test(name)) return null;
   const dir = getBackupDir();
   const path = join(dir, name);
   try {
+    const info = await stat(path);
+    if (info.size>maxBytes) return {content:'',sizeBytes:info.size};
     const content = await readFile(path, "utf8");
     return { content, sizeBytes: Buffer.byteLength(content, "utf8") };
   } catch {

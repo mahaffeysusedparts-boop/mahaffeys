@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { Car, Map, Plus, Scale, X } from "lucide-react";
 
 /**
@@ -11,6 +11,8 @@ import { Car, Map, Plus, Scale, X } from "lucide-react";
  */
 export function MobileQuickActions() {
   const [open, setOpen] = useState(false);
+  const location = useLocation();
+  if (location.pathname === '/parts-prices') return null;
 
   const actions = [
     {

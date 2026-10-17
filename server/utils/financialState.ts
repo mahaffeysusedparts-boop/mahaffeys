@@ -22,7 +22,18 @@ export const legacyFinancialFields = ['ticketType','createdAt','customerId','cus
 
 // All generic sync/chunk/import paths share the same lock as buying commands.
 // Protected records omitted by an evicted/stale cache are retained, not deleted.
-export async function protectFinancialState(client: PoolClient, key: string, incoming: unknown, actorRole: string) {
+export async function protectFinancialState(client: PoolClient, key: string, incoming: unknown, actorRole: string, actorName: string) {
+  if (['mahaffeys_metals','mahaffeys_car_rates','mahaffeys_cat_codes'].includes(key)) {
+    if (!['admin','yard_manager'].includes(actorRole)) throw createError({statusCode:403,statusMessage:'Buying rate/grade changes require a manager or administrator'});
+    await lockFinancialState(client);return incoming;
+  }
+  if (key==='mahaffeys_settings' && !['admin','yard_manager'].includes(actorRole)) {
+    await lockFinancialState(client);
+    const previous=await stateValue<Record<string,unknown>>(client,key,{});
+    const scaleDefinition=(value:unknown)=>Array.isArray(value)?value.map((scale)=>Object.fromEntries(['id','connectionType','weighingMode','supportedWeighingTypes','capacityLbs','resolutionLbs','splitProfiles'].map((field)=>[field,scale[field]]))):[];
+    if (stableFinancialJSON(scaleDefinition(previous.scales))!==stableFinancialJSON(scaleDefinition((incoming as Record<string,unknown>)?.scales))) throw createError({statusCode:403,statusMessage:'Scale capability/capacity/profile changes require a manager'});
+    return incoming;
+  }
   if (key !== 'mahaffeys_tickets' && key !== 'mahaffeys_cash_drawer') return incoming;
   await lockFinancialState(client);
   if (!Array.isArray(incoming) || incoming.some((row)=>!row || typeof row!=='object' || typeof row.id!=='string') || new Set(incoming.map((row)=>row.id)).size!==incoming.length) throw createError({statusCode:400,statusMessage:'Financial state requires uniquely identified records'});
@@ -56,7 +67,17 @@ export async function protectFinancialState(client: PoolClient, key: string, inc
   const rows = incoming.filter((row)=>!ids.has(row.id));
   if (rows.some((row)=>row.type==='PAYOUT_DISBURSEMENT' && canonicalTicketIds.has(row.ticketId))) conflict('Canonical ticket payments cannot be created by generic drawer writes');
   const previous = await stateValue<Array<Record<string,unknown>>>(client,key,[]);
-  const legacyPayouts = previous.filter((row)=>row.type==='PAYOUT_DISBURSEMENT' && !ids.has(row.id));
-  const protectedIds = new Set(legacyPayouts.map((row)=>row.id));
-  return [...rows.filter((row)=>!protectedIds.has(row.id)),...legacyPayouts,...payments.rows.map((row)=>row.document.drawerEntry)].sort((a,b)=>String(a.timestamp).localeCompare(String(b.timestamp)));
+  const known = new Set(previous.map((row)=>row.id));
+  const additions = rows.filter((row)=>!known.has(row.id));
+  let balance = Number(previous.toSorted((a,b)=>String(b.timestamp).localeCompare(String(a.timestamp)))[0]?.balanceAfter ?? 0);
+  const now = Date.now();
+  for (const [index,row] of additions.entries()) {
+    if (!['OPENING_FLOAT','VAULT_REPLENISHMENT','CLOSING_AUDIT','PAYOUT_DISBURSEMENT'].includes(row.type) || typeof row.amount!=='number' || !Number.isFinite(row.amount) || !Number.isFinite(row.balanceAfter) || !Number.isFinite(balance) || Math.abs(row.amount*100-Math.round(row.amount*100))>0.000001) conflict('Invalid or ambiguous drawer amount/balance; reconcile before writing');
+    if (Math.abs(now-Date.parse(row.timestamp))>300000 || !Number.isFinite(Date.parse(row.timestamp))) conflict('Backdated drawer records require a verified server restore, not generic sync');
+    if (row.type==='OPENING_FLOAT' && previous.length) conflict('Opening float already exists');
+    if (row.type==='CLOSING_AUDIT' && Math.round((row.balanceAfter-row.amount)*100)!==Math.round(balance*100)) conflict('Drawer changed during the count. Refresh and recount before confirming the audit.');
+    balance = Math.round((balance+row.amount)*100)/100;
+    row.balanceAfter=balance;row.timestamp=new Date(now+index).toISOString();row.operatorName=actorName;
+  }
+  return [...previous.filter((row)=>!ids.has(row.id)),...additions,...payments.rows.map((row)=>row.document.drawerEntry)].sort((a,b)=>String(a.timestamp).localeCompare(String(b.timestamp)));
 }

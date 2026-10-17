@@ -42,6 +42,10 @@ CREATE TABLE IF NOT EXISTS scrap_buying_events (
 CREATE TABLE IF NOT EXISTS scrap_buying_policies (
  version UUID PRIMARY KEY, document JSONB NOT NULL, created_by TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+CREATE TABLE IF NOT EXISTS scrap_buying_legacy_reviews (
+ ticket_id TEXT NOT NULL, revision INTEGER NOT NULL, document JSONB NOT NULL,
+ actor_id TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), PRIMARY KEY(ticket_id,revision)
+);
 CREATE TABLE IF NOT EXISTS scrap_buying_payments (
  ticket_id TEXT PRIMARY KEY REFERENCES scrap_buying_tickets(ticket_id), id UUID NOT NULL UNIQUE,
  amount NUMERIC(14,2) NOT NULL CHECK (amount >= 0), method TEXT NOT NULL CHECK(method IN ('Cash','Check')),
@@ -82,6 +86,6 @@ INSERT INTO buying_price_migrations(version) VALUES (1),(2) ON CONFLICT DO NOTHI
 
 export const canonicalBackupTables = [
  'customers', 'scrap_buying_policies', 'scrap_buying_tickets', 'scrap_buying_captures', 'scrap_buying_cycles', 'scrap_buying_passes',
- 'scrap_buying_capture_context', 'scrap_buying_lines', 'scrap_buying_line_sources', 'scrap_buying_events', 'scrap_buying_payments',
+ 'scrap_buying_capture_context', 'scrap_buying_lines', 'scrap_buying_line_sources', 'scrap_buying_events', 'scrap_buying_legacy_reviews', 'scrap_buying_payments',
  'price_sheet_documents', 'price_sheet_drafts', 'price_sheet_draft_revisions', 'price_sheet_versions', 'price_sheet_active', 'price_sheet_publication_events',
 ] as const;

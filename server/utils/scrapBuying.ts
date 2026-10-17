@@ -6,8 +6,9 @@ import { query, withTransaction } from './db';
 import { lockFinancialState, putState, stateValue } from './financialState';
 import { serverScale } from './scale';
 import { normalizeWeight, validateScaleReading, validatedBreakdown } from '../../src/utils/weighingContract';
+import { yardDate } from '../../src/utils/yardDates';
 import type { Ticket, MetalGrade, ScaleConfig, CashDrawerLog } from '../../src/types/scrap';
-import type { BuyingPolicy } from '../../src/types/buyingPayments';
+import type { BuyingPolicy, LegacyBuyingReview } from '../../src/types/buyingPayments';
 import type { PoolClient } from 'pg';
 
 const fail = (message: string, code = 409): never => { throw createError({ statusCode: code, statusMessage: message }); };
@@ -207,17 +208,30 @@ async function pay(client: PoolClient, ticket: Ticket, command: z.infer<typeof b
   if (ticket.buying?.stage === 'PAID') return ticket;
   if (ticket.buying?.stage !== 'FINALIZED' || !ticket.buying.sellerIdentity || !command.reviewed || !command.method) fail('Finalize with a confirmed seller identity and explicitly verify compliance before payment');
   const policy = await currentBuyingPolicy(client);
-  const day = new Intl.DateTimeFormat('en-CA',{timeZone:'America/New_York',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+  const day = yardDate(new Date());
   if (!policy?.version || day < policy.effectiveFrom || day > policy.effectiveThrough) fail('A current reviewer-confirmed policy is required before any payment');
   const relevant = (ticket.scrapLines ?? []).map((line) => policy.grades.find((grade) => grade.gradeId === line.metalGradeId));
   if (relevant.some((grade) => !grade?.approved)) fail('One or more material classifications are not approved for purchase');
+  const currentMetals=await stateValue<MetalGrade[]>(client,'mahaffeys_metals',[]);
+  if (relevant.some((grade)=>{
+    const current=currentMetals.find((metal)=>metal.id===grade?.gradeId);
+    return !grade?.definition || !current || grade.definition.name!==current.name || grade.definition.code!==current.code || grade.definition.category!==current.category;
+  })) fail('Grade identity changed or policy definition is missing. Record a new compliance-reviewed policy before payment.');
   if (relevant.some((grade) => grade?.requirePermit) && !command.permitReference) fail('Required seller permit reference is missing');
   const cents = Math.round(ticket.finalPayout*100);
   if (command.method === 'Cash') {
     if (relevant.some((grade) => grade?.cashAtOrAboveCents !== null && cents >= (grade?.cashAtOrAboveCents ?? 0))) fail('Policy requires check payment at this transaction amount');
     const daily = await client.query(`SELECT COALESCE(SUM(p.amount),0) AS total FROM scrap_buying_payments p JOIN scrap_buying_tickets t ON t.ticket_id=p.ticket_id
       WHERE p.method='Cash' AND t.document->'buying'->'sellerIdentity'=$1::jsonb AND (p.paid_at AT TIME ZONE 'America/New_York')::date=$2::date`,[JSON.stringify(ticket.buying.sellerIdentity),day]);
-    const dayCents = Math.round(Number(daily.rows[0].total)*100)+cents;
+    const legacyReviews=(await client.query('SELECT DISTINCT ON(ticket_id) ticket_id,document FROM scrap_buying_legacy_reviews ORDER BY ticket_id,revision DESC')).rows;
+    const history=await stateValue<Ticket[]>(client,'mahaffeys_tickets',[]);
+    const unresolved=history.some((row)=>!row.buying && row.ticketType==='SCRAP_METAL' && ['COMPLETED','VOIDED'].includes(row.status) && row.finalPayout>0 && (row.customerId===ticket.customerId || row.customerIdNumber?.trim().toUpperCase()===ticket.buying!.sellerIdentity!.idNumber) && !legacyReviews.some((review)=>review.ticket_id===row.id));
+    if(unresolved)fail('Historical seller payment evidence is unreconciled. Review the actual cash/check history before cash disbursement; no old ticket is made payable again.');
+    const legacyCents=legacyReviews.reduce((sum,row)=>{
+      const review=row.document as LegacyBuyingReview;
+      return review.disbursed && review.method==='Cash' && review.paidAt && yardDate(review.paidAt)===day && equal(review.sellerIdentity,ticket.buying!.sellerIdentity)?sum+Math.round(review.amount*100):sum;
+    },0);
+    const dayCents = Math.round(Number(daily.rows[0].total)*100)+legacyCents+cents;
     if (relevant.some((grade) => grade?.sellerDayCashLimitCents !== null && dayCents > (grade?.sellerDayCashLimitCents ?? 0))) fail('Seller/day cash limit exceeded');
     const restricted = (ticket.scrapLines ?? []).some((line) => line.metalCategory !== 'Ferrous');
     if (cents > (restricted ? 2500 : 10000)) fail('Stricter existing yard cash preference exceeded');
@@ -292,10 +306,11 @@ export async function executeBuyingCommand(command: z.infer<typeof buyingCommand
         const cents = previous.scrapLines.reduce((sum,line) => sum+Math.round(line.lineTotal*100),0);
         if (!Number.isSafeInteger(cents) || cents > 99999999999999) fail('Ticket amount exceeds supported limits');
         next = { ...previous,status:'COMPLETED',grossTotal:cents/100,finalPayout:cents/100,totalDeductions:0,
-          buying:{...previous.buying,stage:'FINALIZED',finalizedAt:new Date().toISOString(),sellerIdentity:{idType:seller.rows[0].id_type,idState:seller.rows[0].id_state.toUpperCase(),idNumber:seller.rows[0].id_number.toUpperCase()}} };
+          buying:{...previous.buying,stage:'FINALIZED',finalizedAt:new Date().toISOString(),sellerIdentity:{idType:seller.rows[0].id_type.toUpperCase(),idState:seller.rows[0].id_state.toUpperCase(),idNumber:seller.rows[0].id_number.toUpperCase()}} };
       } else if (command.action === 'PAY') next = await pay(client,previous,command,user);
       else if (command.action === 'VOID') {
         if (previous.buying.stage === 'PAID') fail('A paid ticket cannot be voided through draft cancellation; reconcile payment evidence separately');
+        if (previous.buying.stage==='FINALIZED' && !['admin','yard_manager'].includes(user.role)) fail('Only a manager can cancel a finalized unpaid purchase',403);
         if (!command.reason) fail('Void reason required');
         next = {...previous,status:'VOIDED',voidedAt:new Date().toISOString(),voidedBy:user.fullName,voidReason:command.reason,buying:{...previous.buying,stage:'VOIDED'}};
       }

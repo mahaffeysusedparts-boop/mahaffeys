@@ -197,7 +197,7 @@ export function generateNMVTISCsv(tickets: Ticket[], reportingEntityId: string =
       // state prefix (e.g. "GA 123ABC"). Otherwise leave blank — never invent a
       // jurisdiction. DispositionCode, SellerIDType, SellerIDState, and
       // SellerAddress are only emitted when the source data actually exists.
-      const plateState = t.vehicleLicensePlate?.split(' ')[1] || '';
+      const plateState = t.vehicleLicensePlate?.trim().match(/^([A-Z]{2})\s+\S+/)?.[1] || '';
 
       return [
         escapeCsv(reportingEntityId),

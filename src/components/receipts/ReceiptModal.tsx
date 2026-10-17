@@ -71,7 +71,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ ticket, open, onOpen
               {ticket.buying ? ticket.buying.stage === 'PAID' ? 'PAYMENT RECEIPT — DUPLICATE COPY' : ticket.buying.stage === 'VOIDED' ? 'VOIDED — NOT PAYABLE' : 'UNPAID VOUCHER — COPY, NOT A PAYMENT' : ticket.ticketType === 'CAR_SALVAGE' ? 'AUTO SALVAGE INTAKE VOUCHER' : 'LEGACY SCRAP VOUCHER — PAYMENT STATUS NOT RECONCILED'}
             </span>
             <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-950 border border-emerald-400 font-bold text-[10px] uppercase rounded">
-              <ShieldCheck className="w-3 h-3 text-emerald-700 inline" /> COMPLIANCE VERIFIED
+              <ShieldCheck className="w-3 h-3 text-emerald-700 inline" /> {ticket.buying ? ticket.buying.stage === 'PAID' ? 'PAYMENT REVIEW RECORDED' : 'SELLER REVIEW — PAYMENT REVIEW PENDING' : 'LEGACY COMPLIANCE RECORD'}
             </span>
           </div>
         </div>

@@ -64,7 +64,7 @@ const {parentPort,workerData} = require('node:worker_threads');
 })().catch(error=>parentPort.postMessage({error:error.message || 'PDF extraction failed'}));
 `;
 
-async function extractPDF(bytes: Buffer): Promise<Array<{page:number;text:string}>> {
+export async function extractPDF(bytes: Buffer): Promise<Array<{page:number;text:string}>> {
   if (Number(process.versions.node.split('.')[0]) < 22) throw new Error('PDF extraction requires Node 22+. Manual review/transcription remains available.');
   const modulePath = createRequire(import.meta.url).resolve('unpdf');
   const worker = new Worker(extractionCode,{eval:true,workerData:{bytes,modulePath},resourceLimits:{maxOldGenerationSizeMb:192,maxYoungGenerationSizeMb:32}});

@@ -11,9 +11,10 @@ describe('holdStatus', () => {
     });
   });
 
-  it('active hold counts remaining days', () => {
-    const result = holdStatus({ holdUntil: '2026-01-31T00:00:00Z' }, new Date('2026-01-16T18:00:00Z'), opts);
-    expect(result).toEqual({ status: 'HOLD_ACTIVE', daysLeft: 15, holdUntil: '2026-01-31T00:00:00Z' });
+  it('active hold counts remaining local-calendar days', () => {
+    const holdUntil = new Date(2026, 0, 31).toISOString();
+    const result = holdStatus({ holdUntil }, new Date(2026, 0, 16, 18), opts);
+    expect(result).toEqual({ status: 'HOLD_ACTIVE', daysLeft: 15, holdUntil });
   });
 
   it('expires exactly on the hold-until day', () => {

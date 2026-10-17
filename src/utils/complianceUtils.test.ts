@@ -142,13 +142,15 @@ describe('getNmvtisStatus', () => {
     expect(status.daysUntilDue).toBe(59);
   });
 
-  it('pushes the slot forward when the last batch was exported after its slot (late report)', () => {
+  it('keeps the next monthly slot after a late batch without skipping a reporting month', () => {
     const status = getNmvtisStatus(
       [log('2026-01-20T09:00:00')],
       settings({ nmvtisReportingDayOfMonth: 1, nmvtisCadenceMonths: 1 }),
       new Date('2026-01-21T10:00:00')
     );
-    expect(status.dueDate.toISOString().startsWith('2026-03-01')).toBe(true);
+    expect(status.dueDate.getFullYear()).toBe(2026);
+    expect(status.dueDate.getMonth()).toBe(1);
+    expect(status.dueDate.getDate()).toBe(1);
   });
 
   it('handles year rollover across the due slot', () => {
