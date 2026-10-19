@@ -56,6 +56,10 @@ Docker Compose also starts a private `cups` container that runs the CUPS print s
   1.  `git pull origin main`
   2.  `sudo docker compose up --build -d`
 
+### Read-only diagnostics from Dyad on Windows
+
+See [SERVER_DIAGNOSTICS_MCP.md](docs/SERVER_DIAGNOSTICS_MCP.md) for the stdio plugin fields, dedicated SSH key prerequisites, and restricted server dispatcher. This bridge reads container status, bounded logs, and CUPS/printer connectivity; it does not deploy, restart services, or expose Docker management on the network. One-time administrator provisioning is required before live diagnostics work.
+
 ### CUPS TCP connectivity and persistent configuration
 
 The `cups-config` volume holds the active `/etc/cups` configuration and printer queues. The `cups-data` volume retains the mounted CUPS cache. **Rebuilding the image does not replace configuration already saved in `cups-config`.** The packaged `deploy/docker/cupsd.conf` already has `Port 631`, but an older volume may contain only `Listen /var/run/cups/cups.sock`. In that case CUPS can run locally while the app cannot reach `cups:631`.

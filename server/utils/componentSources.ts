@@ -1,4 +1,7 @@
+import { BODY_COMPONENT_SOURCES } from './bodyComponentSources';
+
 export const COMPONENT_SOURCES = [
+  ...BODY_COMPONENT_SOURCES,
   ...[
     '1999-2007-gm-lm7-l59', '2007-2009-ly5', '2010-2014-lc9', '2010-2014-lmg',
     'chevy-5-3l-v8-lc83-remanufactured-engine-2014-2019',

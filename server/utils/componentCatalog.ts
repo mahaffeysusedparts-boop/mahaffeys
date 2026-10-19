@@ -1,24 +1,25 @@
 import type { InterchangeMapping, PartsCatalog } from '../../src/services/interchangeService';
-import { COMPONENT_SOURCES } from './componentSources';
+import { COMPONENT_SOURCES, type ComponentSource } from './componentSources';
 import { parseComponentListing } from './componentParser';
 import { query } from './db';
 
 const DAY = 86400000;
-let memory: { catalog: PartsCatalog; checkAfter: number } | undefined;
-let pending: Promise<PartsCatalog> | undefined;
+type CatalogGroup = 'main' | 'additional';
+const memory = new Map<CatalogGroup, { catalog: PartsCatalog; checkAfter: number }>();
+const pending = new Map<CatalogGroup, Promise<PartsCatalog>>();
 
-async function refresh(): Promise<PartsCatalog> {
+async function refresh(group: CatalogGroup, sources: ComponentSource[]): Promise<PartsCatalog> {
   await query(`CREATE TABLE IF NOT EXISTS interchange_source_snapshots (
     source_id TEXT PRIMARY KEY, payload JSONB NOT NULL, fetched_at TIMESTAMPTZ NOT NULL
   )`);
   const stored = await query<{ source_id: string; payload: InterchangeMapping }>(
     'SELECT source_id, payload FROM interchange_source_snapshots WHERE source_id = ANY($1::text[])',
-    [COMPONENT_SOURCES.map((source) => source.id)],
+    [sources.map((source) => source.id)],
   );
   const previous = new Map(stored.rows.map((row) => [row.source_id, row.payload]));
   const catalog: PartsCatalog = { mappings: [], sources: [] };
-  for (let index = 0; index < COMPONENT_SOURCES.length; index += 4) {
-    await Promise.all(COMPONENT_SOURCES.slice(index, index + 4).map(async (source) => {
+  for (let index = 0; index < sources.length; index += 4) {
+    await Promise.all(sources.slice(index, index + 4).map(async (source) => {
       const saved = previous.get(source.id);
       let mapping = saved;
       let state: PartsCatalog['sources'][number]['state'] = 'loaded';
@@ -39,17 +40,22 @@ async function refresh(): Promise<PartsCatalog> {
         }
       }
       if (mapping?.source) catalog.mappings.push({ ...mapping, source: { ...mapping.source, stale: state === 'stale' } });
-      catalog.sources.push({ name: `${source.provider === 'powertrain' ? 'Powertrain Products' : 'DB Electrical'} · ${source.partName} · ${'partNumber' in source ? source.partNumber : source.id.replace('ppi-', '')}`, url: source.url, state, applications: mapping?.compatibleModels.length ?? 0, fetchedAt: mapping?.source?.fetchedAt });
+      catalog.sources.push({ name: `${source.provider === 'powertrain' ? 'Powertrain Products' : source.provider === '1aauto' ? '1A Auto' : 'DB Electrical'} · ${source.partName} · ${'partNumber' in source ? source.partNumber : source.id.replace('ppi-', '')}`, url: source.url, state, applications: mapping?.compatibleModels.length ?? 0, fetchedAt: mapping?.source?.fetchedAt });
     }));
   }
   catalog.mappings.sort((a, b) => a.partName.localeCompare(b.partName) || a.interchangeCode.localeCompare(b.interchangeCode));
   catalog.sources.sort((a, b) => a.name.localeCompare(b.name));
-  memory = { catalog, checkAfter: Date.now() + (catalog.sources.some((source) => source.state !== 'loaded') ? 300000 : DAY) };
+  memory.set(group, { catalog, checkAfter: Date.now() + (catalog.sources.some((source) => source.state !== 'loaded') ? 300000 : DAY) });
   return catalog;
 }
 
-export function loadComponentCatalog(): Promise<PartsCatalog> {
-  if (memory && Date.now() < memory.checkAfter) return Promise.resolve(memory.catalog);
-  if (!pending) pending = refresh().finally(() => { pending = undefined; });
-  return pending;
+export function loadComponentCatalog(group: CatalogGroup = 'main'): Promise<PartsCatalog> {
+  const cached = memory.get(group);
+  if (cached && Date.now() < cached.checkAfter) return Promise.resolve(cached.catalog);
+  const active = pending.get(group);
+  if (active) return active;
+  const sources = COMPONENT_SOURCES.filter((source) => (source.provider === '1aauto') === (group === 'additional'));
+  const request = refresh(group, sources).finally(() => { pending.delete(group); });
+  pending.set(group, request);
+  return request;
 }

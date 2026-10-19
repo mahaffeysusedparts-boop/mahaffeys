@@ -3,10 +3,12 @@ import type { InterchangeMapping } from '../../src/services/interchangeService';
 import { listedEngineCodes } from '../../src/utils/engineIdentifiers';
 import type { ComponentSource } from './componentSources';
 import { parseElectricalListing } from './alternatorParser';
+import { parseBodyComponentListing } from './bodyComponentParser';
 
 const clean = (value: string) => value.replace(/\s+/g, ' ').trim();
 
 export function parseComponentListing(html: string, source: ComponentSource, fetchedAt: string): InterchangeMapping {
+  if (source.provider === '1aauto') return parseBodyComponentListing(html, source, fetchedAt);
   if (source.provider === 'electrical' && 'partNumber' in source) {
     return parseElectricalListing(html, source.partNumber, source.url, fetchedAt, 'Starter');
   }
