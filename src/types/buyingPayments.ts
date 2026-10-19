@@ -20,9 +20,20 @@ export interface BuyingState {
     checkReference?: string;
     paidAt: string;
     paidBy: string;
+    paidById?: string;
     policyVersion: string;
     permitReference?: string;
   };
+}
+
+export interface PaymentEligibility {
+  ticketId: string;
+  revision: number;
+  allowedMethods: Array<'Cash' | 'Check'>;
+  reasons: Array<{ code: string; message: string; method?: 'Cash' | 'Check' }>;
+  permitRequired: boolean;
+  documentationRequired: boolean;
+  policyVersion?: string;
 }
 
 export interface BuyingPolicy {
@@ -39,6 +50,7 @@ export interface BuyingPolicy {
     requirePermit: boolean;
     cashAtOrAboveCents: number | null;
     sellerDayCashLimitCents: number | null;
+    paymentClass?: 'FERROUS' | 'NONFERROUS' | 'ALUMINUM_CANS' | 'COPPER' | 'BEER_KEG' | 'REQUIRES_SPECIAL_DOCUMENTATION';
     definition?: {name:string;code:string;category:string};
   }>;
 }

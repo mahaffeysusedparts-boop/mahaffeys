@@ -6,6 +6,8 @@ import { authService } from '@/services/authService';
 import { scrapBuyingService } from '@/services/scrapBuyingService';
 import { useIntakeRequirements } from '@/services/intakeRequirementsService';
 import { useQuery } from '@tanstack/react-query';
+import { BuyingPaymentFields, useBuyingPaymentEligibility, initialBuyingPayment, buyingPaymentReady } from './BuyingPaymentFields';
+import { canRecordBuyingPayment } from '@/utils/buyingAuthorization';
 import { calculateComplianceScore } from '@/utils/complianceUtils';
 import { computeWeightBreakdown, buildScrapTicketLine } from '@/utils/weightCalculations';
 import { normalizeWeight, validateScaleReading } from '@/utils/weighingContract';

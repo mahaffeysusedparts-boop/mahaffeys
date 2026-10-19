@@ -10,7 +10,9 @@ import { yardDate } from '../../src/utils/yardDates';
 import { intakeRequirementReview } from '../../src/utils/intakeRequirements';
 import { DEFAULT_INTAKE_REQUIREMENTS, type IntakeRequirements } from '../../src/types/intakeRequirements';
 import type { Ticket, MetalGrade, ScaleConfig, CashDrawerLog } from '../../src/types/scrap';
-import type { BuyingPolicy, LegacyBuyingReview } from '../../src/types/buyingPayments';
+import { evaluateBuyingPaymentRules } from '../../src/utils/buyingPaymentRules';
+import { canRecordBuyingPayment } from '../../src/utils/buyingAuthorization';
+import type { PaymentEligibility, BuyingPolicy, LegacyBuyingReview } from '../../src/types/buyingPayments';
 import type { PoolClient } from 'pg';
 
 const fail = (message: string, code = 409): never => { throw createError({ statusCode: code, statusMessage: message }); };
@@ -25,27 +27,28 @@ const captureSchema = z.object({ id: z.string().uuid(), scaleId: z.string().max(
   originalUnit: z.enum(['LBS','KG']), normalizedLbs: weight, actorId: z.string(), capturedAt: z.string().datetime(),
   stable: z.boolean(), source: z.enum(['SCALE','MANUAL']), replacesCaptureId: z.string().uuid().optional() }).strict();
 export const buyingCommandSchema = z.object({
-  action: z.enum(['CREATE','ADOPT','SAVE','FINALIZE','PAY','VOID']), id: z.string().trim().min(1).max(120),
+  action: z.enum(['CREATE','ADOPT','SAVE','FINALIZE','FINALIZE_AND_PAY','PAY','VOID']), id: z.string().trim().min(1).max(120),
   revision: z.number().int().nonnegative(), idempotencyKey: z.string().uuid(),
   ticket: z.record(z.unknown()).optional(), method: z.enum(['Cash','Check']).optional(),
   reference: z.string().trim().max(120).optional(), permitReference: z.string().trim().max(200).optional(),
-  reason: z.string().trim().max(500).optional(), reviewed: z.boolean().optional(),
+  documentationReference: z.string().trim().max(500).optional(),
+  reason: z.string().trim().max(500).optional(), reviewed: z.boolean().optional(), disbursed: z.boolean().optional(),
 });
 export const policySchema = z.object({ sourceUrl: z.string().url().refine((url) => url.startsWith('https://'), 'HTTPS policy source required'),
   effectiveFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), effectiveThrough: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   reviewer: z.string().trim().min(1).max(200), reviewReference: z.string().trim().min(1).max(500),
   grades: z.array(z.object({ gradeId: z.string().min(1).max(120), classification: z.string().trim().min(1).max(200),
-    approved: z.boolean(), requirePermit: z.boolean(), cashAtOrAboveCents: z.number().int().nonnegative().max(100000000).nullable(),
+    approved: z.boolean(), requirePermit: z.boolean(),
+    paymentClass: z.enum(['FERROUS','NONFERROUS','ALUMINUM_CANS','COPPER','BEER_KEG','REQUIRES_SPECIAL_DOCUMENTATION']), cashAtOrAboveCents: z.number().int().nonnegative().max(100000000).nullable(),
     sellerDayCashLimitCents: z.number().int().nonnegative().max(100000000).nullable() })).min(1).max(500),
 }).strict().superRefine((policy, context) => {
   if (!Number.isFinite(Date.parse(policy.effectiveFrom)) || !Number.isFinite(Date.parse(policy.effectiveThrough)) || policy.effectiveFrom > policy.effectiveThrough) context.addIssue({ code: 'custom', message: 'Invalid policy effective dates' });
   if (new Set(policy.grades.map((grade) => grade.gradeId)).size !== policy.grades.length) context.addIssue({ code: 'custom', message: 'Duplicate policy grade IDs' });
 });
 
-export async function buyingUser(event: H3Event, payment = false) {
+export async function buyingUser(event: H3Event) {
   const user = await requireUser(event);
-  const roles = payment ? ['admin','yard_manager'] : ['admin','yard_manager','scale_operator'];
-  if (!roles.includes(user.role)) fail('Buying action is not permitted for this role', 403);
+  if (!canRecordBuyingPayment(user)) fail('Buying action is not permitted for this role', 403);
   return user;
 }
 
@@ -205,47 +208,75 @@ export async function currentBuyingPolicy(client?: PoolClient): Promise<BuyingPo
   return result.rows[0] ? { ...result.rows[0].document, version: result.rows[0].version } : null;
 }
 
-async function pay(client: PoolClient, ticket: Ticket, command: z.infer<typeof buyingCommandSchema>, user: PublicUser) {
-  if (!['admin','yard_manager'].includes(user.role)) fail('Only a manager or administrator can record payment',403);
-  if (ticket.buying?.stage === 'PAID') return ticket;
-  if (ticket.buying?.stage !== 'FINALIZED' || !ticket.buying.sellerIdentity || !command.reviewed || !command.method) fail('Finalize with a confirmed seller identity and explicitly verify compliance before payment');
+async function finalizePurchase(client: PoolClient, ticket: Ticket, command: z.infer<typeof buyingCommandSchema>, user: PublicUser): Promise<Ticket> {
+        if (ticket.buying!.stage !== 'DRAFT' || ticket.buying!.activeCycleId || ticket.pendingPlatformCapture || ticket.scaleGrossInWeight != null || !ticket.scrapLines?.length) fail('Finish every weighing cycle before final review');
+        if (!ticket.customerId || !ticket.customerIdNumber || !ticket.vehicleLicensePlate || !command.reviewed) fail('Seller ID, vehicle plate and explicit review are required');
+        const seller = await client.query('SELECT id_type,id_state,id_number,address,phone FROM customers WHERE id=$1',[ticket.customerId]);
+        if (!seller.rows[0]?.id_type || !seller.rows[0]?.id_state || !seller.rows[0]?.id_number) fail('Complete the seller identity and issuing jurisdiction in the customer registry');
+        if (seller.rows[0].id_number!==ticket.customerIdNumber) fail('Seller ID conflicts with the confirmed customer profile');
+        const requirements = await stateValue<IntakeRequirements>(client, 'mahaffeys_intake_requirements', DEFAULT_INTAKE_REQUIREMENTS);
+        const evidenceReview = intakeRequirementReview(requirements, { captures: ticket.complianceCaptures, phone: ticket.customerPhone?.trim() ? seller.rows[0].phone : undefined, address: seller.rows[0].address });
+        if (evidenceReview.blockers.length) fail(`Required before finalization: ${evidenceReview.blockers.join(', ')}. An administrator can change yard requirements in Settings.`);
+        if (ticket.scrapLines.some((line) => !line.sourceCaptureIds?.length)) fail('Legacy weighed lines must be explicitly corrected and reweighed before canonical finalization');
+        const lineIds = ticket.scrapLines.map((line) => line.id);
+        const stored = await client.query('SELECT id FROM scrap_buying_lines WHERE ticket_id=$1 AND active=TRUE AND id=ANY($2::text[])',[ticket.id,lineIds]);
+        if (stored.rows.length !== lineIds.length) fail('Every payable line must be server-confirmed');
+        const cents = ticket.scrapLines.reduce((sum,line) => sum+Math.round(line.lineTotal*100),0);
+        if (!Number.isSafeInteger(cents) || cents > 99999999999999) fail('Ticket amount exceeds supported limits');
+        return { ...ticket,status:'COMPLETED',grossTotal:cents/100,finalPayout:cents/100,totalDeductions:0,
+          buying:{...ticket.buying,stage:'FINALIZED',finalizedAt:new Date().toISOString(),intakeRequirementReview:{revision:requirements.revision,requirePhotos:requirements.requirePhotos,requirePhone:requirements.requirePhone,requireAddress:requirements.requireAddress,optionalMissing:evidenceReview.optionalMissing},sellerIdentity:{idType:seller.rows[0].id_type.toUpperCase(),idState:seller.rows[0].id_state.toUpperCase(),idNumber:seller.rows[0].id_number.toUpperCase()}} };
+}
+
+export async function paymentEligibility(client: PoolClient, ticket: Ticket): Promise<PaymentEligibility> {
   const policy = await currentBuyingPolicy(client);
   const day = yardDate(new Date());
-  if (!policy?.version || day < policy.effectiveFrom || day > policy.effectiveThrough) fail('A current reviewer-confirmed policy is required before any payment');
-  const relevant = (ticket.scrapLines ?? []).map((line) => policy.grades.find((grade) => grade.gradeId === line.metalGradeId));
-  if (relevant.some((grade) => !grade?.approved)) fail('One or more material classifications are not approved for purchase');
-  const currentMetals=await stateValue<MetalGrade[]>(client,'mahaffeys_metals',[]);
-  if (relevant.some((grade)=>{
-    const current=currentMetals.find((metal)=>metal.id===grade?.gradeId);
-    return !grade?.definition || !current || grade.definition.name!==current.name || grade.definition.code!==current.code || grade.definition.category!==current.category;
-  })) fail('Grade identity changed or policy definition is missing. Record a new compliance-reviewed policy before payment.');
-  if (relevant.some((grade) => grade?.requirePermit) && !command.permitReference) fail('Required seller permit reference is missing');
-  const cents = Math.round(ticket.finalPayout*100);
-  if (command.method === 'Cash') {
-    if (relevant.some((grade) => grade?.cashAtOrAboveCents !== null && cents >= (grade?.cashAtOrAboveCents ?? 0))) fail('Policy requires check payment at this transaction amount');
-    const daily = await client.query(`SELECT COALESCE(SUM(p.amount),0) AS total FROM scrap_buying_payments p JOIN scrap_buying_tickets t ON t.ticket_id=p.ticket_id
-      WHERE p.method='Cash' AND t.document->'buying'->'sellerIdentity'=$1::jsonb AND (p.paid_at AT TIME ZONE 'America/New_York')::date=$2::date`,[JSON.stringify(ticket.buying.sellerIdentity),day]);
-    const legacyReviews=(await client.query('SELECT DISTINCT ON(ticket_id) ticket_id,document FROM scrap_buying_legacy_reviews ORDER BY ticket_id,revision DESC')).rows;
-    const history=await stateValue<Ticket[]>(client,'mahaffeys_tickets',[]);
-    const unresolved=history.some((row)=>!row.buying && row.ticketType==='SCRAP_METAL' && ['COMPLETED','VOIDED'].includes(row.status) && row.finalPayout>0 && (row.customerId===ticket.customerId || row.customerIdNumber?.trim().toUpperCase()===ticket.buying!.sellerIdentity!.idNumber) && !legacyReviews.some((review)=>review.ticket_id===row.id));
-    if(unresolved)fail('Historical seller payment evidence is unreconciled. Review the actual cash/check history before cash disbursement; no old ticket is made payable again.');
-    const legacyCents=legacyReviews.reduce((sum,row)=>{
-      const review=row.document as LegacyBuyingReview;
-      return review.disbursed && review.method==='Cash' && review.paidAt && yardDate(review.paidAt)===day && equal(review.sellerIdentity,ticket.buying!.sellerIdentity)?sum+Math.round(review.amount*100):sum;
-    },0);
-    const dayCents = Math.round(Number(daily.rows[0].total)*100)+legacyCents+cents;
-    if (relevant.some((grade) => grade?.sellerDayCashLimitCents !== null && dayCents > (grade?.sellerDayCashLimitCents ?? 0))) fail('Seller/day cash limit exceeded');
-    const restricted = (ticket.scrapLines ?? []).some((line) => line.metalCategory !== 'Ferrous');
-    if (cents > (restricted ? 2500 : 10000)) fail('Stricter existing yard cash preference exceeded');
-  }
-  if (command.method === 'Check' && !command.reference) fail('Enter the actual check reference');
+  const currentMetals = await stateValue<MetalGrade[]>(client,'mahaffeys_metals',[]);
+  const identity = ticket.buying?.sellerIdentity;
+  const daily = identity ? await client.query(`SELECT COALESCE(SUM(p.amount),0) AS total, COUNT(*) AS count FROM scrap_buying_payments p JOIN scrap_buying_tickets t ON t.ticket_id=p.ticket_id
+    WHERE p.method='Cash' AND t.document->'buying'->'sellerIdentity'=$1::jsonb AND (p.paid_at AT TIME ZONE 'America/New_York')::date=$2::date`,[JSON.stringify(identity),day]) : {rows:[{total:0,count:0}]};
+  const legacyReviews = (await client.query('SELECT DISTINCT ON(ticket_id) ticket_id,document FROM scrap_buying_legacy_reviews ORDER BY ticket_id,revision DESC')).rows;
+  const history = await stateValue<Ticket[]>(client,'mahaffeys_tickets',[]);
+  const unresolved = history.some(row => !row.buying && row.ticketType==='SCRAP_METAL' && ['COMPLETED','VOIDED'].includes(row.status) && row.finalPayout>0 && (row.customerId===ticket.customerId || (!!identity && row.customerIdNumber?.trim().toUpperCase()===identity.idNumber)) && !legacyReviews.some(review=>review.ticket_id===row.id));
+  const legacyCash = legacyReviews.map(row=>row.document as LegacyBuyingReview).filter(review=>review.disbursed && review.method==='Cash' && review.paidAt && yardDate(review.paidAt)===day && equal(review.sellerIdentity,identity));
+  const drawer = await stateValue<CashDrawerLog[]>(client,'mahaffeys_cash_drawer',[]);
+  const drawerBalance = [...drawer].sort((a,b)=>b.timestamp.localeCompare(a.timestamp))[0]?.balanceAfter ?? 0;
+  return evaluateBuyingPaymentRules(ticket,policy,currentMetals,day,{cashCents:Math.round(Number(daily.rows[0].total)*100)+legacyCash.reduce((sum,row)=>sum+Math.round(row.amount*100),0),cashCount:Number(daily.rows[0].count)+legacyCash.length,unresolved,drawerBalance});
+}
+
+export async function previewPaymentEligibility(id: string, revision: number, user: PublicUser): Promise<PaymentEligibility> {
+  if (!canRecordBuyingPayment(user)) fail('Payment is not permitted for this account',403);
+  return withTransaction(async client => {
+    await lockFinancialState(client);
+    const ticket: Ticket | undefined = (await client.query('SELECT document FROM scrap_buying_tickets WHERE ticket_id=$1 FOR UPDATE',[id])).rows[0]?.document;
+    if (!ticket?.buying) fail('Canonical buying ticket not found',404);
+    if (ticket.buying.revision !== revision) fail('Ticket changed; refresh before reviewing payment methods');
+    if (!['DRAFT','FINALIZED'].includes(ticket.buying.stage)) fail('This ticket is not awaiting payment');
+    try {
+      const prepared = ticket.buying.stage === 'DRAFT' ? await finalizePurchase(client,ticket,{action:'FINALIZE',id,revision,idempotencyKey:randomUUID(),reviewed:true},user) : ticket;
+      return await paymentEligibility(client,prepared);
+    } catch (error) {
+      if (!(error as {statusCode?:number}).statusCode) throw error;
+      return {ticketId:id,revision,allowedMethods:[],permitRequired:false,documentationRequired:false,reasons:[{code:'INTAKE_NOT_READY',message:(error as {statusMessage?:string}).statusMessage ?? 'Complete seller information and weighing before payment'}]};
+    }
+  });
+}
+
+async function pay(client: PoolClient, ticket: Ticket, command: z.infer<typeof buyingCommandSchema>, user: PublicUser) {
+  if (!canRecordBuyingPayment(user)) fail('Payment is not permitted for this account',403);
+  if (ticket.buying?.stage === 'PAID') return ticket;
+  if (ticket.buying?.stage !== 'FINALIZED' || !ticket.buying.sellerIdentity || !command.disbursed || !command.method) fail('Finalize the purchase and confirm actual cash handover or check issuance before recording payment');
+  const eligibility = await paymentEligibility(client,ticket);
+  if (!eligibility.allowedMethods.includes(command.method)) fail(eligibility.reasons.filter(reason => !reason.method || reason.method === command.method).map(reason => reason.message).join(' '));
+  if (eligibility.permitRequired && !command.permitReference?.trim()) fail('Required valid seller permit reference is missing');
+  if (eligibility.documentationRequired && !command.documentationReference?.trim()) fail('Record the retained seller documentation reference (signed ownership statement, ID/photo and permit copy)');
+  if (command.method === 'Check' && !command.reference?.trim()) fail('Enter the actual issued check number');
   const id = randomUUID(); const now = new Date().toISOString();
   const payment = { id,amount:ticket.finalPayout,method:command.method,checkReference:command.method === 'Check' ? command.reference : undefined,
-    paidAt:now,paidBy:user.fullName,policyVersion:policy.version,permitReference:command.permitReference };
+    paidAt:now,paidBy:user.fullName,paidById:user.id,policyVersion:eligibility.policyVersion!,permitReference:command.permitReference,documentationReference:command.documentationReference };
   if (payment.checkReference) {
-    payment.checkReference = payment.checkReference.toUpperCase();
+    payment.checkReference = payment.checkReference.trim();
     const legacy = await stateValue<Ticket[]>(client,'mahaffeys_tickets',[]);
-    if (legacy.some((row)=>row.id!==ticket.id && row.checkNumber?.trim().toUpperCase()===payment.checkReference)) fail('This check reference already appears in canonical or historical ticket evidence');
+    if (legacy.some((row)=>row.id!==ticket.id && row.checkNumber?.trim().toUpperCase()===payment.checkReference!.toUpperCase())) fail('This check reference already appears in canonical or historical ticket evidence');
   }
   let drawerEntry: CashDrawerLog | undefined;
   if (command.method === 'Cash') {
@@ -257,11 +288,12 @@ async function pay(client: PoolClient, ticket: Ticket, command: z.infer<typeof b
     await putState(client,'mahaffeys_cash_drawer',[...drawer,drawerEntry],user.id);
   }
   await client.query(`INSERT INTO scrap_buying_payments(ticket_id,id,amount,method,check_reference,drawer_entry_id,policy_version,document)
-    VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb)`,[ticket.id,id,ticket.finalPayout,command.method,payment.checkReference ?? null,drawerEntry?.id ?? null,policy.version,JSON.stringify({...payment,drawerEntry})]);
+    VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb)`,[ticket.id,id,ticket.finalPayout,command.method,payment.checkReference ?? null,drawerEntry?.id ?? null,eligibility.policyVersion,JSON.stringify({...payment,drawerEntry})]);
   return { ...ticket,payoutMethod:command.method,checkNumber:payment.checkReference,buying:{...ticket.buying!,stage:'PAID' as const,payment} };
 }
 
 export async function executeBuyingCommand(command: z.infer<typeof buyingCommandSchema>, user: PublicUser) {
+  if (!canRecordBuyingPayment(user)) fail('Buying action is not permitted for this account',403);
   const hash = createHash('sha256').update(canonical(command)).digest('hex');
   return withTransaction(async (client) => {
     await lockFinancialState(client);
@@ -287,29 +319,15 @@ export async function executeBuyingCommand(command: z.infer<typeof buyingCommand
       await client.query('INSERT INTO scrap_buying_tickets(ticket_id,revision,stage,document,created_by) VALUES($1,1,$2,$3::jsonb,$4)',[next.id,'DRAFT',JSON.stringify(next),user.id]);
     } else {
       if (!previous?.buying) fail('Canonical buying ticket not found',404);
-      if (command.action === 'PAY' && previous.buying.stage === 'PAID') return previous;
+      if (['PAY','FINALIZE_AND_PAY'].includes(command.action) && previous.buying.stage === 'PAID') return previous;
       if (previous.buying.revision !== command.revision) fail('Ticket changed on another workstation. Refresh before continuing.');
       next = { ...previous };
       if (command.action === 'SAVE') {
         if (previous.buying.stage !== 'DRAFT' || !command.ticket) fail('Only draft buying tickets can be edited');
         next = await validateSave(client,previous,command.ticket as unknown as Ticket,user);
-      } else if (command.action === 'FINALIZE') {
-        if (previous.buying.stage !== 'DRAFT' || previous.buying.activeCycleId || previous.pendingPlatformCapture || previous.scaleGrossInWeight != null || !previous.scrapLines?.length) fail('Finish every weighing cycle before final review');
-        if (!previous.customerId || !previous.customerIdNumber || !previous.vehicleLicensePlate || !command.reviewed) fail('Seller ID, vehicle plate and explicit review are required');
-        const seller = await client.query('SELECT id_type,id_state,id_number,address,phone FROM customers WHERE id=$1',[previous.customerId]);
-        if (!seller.rows[0]?.id_type || !seller.rows[0]?.id_state || !seller.rows[0]?.id_number) fail('Complete the seller identity and issuing jurisdiction in the customer registry');
-        if (seller.rows[0].id_number!==previous.customerIdNumber) fail('Seller ID conflicts with the confirmed customer profile');
-        const requirements = await stateValue<IntakeRequirements>(client, 'mahaffeys_intake_requirements', DEFAULT_INTAKE_REQUIREMENTS);
-        const evidenceReview = intakeRequirementReview(requirements, { captures: previous.complianceCaptures, phone: previous.customerPhone?.trim() ? seller.rows[0].phone : undefined, address: seller.rows[0].address });
-        if (evidenceReview.blockers.length) fail(`Required before finalization: ${evidenceReview.blockers.join(', ')}. An administrator can change yard requirements in Settings.`);
-        if (previous.scrapLines.some((line) => !line.sourceCaptureIds?.length)) fail('Legacy weighed lines must be explicitly corrected and reweighed before canonical finalization');
-        const lineIds = previous.scrapLines.map((line) => line.id);
-        const stored = await client.query('SELECT id FROM scrap_buying_lines WHERE ticket_id=$1 AND active=TRUE AND id=ANY($2::text[])',[previous.id,lineIds]);
-        if (stored.rows.length !== lineIds.length) fail('Every payable line must be server-confirmed');
-        const cents = previous.scrapLines.reduce((sum,line) => sum+Math.round(line.lineTotal*100),0);
-        if (!Number.isSafeInteger(cents) || cents > 99999999999999) fail('Ticket amount exceeds supported limits');
-        next = { ...previous,status:'COMPLETED',grossTotal:cents/100,finalPayout:cents/100,totalDeductions:0,
-          buying:{...previous.buying,stage:'FINALIZED',finalizedAt:new Date().toISOString(),intakeRequirementReview:{revision:requirements.revision,requirePhotos:requirements.requirePhotos,requirePhone:requirements.requirePhone,requireAddress:requirements.requireAddress,optionalMissing:evidenceReview.optionalMissing},sellerIdentity:{idType:seller.rows[0].id_type.toUpperCase(),idState:seller.rows[0].id_state.toUpperCase(),idNumber:seller.rows[0].id_number.toUpperCase()}} };
+      } else if (command.action === 'FINALIZE' || command.action === 'FINALIZE_AND_PAY') {
+        next = await finalizePurchase(client,previous,command,user);
+        if (command.action === 'FINALIZE_AND_PAY') next = await pay(client,next,command,user);
       } else if (command.action === 'PAY') next = await pay(client,previous,command,user);
       else if (command.action === 'VOID') {
         if (previous.buying.stage === 'PAID') fail('A paid ticket cannot be voided through draft cancellation; reconcile payment evidence separately');
