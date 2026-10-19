@@ -52,7 +52,7 @@ export function StoplightControlPanel() {
           <Badge className={relayBadge.className}>{relayBadge.label}</Badge>
         </div>
         <p className="mt-1 text-xs text-slate-500">
-          Signal the driver at the scale platform — switches the red/green lights over the relay.
+          Control traffic while the vehicle is on the scale — red holds the driver, green signals them to proceed off the scale.
         </p>
       </CardHeader>
 
@@ -84,7 +84,7 @@ export function StoplightControlPanel() {
             <p className={`mt-1 text-xl font-black tracking-tight ${
               redOn ? "text-red-400" : greenOn ? "text-emerald-400" : "text-slate-400"
             }`}>
-              {redOn ? "HOLD — DO NOT ENTER" : greenOn ? "PULL AHEAD ONTO SCALE" : "LIGHTS OFF"}
+              {redOn ? "HOLD — STAY ON SCALE" : greenOn ? "PROCEED OFF SCALE" : "LIGHTS OFF"}
             </p>
             {status.lastCommandAt ? (
               <p className="mt-1 text-xs text-slate-500">
@@ -96,20 +96,20 @@ export function StoplightControlPanel() {
 
         <div className="mt-5 space-y-2.5">
           <Button
-            onClick={() => void change("red", "Stoplight set to RED — hold")}
+            onClick={() => void change("red", "Stoplight set to RED — stay on scale")}
             disabled={disabled || redOn}
             className="h-12 w-full rounded-2xl bg-red-600 text-base font-black tracking-wide text-white hover:bg-red-500 disabled:opacity-60"
           >
             <Hand className="mr-2 h-5 w-5" />
-            {sending === "red" ? "Switching…" : "RED — HOLD TRAFFIC"}
+            {sending === "red" ? "Switching…" : "RED — STAY ON SCALE"}
           </Button>
           <Button
-            onClick={() => void change("green", "Stoplight set to GREEN — pull ahead")}
+            onClick={() => void change("green", "Stoplight set to GREEN — proceed off scale")}
             disabled={disabled || greenOn}
             className="h-12 w-full rounded-2xl bg-emerald-600 text-base font-black tracking-wide text-white hover:bg-emerald-500 disabled:opacity-60"
           >
             <ArrowRight className="mr-2 h-5 w-5" />
-            {sending === "green" ? "Switching…" : "GREEN — PULL AHEAD"}
+            {sending === "green" ? "Switching…" : "GREEN — PROCEED OFF SCALE"}
           </Button>
           <Button
             onClick={() => void change("off", "Stoplight lamps switched off")}
