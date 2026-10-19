@@ -27,6 +27,7 @@ export function IntakeRequirementsSettings() {
     },
     onSuccess: (saved) => {
       queryClient.setQueryData(['intake-requirements'], saved);
+      void queryClient.invalidateQueries({ queryKey: ['buying-payment-eligibility'] });
       setDraft(null); setReason('');
       toast.success('Scrap intake requirements saved for all approved operators');
     },

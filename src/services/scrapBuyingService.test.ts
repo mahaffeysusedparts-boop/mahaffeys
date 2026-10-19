@@ -13,6 +13,16 @@ beforeEach(()=>{
   vi.stubGlobal('sessionStorage',{getItem:(key:string)=>store.get(key)??null,setItem:(key:string,value:string)=>store.set(key,value),removeItem:(key:string)=>store.delete(key)});
 });
 describe('buying payment requests',()=>{
+  it('completes intake without querying policy, requesting disbursement or carrying a check number',async()=>{
+    const finalized={...draft,status:'COMPLETED',buying:{...draft.buying!,revision:5,stage:'FINALIZED'}} as Ticket;
+    mocks.request.mockResolvedValueOnce(finalized);
+    const service=(await import('./scrapBuyingService')).scrapBuyingService;
+    expect(await service.finalize(draft,false)).toEqual(finalized);
+    const body=JSON.parse(mocks.request.mock.calls[0][1].body);
+    expect(body).toMatchObject({action:'FINALIZE',id:draft.id,revision:4,reviewed:false});
+    expect(body).not.toHaveProperty('disbursed');expect(body).not.toHaveProperty('method');expect(body).not.toHaveProperty('reference');
+    expect(mocks.request).toHaveBeenCalledTimes(1);
+  });
   it('uses combined command, preserves actual number and repeats the same key after an uncertain response and module reload',async()=>{
     mocks.request.mockRejectedValueOnce(new Error('Uncertain response'));
     let service=(await import('./scrapBuyingService')).scrapBuyingService;
