@@ -11,5 +11,5 @@ export default defineHandler(async (event) => {
   const tickets = Array.isArray(state.get('mahaffeys_tickets')) ? state.get('mahaffeys_tickets') as Ticket[] : [];
   const removed = Array.isArray(state.get('mahaffeys_removed_inventory_vehicles')) ? state.get('mahaffeys_removed_inventory_vehicles') as string[] : [];
   setResponseHeader(event, 'Cache-Control', 'no-store');
-  return mergeInventory(vehicles, tickets, removed).filter((vehicle) => vehicle.status !== 'CRUSHED').map(({ id, make, model, year, status, section, rowNumber, color, engineSizeLiters, engineCylinders, fuelType }) => ({ id, make, model, year, status, section, rowNumber, color, engineSizeLiters, engineCylinders, fuelType }));
+  return mergeInventory(vehicles, tickets, removed).filter((vehicle) => vehicle.status !== 'CRUSHED').map(({ id, make, model, year, status, section, rowNumber, color, engineSizeLiters, engineCylinders, engineModel, fuelType }) => ({ id, make, model, year, status, section, rowNumber, color, engineSizeLiters, engineCylinders, engineModel, fuelType }));
 });

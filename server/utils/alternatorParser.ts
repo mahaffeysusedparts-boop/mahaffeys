@@ -2,6 +2,10 @@ import { load } from 'cheerio';
 import type { InterchangeMapping } from '../../src/services/interchangeService';
 
 export function parseAlternatorListing(html: string, partNumber: string, url: string, fetchedAt: string): InterchangeMapping {
+  return parseElectricalListing(html, partNumber, url, fetchedAt, 'Alternator');
+}
+
+export function parseElectricalListing(html: string, partNumber: string, url: string, fetchedAt: string, partName: 'Alternator' | 'Starter'): InterchangeMapping {
   const $ = load(html);
   const specifications: Record<string, string> = {};
   const references = new Set<string>();
@@ -43,18 +47,18 @@ export function parseAlternatorListing(html: string, partNumber: string, url: st
         if (cells.length !== 2) continue;
         const key = text($(cells[0]).text());
         const value = text($(cells[1]).text());
-        if (['Unit Type', 'Voltage', 'Amperage', 'Rotation', 'Clock', 'Pulley Class', 'Regulator', 'Fan Type', 'Fits'].includes(key)) specifications[key] = value;
+        if (['Unit Type', 'Voltage', 'Amperage', 'Rotation', 'Clock', 'Pulley Class', 'Regulator', 'Fan Type', 'Fits', 'Teeth', 'KW', 'Starter Type'].includes(key)) specifications[key] = value;
         // Only take reference tables identified by a known catalog/manufacturer label.
-        if (/^(FORD|CHRYSLER|DELCO|AC DELCO|BOSCH|LESTER|MOTORCRAFT|WAI|WILSON|REMY LIGHT DUTY|ARROWHEAD|J&N Electrical Products)$/i.test(key)) {
+        if (/^(FORD|CHRYSLER|DELCO|AC DELCO|BOSCH|LESTER|MOTORCRAFT|WAI|WILSON|REMY LIGHT DUTY|ARROWHEAD|J&N Electrical Products|HONDA|ACURA|MITSUBA|DENSO|TOYOTA|MITSUBISHI)$/i.test(key)) {
           value.split(',').map(text).filter(Boolean).forEach((number) => references.add(`${key}: ${number}`));
         }
       }
     }
   });
-  if (specifications['Unit Type']?.toLowerCase() !== 'alternator' || !foundApplicationTable || !applications.size) throw new Error('No readable alternator application table');
+  if (specifications['Unit Type']?.toLowerCase() !== partName.toLowerCase() || !foundApplicationTable || !applications.size) throw new Error(`No readable ${partName.toLowerCase()} application table`);
   const heading = text($('h1').first().text());
   return {
-    id: `dbe-${partNumber}`, partCategory: 'Electrical', partName: 'Alternator', interchangeCode: partNumber,
+    id: `dbe-${partNumber}`, partCategory: 'Electrical', partName, interchangeCode: partNumber,
     description: heading || `DB Electrical ${partNumber}`,
     specifications, references: [...references], compatibleModels: [...applications.values()],
     source: { name: 'DB Electrical public listing', url, fetchedAt, stale: false, verification: 'unverified' },
