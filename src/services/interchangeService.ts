@@ -38,6 +38,13 @@ export function matchesPartIdentifier(mapping: InterchangeMapping, identifier: s
   return !value || [mapping.interchangeCode, mapping.description, ...(mapping.references ?? []), ...Object.values(mapping.specifications ?? {}), ...mapping.compatibleModels.flatMap((row) => [row.engine ?? '', row.notes ?? ''])].some((text) => text.toLowerCase().includes(value));
 }
 
+export function matchesComponentQuery(mapping: InterchangeMapping, query: string) {
+  const term = query.trim().toLowerCase();
+  const categories: Record<string, string> = { 'body parts': 'Body', lighting: 'Lights', light: 'Lights', 'cooling system': 'Cooling', 'interior parts': 'Interior' };
+  if (categories[term]) return mapping.partCategory === categories[term];
+  return !term || `${mapping.partName} ${mapping.partCategory} ${mapping.interchangeCode} ${mapping.references?.join(' ') ?? ''}`.toLowerCase().includes(term);
+}
+
 export function matchesDonorApplication(vehicle: InterchangeYardVehicle, application: InterchangeMapping['compatibleModels'][number], mapping?: InterchangeMapping) {
   if (vehicle.status === 'CRUSHED' || !matchesInterchangeModel(vehicle.make, vehicle.model, vehicle.year, application)) return false;
   if (vehicle.engineSizeLiters != null && application.engineLiters != null && Math.abs(vehicle.engineSizeLiters - application.engineLiters) > 0.05) return false;
@@ -69,6 +76,7 @@ export const interchangeService = {
 
   publicCatalog: (signal?: AbortSignal) => apiRequest<PartsCatalog>('/api/public/parts-catalog', { signal }),
   componentCatalog: (signal?: AbortSignal) => apiRequest<PartsCatalog>('/api/public/component-catalog', { signal }),
+  additionalComponentCatalog: (signal?: AbortSignal) => apiRequest<PartsCatalog>('/api/public/additional-component-catalog', { signal }),
 
   findInterchangeForVehicle(make: string, model: string, year: number, mappings = INITIAL_INTERCHANGE_DATABASE, engineLiters?: number): InterchangeMapping[] {
     return mappings.filter((item) => item.compatibleModels.some((compatible) => matchesInterchangeModel(make, model, year, compatible)
