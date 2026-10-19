@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { interchangeService, matchesInterchangeModel, type InterchangeMapping } from './interchangeService';
+import { interchangeService, matchesDonorApplication, matchesInterchangeModel, type InterchangeMapping } from './interchangeService';
 import type { PullYardVehicle } from '@/types/scrap';
 
 // Synthetic test applications only; never used as a real fitment catalogue.
@@ -34,6 +34,23 @@ describe('parts interchange vehicle matching', () => {
     expect(donors).toHaveLength(1);
     expect(donors[0].vehicle.id).toBe('available');
     expect(donors[0].interchangeItem.compatibleModels).toHaveLength(2);
+  });
+  it('excludes known engine and fuel mismatches but retains unknown-engine candidates', () => {
+    const application = { ...mapping.compatibleModels[0], engineLiters: 5.4, engineCylinders: 8, fuelType: 'gas' as const };
+    const donor = vehicle('AVAILABLE');
+    expect(matchesDonorApplication(donor, application)).toBe(true);
+    expect(matchesDonorApplication({ ...donor, engineSizeLiters: 4.6 }, application)).toBe(false);
+    expect(matchesDonorApplication({ ...donor, engineSizeLiters: 5.4, engineCylinders: 6 }, application)).toBe(false);
+    expect(matchesDonorApplication({ ...donor, fuelType: 'Diesel' }, application)).toBe(false);
+    expect(matchesDonorApplication({ ...donor, engineSizeLiters: 5.4, engineCylinders: 8, fuelType: 'Gasoline' }, application)).toBe(true);
+    expect(matchesDonorApplication({ ...donor, fuelType: 'Gasoline' }, { ...application, fuelType: 'diesel' })).toBe(false);
+    expect(matchesDonorApplication(vehicle('CRUSHED'), application)).toBe(false);
+  });
+  it('filters the customer engine without hiding applications on other makes', () => {
+    const catalog = [{ ...mapping, compatibleModels: [{ ...mapping.compatibleModels[0], engineLiters: 5.4 }, mapping.compatibleModels[1]] }];
+    expect(interchangeService.findInterchangeForVehicle('TEST MAKE', 'F150', 2007, catalog, 4.6)).toEqual([]);
+    expect(interchangeService.findInterchangeForVehicle('TEST MAKE', 'F150', 2007, catalog, 5.4)[0].compatibleModels).toHaveLength(2);
+    expect(interchangeService.findInterchangeForVehicle('TEST MAKE', 'F150', 2007, catalog)).toHaveLength(1);
   });
   it('does not invent interchange data from the target vehicle', () => {
     expect(interchangeService.getInterchangeMappings()).toEqual([]);

@@ -21,3 +21,13 @@ Normalization preserves exact trim/market, chassis, explicit source year ranges,
 - `carbonautorepair/partadex` on GitHub: source register explicitly says third-party catalog rights are not cleared and some extracted records are quarantined. Not imported as verified open data.
 
 No second freely reusable general-parts fitment dataset was verified. This is **not** a completed multi-provider general-parts database: engine, transmission and body-part interchange remain unpopulated. Mirrors of ANKUSI are not independent sources. New sources require real provenance, reuse rights, direct application/interchange evidence, and preserved restrictions; do not infer equivalents from shared models, shared engines, or transitive part-number chains.
+
+## Public alternator listings (unverified)
+
+The app now reads factual application tables from 17 selected DB Electrical truck-alternator product pages registered in `server/utils/alternatorSources.ts`. These are public web listings, NOT an open-licensed bulk feed or comprehensive interchange database. Every listing is marked unverified with its source URL, retrieval date, specifications and listed replacement references. AS-PL is linked for further vehicle/OE research; it is not imported. No paywall or login is bypassed, and no product marketing text or images are republished.
+
+Only readable application table rows are imported. Individual years are retained, duplicates removed, missing engines remain unknown, and no title-based coverage, model-family aliases, transitive reference matches or continuous-year ranges are invented. The public HTML may omit additional interactive/paginated applications. The source may contradict its own specifications; both are shown. A common aftermarket replacement establishes donor candidates only, not guaranteed OE-to-OE interchange.
+
+Each page is cached in PostgreSQL under `alternator-<part number>` in `interchange_source_snapshots`. Refresh is daily and on demand, with four concurrent requests, ten-second fetch limits, shared in-flight loading, stale fallback per page and a five-minute retry interval for partial failures. Unsupported formats and unavailable pages are listed explicitly. The first load can take up to a minute. There is no scheduled background crawl.
+
+The customer can filter by source-listed engine displacement; known different donor displacement, cylinder count or explicit fuel type is excluded. Unrecorded engine/part presence/condition is never interpreted as confirmation. All vehicle applications stay visible without yard stock, with incremental display. Engines, transmissions, body parts, other truck years and additional online sources are not comprehensively covered by this change.

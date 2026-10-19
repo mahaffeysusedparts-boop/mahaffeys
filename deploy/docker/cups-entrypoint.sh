@@ -61,6 +61,43 @@ else
     log "Preserving existing listener configuration without modification."
 fi
 
+# CUPS validates HTTP Host headers; the app connects using the Compose service name.
+alias_present=$(awk '
+    /^[[:space:]]*#/ { next }
+    {
+        directive = tolower($1)
+        if (directive == "servername" || directive == "serveralias") {
+            for (i = 2; i <= NF; i++) {
+                if ($i ~ /^#/) break
+                if (tolower($i) == "cups" || (directive == "serveralias" && $i == "*")) {
+                    found = 1
+                }
+            }
+        }
+    }
+    END { print found ? "yes" : "no" }
+' "$config")
+
+if [ "$alias_present" = no ]; then
+    if [ -z "$backup" ]; then
+        if ! backup=$(mktemp "${config}.before-serveralias-cups.XXXXXX"); then
+            log "ERROR: Cannot create a configuration backup; no hostname changes made."
+            exit 1
+        fi
+        if ! cp -p "$config" "$backup"; then
+            log "ERROR: Cannot back up $config to $backup; no hostname changes made."
+            exit 1
+        fi
+        log "Backed up configuration to $backup."
+    fi
+    if ! printf '\n# Accept the exact Docker service hostname without allowing arbitrary hosts.\nServerAlias cups\n' >> "$config"; then
+        restore_and_stop
+    fi
+    log "Added ServerAlias cups; authentication and network access rules remain unchanged."
+else
+    log "Existing configuration already accepts the cups service hostname."
+fi
+
 if ! cupsd -t -c "$config"; then
     restore_and_stop
 fi

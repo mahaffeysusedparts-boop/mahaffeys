@@ -60,9 +60,11 @@ Docker Compose also starts a private `cups` container that runs the CUPS print s
 
 The `cups-config` volume holds the active `/etc/cups` configuration and printer queues. The `cups-data` volume retains the mounted CUPS cache. **Rebuilding the image does not replace configuration already saved in `cups-config`.** The packaged `deploy/docker/cupsd.conf` already has `Port 631`, but an older volume may contain only `Listen /var/run/cups/cups.sock`. In that case CUPS can run locally while the app cannot reach `cups:631`.
 
-The Docker entrypoint repairs only the known socket-only configuration (also accepting `/run/cups/cups.sock`). Before appending `Port 631`, it creates a uniquely named `/etc/cups/cupsd.conf.before-tcp-631.*` backup, preserving file ownership and permissions. It retains the socket, authentication, access rules, and other settings. Existing `Port`, `SSLPort`, `SSLListen`, or other `Listen` directives are deliberately left alone, even if they do not enable the app's expected address. Repeated starts after a successful repair neither duplicate the listener nor create another migration backup.
+The Docker entrypoint repairs only the known socket-only listener configuration (also accepting `/run/cups/cups.sock`). Before appending `Port 631`, it creates a uniquely named `/etc/cups/cupsd.conf.before-tcp-631.*` backup, preserving file ownership and permissions. It retains the socket, authentication, access rules, and other settings. Existing `Port`, `SSLPort`, `SSLListen`, or other `Listen` directives are deliberately left alone, even if they do not enable the app's expected address.
 
-Every startup runs `cupsd -t` against the active file before starting CUPS in the foreground. If validation fails after a repair, the entrypoint restores the backup and exits with diagnostic logs. An already-invalid configuration that was not changed is left untouched and startup stops. The health check uses TCP at `127.0.0.1:631` under `LC_ALL=C`, checks command success, and requires exactly `scheduler is running`; a working Unix socket alone cannot pass.
+CUPS also validates the HTTP hostname used by clients. The app uses the Docker service name `cups`; without an accepted `ServerName` or `ServerAlias`, CUPS may return `lpadmin: Bad Request` even with TCP enabled. The packaged configuration includes `ServerAlias cups`. On startup, the entrypoint adds this exact alias to older saved configurations only when they do not already accept it. It reuses the listener backup when both repairs occur together; an alias-only repair creates `/etc/cups/cupsd.conf.before-serveralias-cups.*`. It does not add a wildcard, remove authentication, or widen network access rules. Existing wildcard aliases are left untouched. Repeated successful starts neither duplicate directives nor create additional backups.
+
+Every startup runs `cupsd -t` against the active file before starting CUPS in the foreground. If validation fails after either repair, the entrypoint restores the backup and exits with diagnostic logs. An already-invalid configuration that was not changed is left untouched and startup stops. The health check uses TCP at `127.0.0.1:631` under `LC_ALL=C`, checks command success, and requires exactly `scheduler is running`; a working Unix socket alone cannot pass.
 
 **Security:** The existing `631:631` host publication is unchanged. Restrict it to trusted networks using Docker-aware host firewall/network controls; do not forward it from the internet. Docker-published ports may bypass ordinary UFW rules. Never resolve a later authorization error by disabling authentication or adding unrestricted access.
 
@@ -98,9 +100,9 @@ Both scheduler checks must report `scheduler is running`. A healthy loopback che
 
 After the app check succeeds, use the existing **Settings → Shared network printers** interface to retry the Brother host `192.168.1.251` with its current `/ipp/print` path. Send a small document through the app and confirm actual paper output. Saving a profile or accepting a job is not proof of printing. An authentication/authorization failure, an unreachable printer, or a protocol failure is a separate issue; inspect application/CUPS logs and diagnose it without changing drivers or access rules merely to bypass an error.
 
-#### Rollback of the listener repair
+#### Rollback of the CUPS configuration repair
 
-The backup filename is logged at startup and retained in `cups-config`. Stop CUPS before restoring it so the scheduler cannot rewrite the configuration. The one-off restore explicitly bypasses the repair entrypoint and mounts the existing volumes; replace the example suffix with the exact backup filename from the log.
+The backup filename is logged at startup and retained in `cups-config`. Stop CUPS before restoring it so the scheduler cannot rewrite the configuration. The one-off restore explicitly bypasses the repair entrypoint and mounts the existing volumes; use the exact backup filename from the log. For an alias-only repair, substitute the `cupsd.conf.before-serveralias-cups.*` backup for the listener backup in the example below.
 
 ```bash
 docker compose stop cups
@@ -114,10 +116,11 @@ This rolls back only `cupsd.conf`, not queues or application data. Leave the ser
 
 Use disposable CUPS configuration volumes, not production queues, for failure-case tests:
 
-- Socket-only file: verify a backup exists, exactly one `Port 631` is added, and removing the appended block gives byte-for-byte original content.
+- Socket-only file: verify a backup exists, exactly one `Port 631` and any missing `ServerAlias cups` are added, and removing the appended blocks gives byte-for-byte original content.
 - Second startup: verify the configuration and backup count are unchanged.
-- Existing `Port 631` or deliberately bound TCP listener: verify content is unchanged and no migration backup is created.
-- Socket-only file containing an invalid directive: verify validation stops startup and the original file is restored from the backup. An invalid existing TCP file must also stop startup without modification.
+- Existing `Port 631` or deliberately bound TCP listener: verify listeners are unchanged; only a missing service hostname alias may be appended.
+- Existing TCP configuration missing `ServerAlias cups`: verify an alias-only backup is created and exactly one alias is added. Case-insensitive `cups` in existing `ServerName` or `ServerAlias` directives and existing wildcard aliases must not be duplicated.
+- File containing an invalid directive: verify validation stops startup and restores the original when either repair was applied. An invalid file requiring neither repair must stop startup without modification.
 - Socket-only scheduler started with the repair entrypoint bypassed: verify the TCP health probe fails despite local socket availability. With TCP enabled, verify the probe succeeds.
 - Production rollout: verify app-to-CUPS TCP connectivity, unchanged existing queues, successful printer addition, and physical test output separately.
 
