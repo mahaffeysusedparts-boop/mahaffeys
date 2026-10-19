@@ -25,7 +25,8 @@ export interface BuyingState {
     paidAt: string;
     paidBy: string;
     paidById?: string;
-    policyVersion: string;
+    policyVersion?: string;
+    safeguardReview?: import('./paymentSafeguards').PaymentSafeguards;
     permitReference?: string;
     documentationReference?: string;
   };
@@ -40,6 +41,7 @@ export interface PaymentEligibility {
   permitRequired: boolean;
   documentationRequired: boolean;
   policyVersion?: string;
+  safeguardReview?: import('./paymentSafeguards').PaymentSafeguards;
 }
 
 export interface BuyingPolicy {

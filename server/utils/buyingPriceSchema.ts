@@ -49,9 +49,17 @@ CREATE TABLE IF NOT EXISTS scrap_buying_legacy_reviews (
 CREATE TABLE IF NOT EXISTS scrap_buying_payments (
  ticket_id TEXT PRIMARY KEY REFERENCES scrap_buying_tickets(ticket_id), id UUID NOT NULL UNIQUE,
  amount NUMERIC(14,2) NOT NULL CHECK (amount >= 0), method TEXT NOT NULL CHECK(method IN ('Cash','Check')),
- check_reference TEXT UNIQUE, drawer_entry_id TEXT UNIQUE, policy_version UUID NOT NULL REFERENCES scrap_buying_policies(version),
+ check_reference TEXT UNIQUE, drawer_entry_id TEXT UNIQUE, policy_version UUID REFERENCES scrap_buying_policies(version),
  document JSONB NOT NULL, paid_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+ALTER TABLE scrap_buying_payments ALTER COLUMN policy_version DROP NOT NULL;
+DO $$ BEGIN
+ IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='scrap_buying_payment_override_evidence' AND conrelid='scrap_buying_payments'::regclass) THEN
+  ALTER TABLE scrap_buying_payments ADD CONSTRAINT scrap_buying_payment_override_evidence CHECK (
+   policy_version IS NOT NULL OR COALESCE(document->'safeguardReview'->>'enabled'='false',FALSE)
+  );
+ END IF;
+END $$;
 CREATE TABLE IF NOT EXISTS price_sheet_documents (
  id UUID PRIMARY KEY, file_name TEXT NOT NULL, content BYTEA NOT NULL, byte_size INTEGER NOT NULL,
  sha256 TEXT NOT NULL, uploaded_by TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -81,7 +89,7 @@ CREATE TABLE IF NOT EXISTS price_sheet_publication_events (
  id UUID PRIMARY KEY, version_id UUID NOT NULL REFERENCES price_sheet_versions(id), actor_id TEXT NOT NULL,
  action TEXT NOT NULL CHECK(action IN ('PUBLISH','ROLLBACK')), created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-INSERT INTO buying_price_migrations(version) VALUES (1),(2) ON CONFLICT DO NOTHING;
+INSERT INTO buying_price_migrations(version) VALUES (1),(2),(3) ON CONFLICT DO NOTHING;
 `;
 
 export const canonicalBackupTables = [

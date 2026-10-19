@@ -23,6 +23,7 @@ export const legacyFinancialFields = ['ticketType','createdAt','customerId','cus
 // All generic sync/chunk/import paths share the same lock as buying commands.
 // Protected records omitted by an evicted/stale cache are retained, not deleted.
 export async function protectFinancialState(client: PoolClient, key: string, incoming: unknown, actorRole: string, actorName: string) {
+  if (key === 'mahaffeys_payment_safeguards' || key.startsWith('mahaffeys_payment_safeguards_revision_')) throw createError({statusCode:403,statusMessage:'Payment safeguards must use the revisioned administrator safeguards endpoint'});
   if (['mahaffeys_metals','mahaffeys_car_rates','mahaffeys_cat_codes'].includes(key)) {
     if (!['admin','yard_manager'].includes(actorRole)) throw createError({statusCode:403,statusMessage:'Buying rate/grade changes require a manager or administrator'});
     await lockFinancialState(client);return incoming;

@@ -51,4 +51,25 @@ describe('payment rule boundaries and fail-closed setup',()=>{
     expect(result.allowedMethods).toEqual([]);
     expect(result.selectableMethods).toEqual(['Check']);
   });
+  it('allows payment without policy setup only when the server disables safeguards',()=>{
+    const override=evaluateBuyingPaymentRules(ticket(200),null,[metal],'2026-01-01',history,false);
+    expect(override.allowedMethods).toEqual(['Cash','Check']);
+    expect(override.policyVersion).toBeUndefined();
+    expect(override.permitRequired).toBe(false);expect(override.documentationRequired).toBe(false);
+    expect(evaluateBuyingPaymentRules(ticket(200),null,[metal],'2026-01-01',history,true).allowedMethods).toEqual([]);
+  });
+  it('re-enabling restores material, permit, documentation and cash rules',()=>{
+    const p={...policy,grades:[{...policy.grades[0],paymentClass:'COPPER' as const}]};
+    const purchase=ticket(25,'Non-Ferrous');
+    const off=evaluateBuyingPaymentRules(purchase,p,[metal],'2026-01-01',history,false);
+    expect(off.allowedMethods).toEqual(['Cash','Check']);expect(off.permitRequired).toBe(false);
+    const on=evaluateBuyingPaymentRules(purchase,p,[metal],'2026-01-01',history,true);
+    expect(on.allowedMethods).toEqual(['Check']);expect(on.permitRequired).toBe(true);expect(on.documentationRequired).toBe(true);
+  });
+  it('retains financial evidence, positive amount and drawer checks with safeguards off',()=>{
+    expect(evaluateBuyingPaymentRules(ticket(10),null,[metal],'2026-01-01',{...history,drawerBalance:0},false).allowedMethods).toEqual(['Check']);
+    expect(evaluateBuyingPaymentRules(ticket(10),null,[metal],'2026-01-01',{...history,unresolved:true},false).allowedMethods).toEqual(['Check']);
+    expect(evaluateBuyingPaymentRules(ticket(0),null,[metal],'2026-01-01',history,false).allowedMethods).toEqual([]);
+    expect(evaluateBuyingPaymentRules({...ticket(10),scrapLines:[]},null,[metal],'2026-01-01',history,false).allowedMethods).toEqual([]);
+  });
 });

@@ -86,6 +86,8 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ ticket, open, onOpen
             <p><span className="font-bold">PAYOUT METHOD:</span> {paymentMethod.toUpperCase()}</p>
             {paymentMethod === 'Check' && checkNumber && <p><span className="font-bold">CHECK NUMBER:</span> {checkNumber}</p>}
             {ticket.buying?.payment && <p><span className="font-bold">PAYMENT RECORDED BY:</span> {ticket.buying.payment.paidBy} · {new Date(ticket.buying.payment.paidAt).toLocaleString()}</p>}
+            {ticket.buying?.payment?.safeguardReview && <p><span className="font-bold">PAYMENT-RULE SAFEGUARDS:</span> {ticket.buying.payment.safeguardReview.enabled ? 'ON' : 'OFF — ADMINISTRATOR OVERRIDE'} · Revision {ticket.buying.payment.safeguardReview.revision}</p>}
+            {ticket.buying?.payment?.safeguardReview?.enabled === false && <p><span className="font-bold">OVERRIDE:</span> {ticket.buying.payment.safeguardReview.updatedBy} · {ticket.buying.payment.safeguardReview.reason}. Application checks disabled; not a certification of legal compliance.</p>}
           </div>
           <div className="text-right">
             <p><span className="font-bold">SELLER / CUSTOMER:</span> {ticket.customerName}</p>

@@ -515,6 +515,7 @@ export default function TicketsPage() {
                 <div>Payout: <strong className="text-emerald-400">${inspectionTicket.finalPayout.toFixed(2)}</strong></div>
                 <div>Payment: <strong className="text-emerald-200">{inspectionTicket.buying ? inspectionTicket.buying.stage === 'PAID' ? inspectionTicket.buying.payment?.method : 'Not paid' : inspectionTicket.payoutMethod}</strong></div>
                 {(inspectionTicket.buying?.payment?.checkReference ?? inspectionTicket.checkNumber) && <div>Check Number: <strong className="text-emerald-200">{inspectionTicket.buying?.payment?.checkReference ?? inspectionTicket.checkNumber}</strong></div>}
+                {inspectionTicket.buying?.payment?.safeguardReview && <div className="col-span-2">Payment safeguards: <strong className="text-amber-200">{inspectionTicket.buying.payment.safeguardReview.enabled ? 'ON' : 'OFF · administrator override'} · revision {inspectionTicket.buying.payment.safeguardReview.revision}</strong>{!inspectionTicket.buying.payment.safeguardReview.enabled && <p className="mt-1 text-slate-200">{inspectionTicket.buying.payment.safeguardReview.updatedBy}: {inspectionTicket.buying.payment.safeguardReview.reason}</p>}</div>}
               </div>
 
               <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">

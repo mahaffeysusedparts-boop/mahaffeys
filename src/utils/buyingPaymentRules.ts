@@ -1,11 +1,20 @@
 import type { BuyingPolicy, PaymentEligibility } from '../types/buyingPayments';
 import type { MetalGrade, Ticket } from '../types/scrap';
 
-export function evaluateBuyingPaymentRules(ticket: Ticket, policy: BuyingPolicy | null, metals: MetalGrade[], day: string, history: { cashCents: number | null; cashCount: number | null; unresolved: boolean; drawerBalance: number }): PaymentEligibility {
-  const result: PaymentEligibility = { ticketId: ticket.id, revision: ticket.buying?.revision ?? 0, allowedMethods: [], selectableMethods: ['Check'], reasons: [], permitRequired: false, documentationRequired: false, policyVersion: policy?.version };
+export function evaluateBuyingPaymentRules(ticket: Ticket, policy: BuyingPolicy | null, metals: MetalGrade[], day: string, history: { cashCents: number | null; cashCount: number | null; unresolved: boolean; drawerBalance: number }, safeguardsEnabled = true): PaymentEligibility {
+  const result: PaymentEligibility = { ticketId: ticket.id, revision: ticket.buying?.revision ?? 0, allowedMethods: [], selectableMethods: ['Check'], reasons: [], permitRequired: false, documentationRequired: false, policyVersion: safeguardsEnabled ? policy?.version : undefined };
   const block = (code: string, message: string, method?: 'Cash') => result.reasons.push({ code, message, method });
+  if (!safeguardsEnabled) {
+    const cents = Math.round(ticket.finalPayout * 100);
+    if (!ticket.scrapLines?.length || !Number.isSafeInteger(cents) || cents <= 0) block('INVALID_AMOUNT', 'Purchase must have confirmed weighed lines and a positive validated payout.');
+    if (history.unresolved) block('HISTORICAL_CASH_UNRESOLVED', 'Historical seller payment evidence is unresolved. Reconcile it before recording further cash payments.', 'Cash');
+    if (!Number.isFinite(history.drawerBalance) || history.drawerBalance < ticket.finalPayout) block('DRAWER_BALANCE', 'Recorded drawer balance is insufficient or ambiguous for this cash payment.', 'Cash');
+    result.selectableMethods = result.reasons.some(reason => reason.method === 'Cash') ? ['Check'] : ['Cash','Check'];
+    if (!result.reasons.some(reason => !reason.method)) result.allowedMethods = result.selectableMethods;
+    return result;
+  }
   if (!policy?.version || day < policy.effectiveFrom || day > policy.effectiveThrough) {
-    block('POLICY_SETUP_REQUIRED', 'Current source-backed reviewed policy is missing or expired. Administrator deployment/setup is required; this is not a ticket approval request.');
+    block('POLICY_SETUP_REQUIRED', 'Payment-rule safeguards are on, but a current reviewed ruleset is missing or expired. An administrator must verify the ruleset or explicitly disable enforcement in Payment safeguards. This is not a ticket approval request.');
     return result;
   }
   const lines = ticket.scrapLines ?? [];

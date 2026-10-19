@@ -154,4 +154,44 @@ describe.skipIf(!safe)('real PostgreSQL buying invariants (isolated TEST_DATABAS
     await db.withTransaction(client=>finance.putState(client,'mahaffeys_tickets',[ticket,legacy],user.id));
     await expect(db.withTransaction(client=>finance.protectFinancialState(client,'mahaffeys_tickets',[ticket,{...legacy,status:'PENDING'}],'admin',user.fullName))).rejects.toThrow();
   });
+  it('rechecks server toggle under payment locks, records override evidence, and never duplicates effects',async()=>{
+    const original=ticket;
+    const off={enabled:false,revision:7,updatedAt:new Date().toISOString(),updatedBy:user.fullName,reason:'SYNTHETIC ADMIN OVERRIDE'};
+    await db.withTransaction(client=>finance.putState(client,'mahaffeys_payment_safeguards',off,user.id));
+    const finalized={...original,id:'override-check',customerId:undefined,customerIdNumber:undefined,checkNumber:undefined,buying:{...original.buying!,revision:1,stage:'FINALIZED',sellerIdentity:undefined,payment:undefined}};
+    await db.query('INSERT INTO scrap_buying_tickets(ticket_id,revision,stage,document,created_by) VALUES($1,1,$2,$3::jsonb,$4)',[finalized.id,'FINALIZED',JSON.stringify(finalized),user.id]);
+    const preview=await buying.previewPaymentEligibility(finalized.id,1,user);
+    expect(preview.allowedMethods).toEqual(['Cash','Check']);expect(preview.policyVersion).toBeUndefined();expect(preview.safeguardReview).toEqual(off);
+    // Re-enable between preview and payment: stale client eligibility cannot override server settings.
+    await db.withTransaction(client=>finance.putState(client,'mahaffeys_payment_safeguards',{...off,enabled:true,revision:8},user.id));
+    await expect(buying.executeBuyingCommand({...command('PAY'),id:finalized.id,revision:1,method:'Cash',disbursed:true,ticket:{enabled:false}} as Parameters<typeof buying.executeBuyingCommand>[0],user)).rejects.toThrow();
+    await db.withTransaction(client=>finance.putState(client,'mahaffeys_payment_safeguards',{...off,revision:9},user.id));
+    await expect(buying.executeBuyingCommand({...command('PAY'),id:finalized.id,revision:1,method:'Check',reference:' ',disbursed:true} as Parameters<typeof buying.executeBuyingCommand>[0],user)).rejects.toThrow();
+    await expect(buying.executeBuyingCommand({...command('PAY'),id:finalized.id,revision:1,method:'Check',reference:'OV-0009',disbursed:true} as Parameters<typeof buying.executeBuyingCommand>[0],{...user,role:'yard_employee'})).rejects.toThrow();
+    const request={...command('PAY'),id:finalized.id,revision:1,method:'Check',reference:' OV-0009 ',disbursed:true};
+    const paid=await Promise.all([1,2].map(()=>buying.executeBuyingCommand(request as Parameters<typeof buying.executeBuyingCommand>[0],user)));
+    expect(paid[0].buying!.payment!.id).toBe(paid[1].buying!.payment!.id);
+    expect(paid[0].buying!.payment!.policyVersion).toBeUndefined();
+    expect(paid[0].buying!.payment!.safeguardReview).toEqual({...off,revision:9});expect(paid[0].checkNumber).toBe('OV-0009');
+    const stored=(await db.query('SELECT policy_version,document FROM scrap_buying_payments WHERE ticket_id=$1',[finalized.id])).rows[0];
+    expect(stored.policy_version).toBeNull();expect(stored.document.safeguardReview).toEqual({...off,revision:9});
+    // Paid evidence remains unchanged when safeguards are enabled again or receipts are revisited.
+    await db.withTransaction(client=>finance.putState(client,'mahaffeys_payment_safeguards',{...off,enabled:true,revision:10},user.id));
+    expect(await buying.executeBuyingCommand({...request,idempotencyKey:randomUUID()} as Parameters<typeof buying.executeBuyingCommand>[0],user)).toEqual(paid[0]);
+    const duplicate={...finalized,id:'override-duplicate'};
+    await db.query('INSERT INTO scrap_buying_tickets(ticket_id,revision,stage,document,created_by) VALUES($1,1,$2,$3::jsonb,$4)',[duplicate.id,'FINALIZED',JSON.stringify(duplicate),user.id]);
+    await db.withTransaction(client=>finance.putState(client,'mahaffeys_payment_safeguards',{...off,revision:11},user.id));
+    await expect(buying.executeBuyingCommand({...request,id:duplicate.id,idempotencyKey:randomUUID(),reference:'ov-0009'} as Parameters<typeof buying.executeBuyingCommand>[0],user)).rejects.toThrow();
+    // The database rejects policy-free payments without explicit override evidence.
+    await expect(db.query('INSERT INTO scrap_buying_payments(ticket_id,id,amount,method,document) VALUES($1,$2,10,$3,$4::jsonb)',[duplicate.id,randomUUID(),'Cash',JSON.stringify({})])).rejects.toThrow();
+    const cashTicket={...finalized,id:'override-cash',finalPayout:10};
+    await db.query('INSERT INTO scrap_buying_tickets(ticket_id,revision,stage,document,created_by) VALUES($1,1,$2,$3::jsonb,$4)',[cashTicket.id,'FINALIZED',JSON.stringify(cashTicket),user.id]);
+    const cashRequest={...command('PAY'),id:cashTicket.id,revision:1,method:'Cash',reference:'unused-check',disbursed:true};
+    const cash=await Promise.all([1,2].map(()=>buying.executeBuyingCommand({...cashRequest,idempotencyKey:randomUUID()} as Parameters<typeof buying.executeBuyingCommand>[0],user)));
+    expect(cash[0].buying!.payment!.id).toBe(cash[1].buying!.payment!.id);expect(cash[0].checkNumber).toBeUndefined();
+    const drawer=(await db.query("SELECT value FROM app_state WHERE key='mahaffeys_cash_drawer'")).rows[0].value;
+    expect(drawer.filter((row:{ticketId?:string})=>row.ticketId===cashTicket.id)).toHaveLength(1);
+    for(const role of ['admin','yard_manager','scale_operator','yard_employee']) await expect(db.withTransaction(client=>finance.protectFinancialState(client,'mahaffeys_payment_safeguards',{enabled:false},role,user.fullName))).rejects.toThrow();
+    ticket=original;
+  });
 });

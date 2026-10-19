@@ -1,20 +1,17 @@
 import { useAuth } from '@/context/AuthContext';
 import { IntakeRequirementsSettings } from '@/components/settings/IntakeRequirementsSettings';
-import { BuyingPolicySettings } from '@/components/settings/BuyingPolicySettings';
-import type { BuyingPolicy, PaymentEligibility } from '@/types/buyingPayments';
+import { PaymentSafeguardsSettings } from '@/components/settings/PaymentSafeguardsSettings';
+import type { PaymentEligibility } from '@/types/buyingPayments';
 import type { IntakeRequirements } from '@/types/intakeRequirements';
 import type { Ticket } from '@/types/scrap';
 import { ShieldCheck, AlertTriangle } from 'lucide-react';
 
-export function IntakeCompletionGuidance({ ticket, requirements, eligibility, eligibilityError, reviewed, policy, policyLoading, onPolicySaved }: {
+export function IntakeCompletionGuidance({ ticket, requirements, eligibility, eligibilityError, reviewed }: {
   ticket: Ticket;
   requirements?: IntakeRequirements;
   eligibility?: PaymentEligibility;
   eligibilityError?: string;
   reviewed: boolean;
-  policy?: BuyingPolicy | null;
-  policyLoading: boolean;
-  onPolicySaved: () => void;
 }) {
   const { isAdmin } = useAuth();
   const intakeReasons = eligibility?.reasons.filter(reason => reason.code === 'INTAKE_NOT_READY') ?? [];
@@ -41,10 +38,10 @@ export function IntakeCompletionGuidance({ ticket, requirements, eligibility, el
     </div>
     <details className="rounded-xl border border-sky-700 bg-slate-900 p-3">
       <summary className="cursor-pointer font-semibold text-sky-100">Choose intake safeguards</summary>
-      <p className="my-3 text-xs leading-relaxed text-slate-200">Select photos, phone, address, seller ID, plate and review requirements below. Changes apply yard-wide only after Save; completed valid weights and applicable legal payment obligations cannot be switched off here.</p>
+      <p className="my-3 text-xs leading-relaxed text-slate-200">Select photos, phone, address, seller ID, plate and review requirements below. Valid confirmed weighing remains required. The administrator’s master payment-rule switch is separate and shown below.</p>
       <IntakeRequirementsSettings/>
     </details>
-    {isAdmin && <BuyingPolicySettings policy={policy} loading={policyLoading} onSaved={onPolicySaved}/>}
-    {!isAdmin && <p className="text-xs text-sky-100">An administrator can change yard-wide safeguard and policy settings. Authorized operators can complete intakes without waiting for payment-policy setup.</p>}
+    <PaymentSafeguardsSettings/>
+    {!isAdmin && <p className="text-xs text-sky-100">An administrator can change yard-wide safeguard settings. Authorized operators can complete intakes without waiting for payment-rule setup.</p>}
   </section>;
 }
