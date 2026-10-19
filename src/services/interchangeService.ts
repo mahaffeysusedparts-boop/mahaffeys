@@ -1,5 +1,7 @@
 import type { PullYardVehicle } from '@/types/scrap';
 
+export type InterchangeYardVehicle = Pick<PullYardVehicle, 'id' | 'make' | 'model' | 'year' | 'status' | 'section' | 'rowNumber' | 'color'>;
+
 export interface InterchangeMapping {
   id: string;
   partCategory: string;

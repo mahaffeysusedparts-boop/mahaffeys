@@ -581,6 +581,17 @@ export interface MillShipper {
   createdAt: string;
 }
 
+export type ShipmentPriceUnit = 'LB' | 'TON';
+
+export interface ShipmentSettlementGradeLine {
+  gradeLineId: string;
+  gradeName: string;
+  actualNetWeightLbs: number;
+  actualRatePerLb: number;
+  priceUnit: ShipmentPriceUnit;
+  deductions: number;
+}
+
 export interface ShipmentSettlement {
   scaleTicketNumber: string;
   actualNetWeightLbs: number;
@@ -588,6 +599,7 @@ export interface ShipmentSettlement {
   deductions: number;
   amountPaid: number;
   settledAt: string;
+  gradeLines?: ShipmentSettlementGradeLine[];
 }
 
 export interface ShipmentGradeLine {
@@ -595,6 +607,7 @@ export interface ShipmentGradeLine {
   gradeName: string;
   netWeightLbs: number;
   soldPricePerLb: number;
+  priceUnit?: ShipmentPriceUnit;
 }
 
 export interface OutboundShipment {

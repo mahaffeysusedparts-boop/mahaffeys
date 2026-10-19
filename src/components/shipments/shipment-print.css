@@ -1,0 +1,47 @@
+@media print {
+  @page mill-shipment {
+    size: letter portrait;
+    margin: 0.5in;
+  }
+
+  body:has(#mill-shipment-print) > :not(#mill-shipment-print) {
+    display: none !important;
+  }
+
+  body:has(#mill-shipment-print) {
+    overflow: visible !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  #mill-shipment-print {
+    display: block !important;
+    visibility: visible !important;
+    page: mill-shipment;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    font-size: 11pt;
+    color: #0f172a !important;
+    background: white !important;
+  }
+
+  #mill-shipment-print * {
+    visibility: visible !important;
+  }
+
+  #mill-shipment-print th,
+  #mill-shipment-print td {
+    padding: 8px 4px;
+    border-bottom: 1px solid #cbd5e1;
+    overflow-wrap: anywhere;
+  }
+
+  #mill-shipment-print thead {
+    display: table-header-group;
+  }
+
+  #mill-shipment-print tr {
+    break-inside: avoid;
+  }
+}

@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { interchangeService } from '@/services/interchangeService';
 import { vehicleOptionsService } from '@/services/vehicleOptionsService';
-import { storageService } from '@/services/storageService';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -27,14 +26,13 @@ export const PartsInterchangeModal: React.FC<PartsInterchangeModalProps> = ({ is
   const [searchModel, setSearchModel] = useState(initialModel);
   const [searchYear, setSearchYear] = useState(initialYear);
   const [searchTerm, setSearchTerm] = useState('');
-  const [yardVehicles, setYardVehicles] = useState(() => storageService.getPullYardVehicles());
   useEffect(() => {
     if (!isOpen) return;
     setSearchMake(initialMake); setSearchModel(initialModel); setSearchYear(initialYear); setSearchTerm('');
-    setYardVehicles(storageService.getPullYardVehicles());
-    return storageService.subscribe('mahaffeys_pull_yard_vehicles', () => setYardVehicles(storageService.getPullYardVehicles()));
   }, [isOpen, initialMake, initialModel, initialYear]);
 
+  const inventory = useQuery({ queryKey: ['interchange-yard-inventory', isOpen], queryFn: vehicleOptionsService.yardVehicles, enabled: isOpen, staleTime: 0, retry: 1 });
+  const yardVehicles = inventory.data ?? [];
   const makes = useQuery({ queryKey: ['vehicle-options', 'makes'], queryFn: vehicleOptionsService.makes, enabled: isOpen, staleTime: 86400000, retry: 1 });
   const makeId = makes.data?.options.find((option) => option.name.toLowerCase() === searchMake.toLowerCase())?.id;
   const models = useQuery({ queryKey: ['vehicle-options', 'models', makeId, searchYear], queryFn: () => vehicleOptionsService.models(makeId!, searchYear), enabled: isOpen && !!makeId, staleTime: 86400000, retry: 1 });
@@ -65,10 +63,11 @@ export const PartsInterchangeModal: React.FC<PartsInterchangeModalProps> = ({ is
           </div>
           <p className="text-xs leading-relaxed text-slate-200">Vehicle dropdowns: NHTSA vPIC online data plus vehicles already recorded here. {searchYear <= 1995 ? 'NHTSA does not offer year-filtered model lists for this year; check the model year yourself.' : 'Models are filtered by the selected year when NHTSA supports the make.'} Vehicle names alone do not establish parts fitment.</p>
           {(makes.isError || models.isError) && <div role="alert" className="rounded-xl border border-amber-700 bg-amber-950 p-3 text-sm text-amber-100">Online options could not load. Existing yard selections remain available; there may be more models online. <Button onClick={() => { if (makes.isError) void makes.refetch(); if (models.isError) void models.refetch(); }} className="ml-2 h-8 rounded-lg bg-emerald-700 text-xs text-white">Retry online options</Button></div>}
+          {inventory.isError && <div role="alert" className="rounded-xl border border-amber-700 bg-amber-950 p-3 text-sm text-amber-100">Yard stock could not load. Availability is unknown, not out of stock. <Button onClick={() => void inventory.refetch()} className="ml-2 h-8 rounded-lg bg-emerald-700 text-xs text-white">Retry yard stock</Button></div>}
           <div className="space-y-2"><label htmlFor="interchange-component" className="text-sm font-semibold">2. Which part do you need?</label><div className="relative"><Search className="absolute left-3 top-3.5 h-4 w-4 text-slate-300" /><Input id="interchange-component" value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Part name or interchange number…" className="h-12 rounded-xl border-slate-600 bg-slate-950 pl-10 text-white" /></div><div className="flex flex-wrap gap-2">{['All parts', 'Engine', 'Transmission', 'Alternator', 'Starter', 'Door'].map((part) => <Button key={part} aria-pressed={searchTerm === (part === 'All parts' ? '' : part)} onClick={() => setSearchTerm(part === 'All parts' ? '' : part)} className={`h-8 rounded-full px-3 text-xs ${searchTerm === (part === 'All parts' ? '' : part) ? 'bg-teal-700 text-white' : 'bg-slate-800 text-slate-100'}`}>{part}</Button>)}</div></div>
         </section>
         {hasTarget ? <>
-          <InterchangeResults mappings={matchingMappings} yardVehicles={yardVehicles} target={target} />
+          <InterchangeResults mappings={matchingMappings} yardVehicles={yardVehicles} inventoryKnown={inventory.isSuccess} target={target} />
           <section className="space-y-3 rounded-2xl border border-teal-800 bg-teal-950 p-4 sm:p-5"><h3 className="flex items-center gap-2 font-bold"><ExternalLink className="h-5 w-5 text-teal-200" />Research fitment online</h3><p className="text-sm text-teal-100">Search for {target}{searchTerm ? ` · ${searchTerm}` : ''}. These links open external research—not confirmed compatibility results. Compare OEM/interchange numbers and application notes; matching model names are not enough.</p><div className="flex flex-wrap gap-3"><a href={`https://www.google.com/search?q=${query}`} target="_blank" rel="noopener noreferrer" className="rounded-xl bg-emerald-700 px-4 py-3 text-sm font-bold text-white hover:bg-emerald-600">Search cross-model interchange ↗</a><a href={`https://www.google.com/search?q=${encodeURIComponent(`site:rockauto.com ${target} ${searchTerm.trim() || 'parts'} OEM part number`)}`} target="_blank" rel="noopener noreferrer" className="rounded-xl border border-teal-600 bg-teal-900 px-4 py-3 text-sm font-semibold text-white">Research catalog part numbers ↗</a><a href="https://www.car-part.com/" target="_blank" rel="noopener noreferrer" className="rounded-xl border border-teal-600 bg-teal-900 px-4 py-3 text-sm font-semibold text-white">Open recycler interchange search ↗</a></div><p className="text-xs text-teal-100">A comprehensive in-app cross-model list still needs a licensed or verified fitment data source. No compatibility is inferred or invented from NHTSA listings.</p></section>
         </> : <p className="rounded-xl border border-slate-700 p-5 text-sm text-slate-200">Choose a make and model to view compatibility and online research options.</p>}
       </div>
