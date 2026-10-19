@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
-import { homedir } from 'node:os';
+import { access, mkdtemp, open, rm } from 'node:fs/promises';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 export const SERVER_HOST = '192.168.1.210';
