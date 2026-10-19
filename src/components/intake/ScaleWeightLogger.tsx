@@ -131,6 +131,9 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
   const [saveError, setSaveError] = useState('');
   const busyRef = useRef(false);
   const [reviewConfirmed, setReviewConfirmed] = useState(false);
+  const [paymentInput,setPaymentInput] = useState(initialBuyingPayment);
+  const eligibility = useBuyingPaymentEligibility(activeTicket);
+  const paymentAllowed = canRecordBuyingPayment(authService.getCurrentUser());
   const serverQueue = useQuery({queryKey:['scrap-buying-queue'],queryFn:() => scrapBuyingService.queue(),refetchInterval:5000});
 
   const [notes, setNotes] = useState('');
@@ -295,6 +298,7 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
     setDeductionReason('');
     setManualWeight('');
     setReviewConfirmed(false);
+    setPaymentInput(initialBuyingPayment);
     setActiveTicket(null);
     let mounted = true;
     if (activeTicketId) {
@@ -789,22 +793,23 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
   };
 
   const handleComplete = async () => {
-    if (!activeTicket || !canEdit() || busyRef.current) return;
-    if (!reviewConfirmed || singleCapture || activeTicket.scaleGrossInWeight != null || lines.length === 0) {
-      toast.error('Complete every cycle and explicitly confirm final seller/material review first'); return;
+    if (!activeTicket || !canEdit() || busyRef.current || !paymentAllowed) return;
+    if (!reviewConfirmed || eligibility.isError || !buyingPaymentReady(eligibility.data,paymentInput) || singleCapture || activeTicket.scaleGrossInWeight != null || lines.length === 0) {
+      toast.error('Complete every cycle, enter required payment details and confirm actual disbursement first'); return;
     }
     if (notes.trim() !== (activeTicket.notes ?? '').trim() && !await persist({...activeTicket,notes:notes.trim()})) return;
     busyRef.current = true; setSaveState('PENDING'); setSaveError('');
     try {
       const current = storageService.getTickets().find((ticket) => ticket.id === activeTicket.id) ?? activeTicket;
-      const completed = await scrapBuyingService.finalize(current);
+      const completed = await scrapBuyingService.completeAndPay(current,paymentInput.method,paymentInput.reference,paymentInput.permitReference,paymentInput.documentationReference);
       setSaveState('SAVED'); refreshQueue();
-      toast.success(`Ticket #${completed.id} finalized — UNPAID voucher. Payment is a separate manager action.`);
+      toast.success(`Ticket #${completed.id} completed — actual ${completed.payoutMethod.toLowerCase()} payment recorded.`);
       setActiveTicket(null); onActiveTicketChange(null); setNotes(''); onTicketCreated(completed);
       void serverQueue.refetch();
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Finalization was not confirmed';
-      setSaveState('ERROR'); setSaveError(message); toast.error(message);
+      const message = error instanceof Error ? error.message : 'Completion/payment was not confirmed';
+      setSaveState('ERROR'); setSaveError(`${message} If the response is uncertain, refresh the queue before retrying. Never hand over funds twice.`); toast.error(message);
+      void eligibility.refetch();
     } finally { busyRef.current = false; }
   };
 
@@ -1600,10 +1605,10 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
               )}
             </div>
 
-            {/* Finalize purchase separately from disbursement */}
+            {/* Direct completion records the actual operator-issued payment */}
             <div className="space-y-4 rounded-2xl border border-slate-700 bg-slate-900 p-4 text-white">
               <h2 className="text-base font-bold">Final purchase review</h2>
-              <p className="rounded-xl border border-amber-500/40 bg-amber-950 p-3 text-xs text-amber-100">Finalization creates an UNPAID voucher. A manager records actual cash disbursement or check issuance separately in the buying payment queue.</p>
+              <p className="rounded-xl border border-amber-500/40 bg-amber-950 p-3 text-xs text-amber-100">Review seller, weights, grades and deductions, then record the cash handed over or the actual check issued. No routine manager approval is required.</p>
               <div className="space-y-2 rounded-xl bg-slate-950 p-4 font-mono text-sm">
                 <div className="flex justify-between"><span>Reviewed lines</span><strong>{lines.length}</strong></div>
                 <div className="flex justify-between"><span>Payable pounds</span><strong>{fmtLbs(totalBillableWeight)} lb</strong></div>
@@ -1613,12 +1618,13 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
               <Textarea id="canonical-ticket-notes" value={notes} onChange={(event) => setNotes(event.target.value)} onBlur={handleNotesBlur} disabled={saveState === 'PENDING' || remoteConflict} className="rounded-xl border-slate-700 bg-slate-950 text-white" />
               {(singleCapture || activeTicket.scaleGrossInWeight != null) && <p role="alert" className="text-sm text-amber-200">Unfinished weighing blocks finalization. Finish or explicitly cancel it first.</p>}
               <div className="rounded-xl border border-slate-700 bg-slate-950 p-3 text-xs leading-relaxed text-slate-100">
-                {requirements.data ? <><p className="font-semibold">Yard requirements · revision {requirements.data.revision}</p><p className="mt-1">Photos: {requirements.data.requirePhotos ? 'Required' : 'Optional'} · Phone: {requirements.data.requirePhone ? 'Required' : 'Optional'} · Address: {requirements.data.requireAddress ? 'Required' : 'Optional'}</p><p className="mt-2 text-amber-100">Missing optional information is recorded on the voucher; identity, completed weights and payment checks stay protected.</p></> : <p role="status">Loading yard requirements…</p>}
+                {requirements.data ? <><p className="font-semibold">Yard requirements · revision {requirements.data.revision}</p><p className="mt-1">Photos: {requirements.data.requirePhotos ? 'Required' : 'Optional'} · Phone: {requirements.data.requirePhone ? 'Required' : 'Optional'} · Address: {requirements.data.requireAddress ? 'Required' : 'Optional'}</p><p className="mt-2 text-amber-100">Missing optional information is recorded on the receipt; identity, completed weights and payment checks stay protected.</p></> : <p role="status">Loading yard requirements…</p>}
                 <a href="/settings#intake-requirements" className="mt-2 inline-block text-emerald-200 underline">Administrator requirement settings</a>
                 {requirements.isError && <p role="alert" className="mt-2 text-amber-200">Requirements could not refresh. <button onClick={() => void requirements.refetch()} className="underline">Retry</button> before finalizing.</p>}
               </div>
-              <label className="flex items-start gap-2 rounded-xl border border-slate-700 p-3 text-xs leading-relaxed"><input type="checkbox" checked={reviewConfirmed} onChange={(event) => setReviewConfirmed(event.target.checked)} className="mt-0.5 accent-emerald-500" />I reviewed seller identity, the required information above, each separately measured grade, rates and deductions. Any missing optional information will remain clearly recorded.</label>
-              <Button onClick={handleComplete} disabled={!reviewConfirmed || !requirements.data || requirements.isError || !lines.length || !!singleCapture || activeTicket.scaleGrossInWeight != null || remoteConflict || saveState === 'PENDING'} className="h-12 w-full rounded-xl bg-emerald-600 font-bold text-white hover:bg-emerald-500">Finalize intake & open voucher</Button>
+              <BuyingPaymentFields eligibility={eligibility.data} error={eligibility.error?.message} loading={eligibility.isLoading} disabled={saveState==='PENDING' || remoteConflict} value={paymentInput} onChange={value=>{setPaymentInput(value);setReviewConfirmed(false);}}/>
+              <label className="flex items-start gap-2 rounded-xl border border-slate-700 p-3 text-xs leading-relaxed"><input type="checkbox" disabled={saveState==='PENDING' || remoteConflict} checked={reviewConfirmed} onChange={(event) => setReviewConfirmed(event.target.checked)} className="mt-0.5 accent-emerald-500" />I reviewed this purchase and actually handed cash to this seller / issued the check with the number above to this seller.</label>
+              <Button onClick={handleComplete} disabled={!paymentAllowed || eligibility.isError || !buyingPaymentReady(eligibility.data,paymentInput) || !reviewConfirmed || !requirements.data || requirements.isError || !lines.length || !!singleCapture || activeTicket.scaleGrossInWeight != null || remoteConflict || saveState === 'PENDING'} className="h-12 w-full rounded-xl bg-emerald-600 font-bold text-white hover:bg-emerald-500">Complete &amp; Record Payment</Button>
             </div>
           </div>
         </>

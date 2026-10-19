@@ -8,7 +8,8 @@ import type { Ticket } from '../../../../src/types/scrap';
 import type { LegacyBuyingReview } from '../../../../src/types/buyingPayments';
 
 export default defineHandler(async(event)=>{
-  const user=await buyingUser(event,true);
+  const user=await buyingUser(event);
+  if (!['admin','yard_manager'].includes(user.role)) throw createError({statusCode:403,statusMessage:'Manager or administrator access is required for historical reconciliation'});
   assertBodySize(event, 8192);
   const body=z.object({ticketId:z.string().min(1).max(120),revision:z.number().int().nonnegative(),disbursed:z.boolean(),method:z.enum(['Cash','Check']).optional(),paidAt:z.string().datetime({offset:true}).optional(),evidenceReference:z.string().trim().min(1).max(500),idType:z.string().trim().min(1).max(80),idState:z.string().trim().min(1).max(12),idNumber:z.string().trim().min(1).max(120),reviewed:z.literal(true)}).safeParse(await readBody(event));
   if(!body.success)throw createError({statusCode:400,statusMessage:'Verified identity, external cash/check evidence and explicit review are required'});

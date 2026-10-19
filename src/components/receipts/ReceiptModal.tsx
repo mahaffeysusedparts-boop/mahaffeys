@@ -25,6 +25,8 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ ticket, open, onOpen
 
   const settings: YardSettings = storageService.getSettings();
   const caps = ticket.complianceCaptures || ticket.carRecord?.complianceCaptures;
+  const paymentMethod = ticket.buying?.payment?.method ?? ticket.payoutMethod;
+  const checkNumber = ticket.buying?.payment?.checkReference ?? ticket.checkNumber;
 
   const handlePrint = () => {
     window.print();
@@ -81,7 +83,9 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ ticket, open, onOpen
           <div>
             <p><span className="font-bold">TICKET #:</span> {ticket.id}</p>
             <p><span className="font-bold">DATE / TIME:</span> {new Date(ticket.createdAt).toLocaleString()}</p>
-            <p><span className="font-bold">PAYOUT METHOD:</span> {ticket.payoutMethod.toUpperCase()} {ticket.checkNumber ? `(#${ticket.checkNumber})` : ''}</p>
+            <p><span className="font-bold">PAYOUT METHOD:</span> {paymentMethod.toUpperCase()}</p>
+            {paymentMethod === 'Check' && checkNumber && <p><span className="font-bold">CHECK NUMBER:</span> {checkNumber}</p>}
+            {ticket.buying?.payment && <p><span className="font-bold">PAYMENT RECORDED BY:</span> {ticket.buying.payment.paidBy} · {new Date(ticket.buying.payment.paidAt).toLocaleString()}</p>}
           </div>
           <div className="text-right">
             <p><span className="font-bold">SELLER / CUSTOMER:</span> {ticket.customerName}</p>

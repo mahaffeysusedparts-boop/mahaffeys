@@ -11,10 +11,17 @@ function cacheTicket(ticket: Ticket) {
 }
 async function command(body: Record<string,unknown>) {
   const signature = JSON.stringify(body);
+  const retryStorageKey = ['PAY','FINALIZE_AND_PAY'].includes(String(body.action)) ? `buying-payment-retry:${signature}` : null;
   let idempotencyKey = pendingKeys.get(signature);
-  if (!idempotencyKey) { idempotencyKey = crypto.randomUUID(); pendingKeys.set(signature,idempotencyKey); }
+  if (!idempotencyKey && retryStorageKey) {
+    try { idempotencyKey = sessionStorage.getItem(retryStorageKey) ?? undefined; } catch { /* In-memory retries still work when browser storage is unavailable. */ }
+  }
+  if (!idempotencyKey) idempotencyKey = crypto.randomUUID();
+  pendingKeys.set(signature,idempotencyKey);
+  if (retryStorageKey) { try { sessionStorage.setItem(retryStorageKey,idempotencyKey); } catch { /* Server ticket locking also prevents duplicate payments. */ } }
   const ticket = await apiRequest<Ticket>('/api/scrap-buying/commands',{method:'POST',body:JSON.stringify({...body,idempotencyKey})});
   pendingKeys.delete(signature);
+  if (retryStorageKey) { try { sessionStorage.removeItem(retryStorageKey); } catch { /* Payment has already been acknowledged. */ } }
   return cacheTicket(ticket);
 }
 async function recordPayment(action: 'PAY'|'FINALIZE_AND_PAY', ticket: Ticket, method: 'Cash'|'Check', reference: string, permitReference: string, documentationReference: string) {

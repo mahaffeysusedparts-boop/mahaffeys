@@ -15,7 +15,7 @@ let finance:typeof import('./financialState');
 const user={id:'test-admin',fullName:'SYNTHETIC TEST OPERATOR',username:'test-admin',role:'admin',status:'approved',createdAt:new Date().toISOString()} as PublicUser;
 let ticket:Ticket;
 const grade={id:'test-grade',name:'TEST FERROUS',code:'TEST',category:'Ferrous',ratePerLb:0.5,description:'Synthetic test grade'};
-const command=(action:'CREATE'|'SAVE'|'FINALIZE'|'PAY',extra:Record<string,unknown>={})=>({action,id:ticket?.id??'test-ticket',revision:ticket?.buying?.revision??0,idempotencyKey:randomUUID(),...extra});
+const command=(action:'CREATE'|'SAVE'|'FINALIZE'|'FINALIZE_AND_PAY'|'PAY',extra:Record<string,unknown>={})=>({action,id:ticket?.id??'test-ticket',revision:ticket?.buying?.revision??0,idempotencyKey:randomUUID(),...extra});
 
 describe.skipIf(!safe)('real PostgreSQL buying invariants (isolated TEST_DATABASE_URL schema)',()=>{
   beforeAll(async()=>{
@@ -60,17 +60,53 @@ describe.skipIf(!safe)('real PostgreSQL buying invariants (isolated TEST_DATABAS
     expect(ticket.buying!.stage).toBe('FINALIZED');expect(ticket.buying!.payment).toBeUndefined();
   });
   it('gates payment until policy, enforces roles and records simultaneous cash payment once',async()=>{
-    await expect(buying.executeBuyingCommand(command('PAY',{method:'Cash',reviewed:true}) as Parameters<typeof buying.executeBuyingCommand>[0],user)).rejects.toThrow();
-    const policy={sourceUrl:'https://www.scstatehouse.gov/code/t16c017.php',effectiveFrom:'2020-01-01',effectiveThrough:'2099-12-31',reviewer:'SYNTHETIC TEST REVIEWER',reviewReference:'NOT A LIVE POLICY',grades:[{gradeId:grade.id,classification:'TEST ONLY',approved:true,requirePermit:false,cashAtOrAboveCents:10000,sellerDayCashLimitCents:10000,definition:{name:grade.name,code:grade.code,category:grade.category}}]};
+    await expect(buying.executeBuyingCommand(command('PAY',{method:'Cash',reviewed:true,disbursed:true}) as Parameters<typeof buying.executeBuyingCommand>[0],user)).rejects.toThrow();
+    const policy={sourceUrl:'https://www.scstatehouse.gov/code/t16c017.php',effectiveFrom:'2020-01-01',effectiveThrough:'2099-12-31',reviewer:'SYNTHETIC TEST REVIEWER',reviewReference:'NOT A LIVE POLICY',grades:[{gradeId:grade.id,classification:'TEST ONLY',approved:true,requirePermit:false,paymentClass:'FERROUS',cashAtOrAboveCents:10000,sellerDayCashLimitCents:10000,definition:{name:grade.name,code:grade.code,category:grade.category}}]};
     await db.query('INSERT INTO scrap_buying_policies(version,document,created_by) VALUES($1,$2::jsonb,$3)',[randomUUID(),JSON.stringify(policy),user.id]);
-    await expect(buying.executeBuyingCommand(command('PAY',{method:'Cash',reviewed:true}) as Parameters<typeof buying.executeBuyingCommand>[0],{...user,role:'scale_operator'})).rejects.toThrow();
-    const responses=await Promise.all([1,2].map(()=>buying.executeBuyingCommand(command('PAY',{method:'Cash',reviewed:true}) as Parameters<typeof buying.executeBuyingCommand>[0],user)));
+    await expect(buying.executeBuyingCommand(command('PAY',{method:'Cash',reviewed:true,disbursed:true}) as Parameters<typeof buying.executeBuyingCommand>[0],{...user,role:'yard_employee'})).rejects.toThrow();
+    const responses=await Promise.all([1,2].map(()=>buying.executeBuyingCommand(command('PAY',{method:'Cash',reviewed:true,disbursed:true}) as Parameters<typeof buying.executeBuyingCommand>[0],{...user,role:'scale_operator'})));
     expect(responses[0].buying!.payment!.id).toBe(responses[1].buying!.payment!.id);
     expect(Number((await db.query('SELECT COUNT(*) FROM scrap_buying_payments')).rows[0].count)).toBe(1);
     const drawer=(await db.query("SELECT value FROM app_state WHERE key='mahaffeys_cash_drawer'")).rows[0].value;
     expect(drawer.filter((row:{type:string})=>row.type==='PAYOUT_DISBURSEMENT')).toHaveLength(1);
     expect(drawer.at(-1).balanceAfter).toBe(932.5);
     ticket=responses[0];
+  });
+  it('approved operators atomically complete Check purchases; invalid details roll back and retries preserve the actual number',async()=>{
+    const original = ticket;
+    const create = command('CREATE',{id:'combined-check-test',revision:0,ticket:{customerId:'test-seller',customerName:'TEST SELLER',customerPhone:'5550001234',customerIdNumber:'TEST-ID',vehicleLicensePlate:'TEST-PLATE',complianceCaptures:original.complianceCaptures}});
+    ticket=await buying.executeBuyingCommand(create as Parameters<typeof buying.executeBuyingCommand>[0],user);
+    const at=new Date().toISOString();const captureId=randomUUID();
+    const capture={id:captureId,scaleId:'test-platform',originalWeight:10,originalUnit:'LBS',normalizedLbs:10,actorId:user.id,capturedAt:at,stable:false,source:'MANUAL'};
+    ticket=await buying.executeBuyingCommand({...command('SAVE'),ticket:{...ticket,selectedWeighingType:'PLATFORM',pendingPlatformCapture:{capture,capturedLbs:10,tareLbs:0,tareTreatment:'NONE',isManual:true},weightTransactions:[{id:captureId,type:'SINGLE_WEIGHT',weightLbs:10,recordedAt:at,capture}]}} as Parameters<typeof buying.executeBuyingCommand>[0],user);
+    const line={id:randomUUID(),metalGradeId:grade.id,metalName:grade.name,metalCategory:grade.category,...validatedBreakdown(10,0,0,0.5),deductionPercent:0,ratePerLb:0.5,weighingMode:'SINGLE_WEIGHT',sourceCaptureIds:[captureId],tareTreatment:'NONE',loadNumber:1};
+    ticket=await buying.executeBuyingCommand({...command('SAVE'),ticket:{...ticket,pendingPlatformCapture:undefined,scrapLines:[line]}} as Parameters<typeof buying.executeBuyingCommand>[0],user);
+    const preview=await buying.previewPaymentEligibility(ticket.id,ticket.buying!.revision,{...user,role:'scale_operator'});
+    expect(preview.allowedMethods).toContain('Check');
+    const request=command('FINALIZE_AND_PAY',{method:'Check',reference:'',reviewed:true,disbursed:true});
+    await expect(buying.executeBuyingCommand(request as Parameters<typeof buying.executeBuyingCommand>[0],{...user,role:'scale_operator'})).rejects.toThrow();
+    expect((await db.query('SELECT stage FROM scrap_buying_tickets WHERE ticket_id=$1',[ticket.id])).rows[0].stage).toBe('DRAFT');
+    expect(Number((await db.query('SELECT COUNT(*) FROM scrap_buying_payments WHERE ticket_id=$1',[ticket.id])).rows[0].count)).toBe(0);
+    await expect(buying.executeBuyingCommand({...request,reference:'00123-Ab',disbursed:false} as Parameters<typeof buying.executeBuyingCommand>[0],user)).rejects.toThrow();
+    const valid={...request,reference:'00123-Ab'};
+    const paid=await Promise.all([user,{...user,role:'scale_operator'}].map(actor=>buying.executeBuyingCommand(valid as Parameters<typeof buying.executeBuyingCommand>[0],actor)));
+    expect(paid[0].buying!.payment!.id).toBe(paid[1].buying!.payment!.id);
+    expect(paid[0].checkNumber).toBe('00123-Ab');
+    expect(paid[0].buying!.payment!.checkReference).toBe('00123-Ab');
+    expect(await buying.executeBuyingCommand(valid as Parameters<typeof buying.executeBuyingCommand>[0],user)).toEqual(paid[0]);
+    const stored=(await db.query('SELECT document FROM scrap_buying_tickets WHERE ticket_id=$1',[ticket.id])).rows[0].document;
+    expect(stored.checkNumber).toBe('00123-Ab');
+    const canonical=(await db.query('SELECT check_reference FROM scrap_buying_payments WHERE ticket_id=$1',[ticket.id])).rows[0];
+    expect(canonical.check_reference).toBe('00123-Ab');
+    const drawer=(await db.query("SELECT value FROM app_state WHERE key='mahaffeys_cash_drawer'")).rows[0].value;
+    expect(drawer.filter((row:{ticketId?:string})=>row.ticketId===ticket.id)).toHaveLength(0);
+    await expect(buying.executeBuyingCommand(valid as Parameters<typeof buying.executeBuyingCommand>[0],{...user,status:'pending'})).rejects.toThrow();
+    // A separate legitimate finalized purchase cannot reuse this number, even with changed casing.
+    const duplicate={...stored,id:'duplicate-check-test',status:'COMPLETED',checkNumber:undefined,buying:{...stored.buying,revision:1,stage:'FINALIZED',payment:undefined}};
+    await db.query('INSERT INTO scrap_buying_tickets(ticket_id,revision,stage,document,created_by) VALUES($1,1,$2,$3::jsonb,$4)',[duplicate.id,'FINALIZED',JSON.stringify(duplicate),user.id]);
+    await expect(buying.executeBuyingCommand({...command('PAY'),id:duplicate.id,revision:1,method:'Check',reference:'00123-ab',disbursed:true} as Parameters<typeof buying.executeBuyingCommand>[0],user)).rejects.toThrow();
+    expect(Number((await db.query('SELECT COUNT(*) FROM scrap_buying_payments WHERE ticket_id=$1',[duplicate.id])).rows[0].count)).toBe(0);
+    ticket=original;
   });
   it('generic state cannot replace paid canonical data, create another drawer payment, or reopen legacy terminal tickets',async()=>{
     const protectedValue=await db.withTransaction(client=>finance.protectFinancialState(client,'mahaffeys_tickets',[{...ticket,status:'PENDING',finalPayout:0}],'admin',user.fullName));

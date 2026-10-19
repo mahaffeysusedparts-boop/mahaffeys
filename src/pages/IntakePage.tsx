@@ -73,7 +73,7 @@ export default function IntakePage() {
       <Navbar />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        {activeMode === null && <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-emerald-800 bg-emerald-950 p-4 text-sm text-emerald-100"><span>Buying drafts are server-backed. Finalization issues an unpaid voucher; payment is a separate manager action.</span><div className="flex gap-3"><a href="/cash-drawer" className="font-bold underline">Buying payment queue</a><a href="/parts-prices" className="font-bold underline">Public parts prices</a></div></div>}
+        {activeMode === null && <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-emerald-800 bg-emerald-950 p-4 text-sm text-emerald-100"><span>Scale operators complete scrap purchases and record actual Cash or Check payment directly, with automatic rule checks and the actual check number.</span><div className="flex gap-3"><a href="/cash-drawer" className="font-bold underline">Unpaid purchases / receipt copies</a><a href="/parts-prices" className="font-bold underline">Public parts prices</a></div></div>}
         {/* If an intake mode is active, show quick switcher bar */}
         {activeMode !== null && (
           <div className="mb-6 flex items-center gap-2 overflow-x-auto rounded-xl border border-slate-800 bg-slate-900 p-2.5 sm:justify-between">

@@ -23,6 +23,7 @@ export interface BuyingState {
     paidById?: string;
     policyVersion: string;
     permitReference?: string;
+    documentationReference?: string;
   };
 }
 

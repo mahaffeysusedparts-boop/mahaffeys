@@ -275,6 +275,8 @@ async function pay(client: PoolClient, ticket: Ticket, command: z.infer<typeof b
     paidAt:now,paidBy:user.fullName,paidById:user.id,policyVersion:eligibility.policyVersion!,permitReference:command.permitReference,documentationReference:command.documentationReference };
   if (payment.checkReference) {
     payment.checkReference = payment.checkReference.trim();
+    const duplicate = await client.query('SELECT ticket_id FROM scrap_buying_payments WHERE UPPER(BTRIM(check_reference))=UPPER($1) AND ticket_id<>$2',[payment.checkReference,ticket.id]);
+    if (duplicate.rows.length) fail('This actual check number has already been used');
     const legacy = await stateValue<Ticket[]>(client,'mahaffeys_tickets',[]);
     if (legacy.some((row)=>row.id!==ticket.id && row.checkNumber?.trim().toUpperCase()===payment.checkReference!.toUpperCase())) fail('This check reference already appears in canonical or historical ticket evidence');
   }

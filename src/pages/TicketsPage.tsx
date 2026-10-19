@@ -325,7 +325,8 @@ export default function TicketsPage() {
                         </TableCell>
 
                         <TableCell className="text-right text-slate-300 font-mono">
-                          {t.payoutMethod}
+                          {t.buying ? t.buying.payment?.method ?? 'Unpaid' : t.payoutMethod}
+                          {(t.buying?.payment?.checkReference ?? t.checkNumber) && <span className="block text-xs text-emerald-200">Check #{t.buying?.payment?.checkReference ?? t.checkNumber}</span>}
                         </TableCell>
 
                         <TableCell className="text-right font-mono font-extrabold text-emerald-400 text-sm">
@@ -335,7 +336,7 @@ export default function TicketsPage() {
                         <TableCell className="text-center">
                           {t.status === 'COMPLETED' ? (
                             <Badge variant="outline" className="border-emerald-500/40 text-emerald-400 text-[10px]">
-                              PAID
+                              {t.buying ? t.buying.stage === 'PAID' ? 'PAID' : 'UNPAID' : t.ticketType === 'SCRAP_METAL' ? 'LEGACY · UNRECONCILED' : 'PAID'}
                             </Badge>
                           ) : t.status === 'PENDING' ? (
                             <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/30 text-[10px]">
@@ -512,6 +513,8 @@ export default function TicketsPage() {
                 <div>DL #: <strong className="text-amber-300">{inspectionTicket.customerIdNumber || 'N/A'}</strong></div>
                 <div>Plate: <strong className="text-sky-300">{inspectionTicket.vehicleLicensePlate || 'N/A'}</strong></div>
                 <div>Payout: <strong className="text-emerald-400">${inspectionTicket.finalPayout.toFixed(2)}</strong></div>
+                <div>Payment: <strong className="text-emerald-200">{inspectionTicket.buying ? inspectionTicket.buying.stage === 'PAID' ? inspectionTicket.buying.payment?.method : 'Not paid' : inspectionTicket.payoutMethod}</strong></div>
+                {(inspectionTicket.buying?.payment?.checkReference ?? inspectionTicket.checkNumber) && <div>Check Number: <strong className="text-emerald-200">{inspectionTicket.buying?.payment?.checkReference ?? inspectionTicket.checkNumber}</strong></div>}
               </div>
 
               <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">

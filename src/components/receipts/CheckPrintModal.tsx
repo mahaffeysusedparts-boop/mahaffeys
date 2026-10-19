@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from 'react';
-import { Ticket, YardSettings } from '@/types/scrap';
+import React from 'react';
+import { Ticket } from '@/types/scrap';
 import { storageService } from '@/services/storageService';
 import { moneyToWords } from '@/utils/moneyToWords';
 import {
@@ -12,7 +12,6 @@ import {
 import { Button } from '@/components/ui/button';
 import { NetworkPrintButton } from '@/components/settings/NetworkPrintButton';
 import { Printer, Landmark, AlertTriangle } from 'lucide-react';
-import { toast } from 'sonner';
 
 interface CheckPrintModalProps {
   ticket: Ticket | null;
@@ -20,39 +19,14 @@ interface CheckPrintModalProps {
   onOpenChange: (open: boolean) => void;
 }
 
-/** Next sequential check number: seeds from settings, then continues past every number already stamped on a ticket. */
-function getNextCheckNumber(settings: YardSettings, tickets: Ticket[]): number {
-  const start = settings.bankInfo?.checkStartNumber ?? 1000;
-  let max = start - 1;
-  for (const t of tickets) {
-    const n = t.checkNumber ? parseInt(t.checkNumber, 10) : NaN;
-    if (Number.isFinite(n) && n > max) max = n;
-  }
-  return max + 1;
-}
-
-/**
- * Voucher-check printing for CHECK-payout tickets. One letter page: three
- * perforated stubs on top, then the check body with a MICR-style strip.
- * The check number is stamped onto the ticket (audit trail) the first time
- * the check is printed; reprints reuse the stamped number.
- */
 export const CheckPrintModal: React.FC<CheckPrintModalProps> = ({ ticket, open, onOpenChange }) => {
   const settings = storageService.getSettings();
-  const tickets = storageService.getTickets();
-  const [printedNumber, setPrintedNumber] = useState<string | null>(null);
-
   const bank = settings.bankInfo;
-  const checkNumber = useMemo(() => {
-    if (!ticket) return '';
-    if (ticket.checkNumber) return ticket.checkNumber;
-    return String(getNextCheckNumber(settings, tickets));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ticket?.id, ticket?.checkNumber, open]);
+  const checkNumber = ticket?.buying?.payment?.checkReference ?? ticket?.checkNumber ?? '';
 
   if (!ticket || !open) return null;
-  if (ticket.buying && (ticket.buying.stage !== 'PAID' || ticket.buying.payment?.method !== 'Check')) return (
-    <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="rounded-2xl border-amber-500 bg-slate-950 text-white"><DialogHeader><DialogTitle>Check not issued</DialogTitle><DialogDescription className="text-amber-100">This is an unpaid voucher or a cash payment. Record actual check issuance in the buying payment queue first. Printing never pays a ticket.</DialogDescription></DialogHeader></DialogContent></Dialog>
+  if (!checkNumber || (ticket.buying && (ticket.buying.stage !== 'PAID' || ticket.buying.payment?.method !== 'Check'))) return (
+    <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="rounded-2xl border-amber-500 bg-slate-950 text-white"><DialogHeader><DialogTitle>Check not issued</DialogTitle><DialogDescription className="text-amber-100">No issued check with a recorded number is available. Record the actual check number during payment; historical records are not changed by printing. Printing never pays a ticket.</DialogDescription></DialogHeader></DialogContent></Dialog>
   );
 
   const amountWords = (() => {
@@ -65,19 +39,10 @@ export const CheckPrintModal: React.FC<CheckPrintModalProps> = ({ ticket, open, 
   const amountInvalid = ticket.finalPayout < 0 || ticket.finalPayout > 999_999_999.99;
 
   const payee = ticket.customerName || 'BEARER';
-  const dateStr = new Date().toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' });
+  const dateStr = new Date(ticket.buying?.payment?.paidAt ?? ticket.createdAt).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' });
   const operator = ticket.operatorName || settings.operatorName;
 
   const handlePrint = () => {
-    // Canonical references are assigned only by the acknowledged payment API.
-    if (!ticket.buying && !ticket.checkNumber) {
-      const stamped: Ticket = { ...ticket, checkNumber };
-      storageService.saveTicket(stamped);
-      setPrintedNumber(checkNumber);
-      toast.success(`Check #${checkNumber} stamped on ticket #${ticket.id}`, {
-        description: 'The number is now part of the payout audit trail.',
-      });
-    }
     setTimeout(() => window.print(), 150);
   };
 
@@ -98,7 +63,7 @@ export const CheckPrintModal: React.FC<CheckPrintModalProps> = ({ ticket, open, 
                 <Landmark className="w-5 h-5 text-emerald-400" /> Voucher Check — Ticket #{ticket.id}
               </DialogTitle>
               <DialogDescription className="text-xs text-slate-400 mt-0.5">
-                Standard voucher check on one letter page — insert in your printer tray, print, then sign.
+                Copy of the recorded issued check — printing does not issue a new check or record another payment.
               </DialogDescription>
             </div>
             <Button
@@ -108,7 +73,7 @@ export const CheckPrintModal: React.FC<CheckPrintModalProps> = ({ ticket, open, 
               className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold"
             >
               <Printer className="w-4 h-4 mr-1.5" />
-              {ticket.checkNumber || printedNumber ? 'Reprint Check' : 'Print Check'}
+              Print issued check copy
             </Button>
             {!amountInvalid && <NetworkPrintButton kind="standard" rootSelector=".check-sheet" documentName={`check-${checkNumber}`} />}
           </div>
@@ -217,7 +182,7 @@ export const CheckPrintModal: React.FC<CheckPrintModalProps> = ({ ticket, open, 
 
         <p className="text-[10px] text-slate-500 text-center print:hidden">
           Paper: US Letter portrait · Perforated voucher stubs above the check body ·
-          Check #{checkNumber} {ticket.checkNumber || printedNumber ? '(stamped on ticket)' : '(will be stamped on first print)'}
+          Check #{checkNumber} · recorded issued check copy
         </p>
       </DialogContent>
     </Dialog>
