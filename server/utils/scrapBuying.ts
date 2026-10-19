@@ -86,9 +86,13 @@ async function validateSave(client: PoolClient, previous: Ticket, submitted: Tic
     validateScaleReading(capture.normalizedLbs, scale?.capacityLbs, scale?.resolutionLbs);
     if (capture.normalizedLbs <= 0 || capture.replacesCaptureId) fail('Use an audited cancellation and new capture for corrections');
     if (capture.source === 'SCALE') {
-      const live = serverScale.getStatus();
-      if (scale?.connectionType !== 'SERVER') fail('This scale source cannot be verified server-side. Use explicitly reviewed manual entry.');
-      if (!live.connected || !live.updatedAt || Date.now()-Date.parse(live.updatedAt) > 5000 || !live.isStable || !capture.stable || Math.abs(normalizeWeight(live.weight,live.unit)-capture.normalizedLbs) > (scale.resolutionLbs ?? 1)) fail('Server scale reading is stale, unstable or conflicts with capture');
+      if (!scale) fail('Select a configured scale before logging a live reading');
+      if (!capture.stable) fail('Wait for a stable scale reading before logging weight');
+      // Browser-connected scales supply their own readings, not the host serial feed.
+      if (scale.connectionType === 'SERVER') {
+        const live = serverScale.getStatus();
+        if (!live.connected || !live.updatedAt || Date.now()-Date.parse(live.updatedAt) > 5000 || !live.isStable || Math.abs(normalizeWeight(live.weight,live.unit)-capture.normalizedLbs) > (scale.resolutionLbs ?? 1)) fail('Server scale reading is stale, unstable or conflicts with capture');
+      }
     }
     if (mode === 'PLATFORM') {
       if (previous.pendingPlatformCapture || previous.scaleGrossInWeight != null || submitted.pendingPlatformCapture?.capture.id !== capture.id) fail('Platform capture conflicts with unfinished weighing');

@@ -47,6 +47,29 @@ describe.skipIf(!safe)('real PostgreSQL buying invariants (isolated TEST_DATABAS
     expect(results.filter(result=>result.status==='fulfilled')).toHaveLength(1);
     ticket=(await db.query('SELECT document FROM scrap_buying_tickets WHERE ticket_id=$1',[ticket.id])).rows[0].document;
   });
+  it('logs browser-connected scale readings and reviews them without keyed manual weights',async()=>{
+    const settings=(await db.query("SELECT value FROM app_state WHERE key='mahaffeys_settings'")).rows[0].value;
+    const scales=['WEB_SERIAL','WEBSOCKET'].map(connectionType=>({id:`live-${connectionType}`,connectionType,weighingMode:'SINGLE_WEIGHT',supportedWeighingTypes:['PLATFORM'],capacityLbs:10000,resolutionLbs:1}));
+    await db.withTransaction(client=>finance.putState(client,'mahaffeys_settings',{...settings,scales:[...settings.scales,...scales]},user.id));
+    try {
+      for(const scale of scales) {
+        let draft=await buying.executeBuyingCommand(command('CREATE',{id:`live-ticket-${scale.connectionType}`,revision:0,ticket:{customerName:'LIVE SCALE TEST'}}) as Parameters<typeof buying.executeBuyingCommand>[0],user);
+        const at=new Date().toISOString();const id=randomUUID();
+        const capture={id,scaleId:scale.id,originalWeight:200,originalUnit:'LBS',normalizedLbs:200,actorId:user.id,capturedAt:at,stable:true,source:'SCALE'};
+        const save={action:'SAVE',id:draft.id,revision:draft.buying!.revision,idempotencyKey:randomUUID(),ticket:{...draft,selectedWeighingType:'PLATFORM',pendingPlatformCapture:{capture,capturedLbs:200,tareLbs:0,tareTreatment:'NONE',isManual:false},weightTransactions:[{id,type:'SINGLE_WEIGHT',weightLbs:200,recordedAt:at,capture}]}};
+        await expect(buying.executeBuyingCommand({...save,ticket:{...save.ticket,pendingPlatformCapture:{...save.ticket.pendingPlatformCapture,capture:{...capture,stable:false}},weightTransactions:[{...save.ticket.weightTransactions[0],capture:{...capture,stable:false}}]}} as Parameters<typeof buying.executeBuyingCommand>[0],user)).rejects.toThrow();
+        draft=await buying.executeBuyingCommand(save as Parameters<typeof buying.executeBuyingCommand>[0],user);
+        expect(draft.pendingPlatformCapture?.isManual).toBe(false);
+        expect(draft.weightTransactions?.[0].capture?.source).toBe('SCALE');
+        const line={id:randomUUID(),metalGradeId:grade.id,metalName:grade.name,metalCategory:grade.category,...validatedBreakdown(200,0,0,0.5),deductionPercent:0,ratePerLb:0.5,weighingMode:'SINGLE_WEIGHT',sourceCaptureIds:[id],tareTreatment:'NONE',loadNumber:1};
+        draft=await buying.executeBuyingCommand({action:'SAVE',id:draft.id,revision:draft.buying!.revision,idempotencyKey:randomUUID(),ticket:{...draft,pendingPlatformCapture:undefined,scrapLines:[line]}} as Parameters<typeof buying.executeBuyingCommand>[0],user);
+        expect(draft.scrapLines?.[0].netWeight).toBe(200);
+        expect(draft.buying!.activeCycleId).toBeUndefined();
+      }
+    } finally {
+      await db.withTransaction(client=>finance.putState(client,'mahaffeys_settings',settings,user.id));
+    }
+  });
   it('confirms one platform cycle and one payable line without auto-finalization',async()=>{
     const at=new Date().toISOString();const id=randomUUID();
     const capture={id,scaleId:'test-platform',originalWeight:200,originalUnit:'LBS' as const,normalizedLbs:200,actorId:user.id,capturedAt:at,stable:false,source:'MANUAL' as const};
@@ -55,7 +78,7 @@ describe.skipIf(!safe)('real PostgreSQL buying invariants (isolated TEST_DATABAS
     const line={id:randomUUID(),metalGradeId:grade.id,metalName:grade.name,metalCategory:grade.category,...validatedBreakdown(200,50,10,0.5),deductionPercent:10,ratePerLb:0.5,deductionReason:'TEST contamination',weighingMode:'SINGLE_WEIGHT',sourceCaptureIds:[id],tareTreatment:'MANUAL',loadNumber:1};
     ticket=await buying.executeBuyingCommand({...command('SAVE'),ticket:{...ticket,pendingPlatformCapture:undefined,scrapLines:[line]}} as Parameters<typeof buying.executeBuyingCommand>[0],user);
     expect(ticket.buying!.stage).toBe('DRAFT');expect(ticket.buying!.activeCycleId).toBeUndefined();
-    expect(Number((await db.query('SELECT COUNT(*) FROM scrap_buying_line_sources')).rows[0].count)).toBe(1);
+    expect(Number((await db.query('SELECT COUNT(*) FROM scrap_buying_line_sources WHERE line_id=$1',[line.id])).rows[0].count)).toBe(1);
     ticket=await buying.executeBuyingCommand(command('FINALIZE',{reviewed:true}) as Parameters<typeof buying.executeBuyingCommand>[0],user);
     expect(ticket.buying!.stage).toBe('FINALIZED');expect(ticket.buying!.payment).toBeUndefined();
   });
