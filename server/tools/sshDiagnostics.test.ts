@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
-import { redactLogs, requestToken, sshArgs, sshFailure, type DiagnosticRequest } from './sshDiagnostics';
+import { checkSshFiles, readSshTrace, redactLogs, requestToken, sshArgs, sshFailure, type DiagnosticRequest } from './sshDiagnostics';
 
 const files = { identityFile: 'C:\\Users\\jackh\\.ssh\\mahaffeys_mcp', knownHostsFile: 'C:\\Users\\jackh\\.ssh\\known_hosts' };
 
@@ -40,6 +42,37 @@ describe('read-only SSH diagnostics', () => {
   it('does not recommend bypassing host verification or password authentication', () => {
     expect(sshFailure('Host key verification failed.')).toContain('Host verification has not been bypassed');
     expect(sshFailure('Permission denied (publickey).')).toContain('Password login is intentionally disabled');
+  });
+
+  it('checks missing paths and wrong key formats without revealing key contents', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'ssh-preflight-test-'));
+    const localFiles = { identityFile: join(directory, 'key'), knownHostsFile: join(directory, 'known_hosts') };
+    try {
+      await expect(checkSshFiles(localFiles)).rejects.toThrow('Cannot open the private key');
+      await writeFile(localFiles.identityFile, 'ssh-ed25519 PUBLIC_DATA_DO_NOT_RETURN');
+      await expect(checkSshFiles(localFiles)).rejects.toThrow('not an OpenSSH private key');
+      await writeFile(localFiles.identityFile, '-----BEGIN OPENSSH PRIVATE KEY-----\nPRIVATE_DATA_DO_NOT_RETURN');
+      await expect(checkSshFiles(localFiles)).rejects.toThrow('known_hosts.txt');
+      await writeFile(localFiles.knownHostsFile, '192.168.1.210 ssh-ed25519 PUBLIC_HOST_KEY');
+      await expect(checkSshFiles(localFiles)).resolves.toBeUndefined();
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('reads only a bounded, redacted tail of the temporary OpenSSH trace', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'ssh-trace-test-'));
+    const trace = join(directory, 'connection.log');
+    try {
+      await writeFile(trace, 'x'.repeat(80 * 1024) + '\nPermission denied (publickey). token=PRIVATE_TOKEN\n');
+      const output = await readSshTrace(trace);
+      expect(output.length).toBeLessThanOrEqual(64 * 1024);
+      expect(output).toContain('Permission denied (publickey)');
+      expect(output).not.toContain('PRIVATE_TOKEN');
+      expect(await readSshTrace(join(directory, 'missing'))).toBe('');
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
   });
 
   it.skipIf(process.platform === 'win32')('rejects hostile remote requests before touching Docker', () => {

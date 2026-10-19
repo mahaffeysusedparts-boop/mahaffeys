@@ -74,13 +74,57 @@ export function sshFailure(message: string): string {
   return redactLogs(message);
 }
 
+export async function checkSshFiles(files: SshFiles): Promise<void> {
+  let file;
+  try {
+    file = await open(files.identityFile, 'r');
+  } catch {
+    throw new Error(`Cannot open the private key at ${files.identityFile}. Check its exact filename, extension, and Windows read permissions. Do not use the .pub or .ppk file.`);
+  }
+  try {
+    const header = Buffer.alloc(128);
+    const { bytesRead } = await file.read(header, 0, header.length, 0);
+    const firstLine = header.subarray(0, bytesRead).toString('utf8').split(/\r?\n/, 1)[0];
+    if (firstLine !== '-----BEGIN OPENSSH PRIVATE KEY-----') {
+      throw new Error(`The file at ${files.identityFile} is not an OpenSSH private key. Export the existing private key from PuTTYgen using Conversions → Export OpenSSH key. Its contents will not be returned by this tool.`);
+    }
+  } finally {
+    await file.close();
+  }
+  try {
+    await access(files.knownHostsFile);
+  } catch {
+    throw new Error(`Cannot access the verified host-key file at ${files.knownHostsFile}. Confirm its filename is known_hosts, not known_hosts.txt. Host verification remains enabled.`);
+  }
+}
+
+export async function readSshTrace(path: string): Promise<string> {
+  try {
+    const file = await open(path, 'r');
+    try {
+      const { size } = await file.stat();
+      const buffer = Buffer.alloc(Math.min(size, 64 * 1024));
+      const { bytesRead } = await file.read(buffer, 0, buffer.length, Math.max(0, size - buffer.length));
+      return redactLogs(buffer.subarray(0, bytesRead).toString('utf8')).trim();
+    } finally {
+      await file.close();
+    }
+  } catch { return ''; }
+}
+
 export async function runDiagnostic(request: DiagnosticRequest, files: SshFiles, signal?: AbortSignal): Promise<string> {
+  if (signal?.aborted) throw new Error('Diagnostic request cancelled.');
+  await checkSshFiles(files);
   if (signal?.aborted) throw new Error('Diagnostic request cancelled.');
   const executable = process.platform === 'win32'
     ? join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'OpenSSH', 'ssh.exe')
     : 'ssh';
-  const args = sshArgs(request, files);
-  return new Promise((resolve, reject) => {
+  // A file-based trace also captures Windows OpenSSH errors when stderr is empty.
+  const traceDirectory = request.operation === 'connection' ? await mkdtemp(join(tmpdir(), 'mahaffeys-ssh-')) : undefined;
+  const traceFile = traceDirectory ? join(traceDirectory, 'connection.log') : undefined;
+  const args = [...(traceFile ? ['-vv', '-E', traceFile] : []), ...sshArgs(request, files)];
+  try {
+    return await new Promise<string>((resolve, reject) => {
     const child = spawn(executable, args, { shell: false, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
     const limit = 256 * 1024;
     let size = 0;
@@ -117,8 +161,22 @@ export async function runDiagnostic(request: DiagnosticRequest, files: SshFiles,
     child.once('close', code => {
       cleanUp();
       if (stoppedReason) { reject(new Error(stoppedReason)); return; }
-      if (code !== 0) { reject(new Error(sshFailure(errors || output || `SSH diagnostics exited with code ${code}.`))); return; }
-      resolve(redactLogs(output + (errors ? `\nSSH notices:\n${errors}` : '')).trim());
+      if (code === 0) {
+        resolve(redactLogs(output + (errors ? `\nSSH notices:\n${errors}` : '')).trim());
+        return;
+      }
+      void (async () => {
+        const trace = traceFile ? await readSshTrace(traceFile) : '';
+        const detail = [errors.trim(), output.trim(), trace].filter(Boolean).join('\n');
+        const explanation = sshFailure(detail);
+        const message = detail
+          ? `SSH exited with code ${code}.\n${explanation}${trace && explanation !== detail ? `\nOpenSSH trace:\n${trace}` : ''}`
+          : `SSH exited with code ${code} without an error message${traceFile ? ' or a readable OpenSSH trace' : ''}. Private-key and known_hosts files were found. Confirm that the new key was loaded into the Windows OpenSSH agent; an agent running without the key is not enough.`;
+        reject(new Error(message));
+      })().catch(reject);
     });
-  });
+    });
+  } finally {
+    if (traceDirectory) await rm(traceDirectory, { recursive: true, force: true }).catch(() => undefined);
+  }
 }

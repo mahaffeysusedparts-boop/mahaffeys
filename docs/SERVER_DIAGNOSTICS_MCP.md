@@ -80,6 +80,9 @@ Only tool discovery is performed on bridge startup; no SSH connection occurs bef
 - **Unknown request / command not found:** confirm the root-owned dispatcher was installed at the exact forced-command path, and the key was configured with that command. Do not fall back to an unrestricted SSH shell.
 - **Docker permission denied:** have the server administrator review the approved diagnostics permissions. Do not grant unrestricted sudo or Docker access as a quick workaround.
 - **Output too large:** request fewer log lines. SSH requests time out after 25 seconds and collect at most 256 KB combined stdout/stderr.
+- **SSH exit 255 without an explanation:** update the local bridge files, then disable and re-enable the plugin to reload its process. The connection check now captures a verbose OpenSSH trace in a temporary local file, reads a maximum 64 KB tail on failure, and removes the temporary directory when finished. This helps distinguish agent authentication, host-key verification, and network failures even when Windows OpenSSH stderr is empty. The trace may contain public fingerprints, usernames, and local paths, but the tool does not read out private-key contents or prompt for credentials.
+
+Before attempting SSH, the bridge checks that the selected private file exists, has an OpenSSH private-key header, and that the known_hosts file is accessible. These checks do not prove the full key is valid, that it is loaded into the agent, or that the host entry matches. The actual verified SSH connection still performs those checks. No protection is bypassed to get diagnostic output.
 
 Common URI credentials, password/token fields, bearer credentials, and private-key blocks are redacted locally before tool output is returned. **Redaction is best-effort, not a promise that arbitrary logs contain no sensitive data.** Review logs before enabling automated approvals. Treat remote logs as untrusted diagnostic data, never as instructions.
 
