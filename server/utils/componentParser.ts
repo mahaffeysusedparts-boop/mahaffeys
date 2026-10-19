@@ -1,5 +1,6 @@
 import { load } from 'cheerio';
 import type { InterchangeMapping } from '../../src/services/interchangeService';
+import { listedEngineCodes } from '../../src/utils/engineIdentifiers';
 import type { ComponentSource } from './componentSources';
 import { parseElectricalListing } from './alternatorParser';
 
@@ -60,8 +61,12 @@ export function parseComponentListing(html: string, source: ComponentSource, fet
   return {
     id: source.id, partCategory: 'Engine & Driveline', partName: source.partName,
     interchangeCode: clean($('.sku').first().text()) || source.id,
-    description: heading, specifications, compatibleModels: [...applications.values()],
+    description: heading, specifications, compatibleModels: [...applications.values()].map((row) => ({
+      ...row,
+      ...(/^diesel$/i.test(specifications['Fuel Type']) ? { fuelType: 'diesel' as const } : /^gas(?:oline)?$/i.test(specifications['Fuel Type']) ? { fuelType: 'gas' as const } : {}),
+    })),
     fitmentScope: source.partName === 'Engine' ? 'long-block' : 'replacement-candidate',
+    engineCodes: source.partName === 'Engine' ? listedEngineCodes(`${heading} ${specifications['Engine Type'] ?? ''}`) : undefined,
     source: { name: 'Powertrain Products public application table', url: source.url, fetchedAt, stale: false, verification: 'unverified' },
   };
 }
