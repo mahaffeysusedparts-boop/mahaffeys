@@ -1,30 +1,15 @@
-import React, { useState } from 'react';
-import { interchangeService, InterchangeMapping } from '@/services/interchangeService';
+import React, { useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { interchangeService } from '@/services/interchangeService';
+import { vehicleOptionsService } from '@/services/vehicleOptionsService';
 import { storageService } from '@/services/storageService';
-import { PullYardVehicle } from '@/types/scrap';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import {
-  Wrench,
-  Search,
-  Car,
-  CheckCircle2,
-  Sparkles,
-  ArrowRight,
-  Layers,
-  Info,
-  Calendar,
-  Layers3,
-} from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Car, ExternalLink, Layers3, Search } from 'lucide-react';
+import { InterchangeVehiclePicker } from './InterchangeVehiclePicker';
+import { InterchangeResults } from './InterchangeResults';
 
 interface PartsInterchangeModalProps {
   isOpen: boolean;
@@ -34,224 +19,59 @@ interface PartsInterchangeModalProps {
   initialYear?: number;
 }
 
-export const PartsInterchangeModal: React.FC<PartsInterchangeModalProps> = ({
-  isOpen,
-  onClose,
-  initialMake = 'Ford',
-  initialModel = 'F-150',
-  initialYear = 2008,
-}) => {
+const uniqueNames = (values: string[]) => [...new Map(values.filter(Boolean).map((name) => [name.trim().toLowerCase(), name.trim()])).values()];
+const commonMakes = ['ford', 'chevrolet', 'gmc', 'dodge', 'ram', 'jeep', 'toyota', 'honda', 'nissan', 'hyundai', 'kia', 'subaru', 'buick', 'cadillac', 'lincoln'];
+
+export const PartsInterchangeModal: React.FC<PartsInterchangeModalProps> = ({ isOpen, onClose, initialMake = 'Ford', initialModel = 'F-150', initialYear = 2008 }) => {
   const [searchMake, setSearchMake] = useState(initialMake);
   const [searchModel, setSearchModel] = useState(initialModel);
-  const [searchYear, setSearchYear] = useState<number>(initialYear);
+  const [searchYear, setSearchYear] = useState(initialYear);
   const [searchTerm, setSearchTerm] = useState('');
+  const [yardVehicles, setYardVehicles] = useState(() => storageService.getPullYardVehicles());
+  useEffect(() => {
+    if (!isOpen) return;
+    setSearchMake(initialMake); setSearchModel(initialModel); setSearchYear(initialYear); setSearchTerm('');
+    setYardVehicles(storageService.getPullYardVehicles());
+    return storageService.subscribe('mahaffeys_pull_yard_vehicles', () => setYardVehicles(storageService.getPullYardVehicles()));
+  }, [isOpen, initialMake, initialModel, initialYear]);
 
-  const yardVehicles = storageService.getPullYardVehicles();
-  const allMappings = interchangeService.getInterchangeMappings();
-
-  // Search results
-  const matchingMappings = interchangeService.findInterchangeForVehicle(
-    searchMake,
-    searchModel,
-    searchYear
-  );
-
-  const matchingDonorVehicles = interchangeService.findMatchingDonorVehicles(
-    searchMake,
-    searchModel,
-    searchYear,
-    yardVehicles
-  );
-
-  const filteredMappings = allMappings.filter((m) => {
-    if (!searchTerm.trim()) return true;
-    const q = searchTerm.toLowerCase();
-    return (
-      m.partName.toLowerCase().includes(q) ||
-      m.interchangeCode.toLowerCase().includes(q) ||
-      m.partCategory.toLowerCase().includes(q) ||
-      m.compatibleModels.some((c) =>
-        `${c.make} ${c.model}`.toLowerCase().includes(q)
-      )
-    );
+  const makes = useQuery({ queryKey: ['vehicle-options', 'makes'], queryFn: vehicleOptionsService.makes, enabled: isOpen, staleTime: 86400000, retry: 1 });
+  const makeId = makes.data?.options.find((option) => option.name.toLowerCase() === searchMake.toLowerCase())?.id;
+  const models = useQuery({ queryKey: ['vehicle-options', 'models', makeId, searchYear], queryFn: () => vehicleOptionsService.models(makeId!, searchYear), enabled: isOpen && !!makeId, staleTime: 86400000, retry: 1 });
+  const catalogue = interchangeService.getInterchangeMappings();
+  const makeNames = uniqueNames([...makes.data?.options.map((item) => item.name) ?? [], ...yardVehicles.map((vehicle) => vehicle.make), ...catalogue.flatMap((item) => item.compatibleModels.map((model) => model.make)), searchMake]).sort((a, b) => {
+    const rank = (value: string) => { const index = commonMakes.indexOf(value.toLowerCase()); return index < 0 ? commonMakes.length : index; };
+    return rank(a) - rank(b) || a.localeCompare(b);
   });
+  const modelNames = uniqueNames([...models.data?.options.map((item) => item.name) ?? [], ...yardVehicles.filter((vehicle) => vehicle.make.toLowerCase() === searchMake.toLowerCase() && vehicle.year === searchYear).map((vehicle) => vehicle.model), ...catalogue.flatMap((item) => item.compatibleModels.filter((model) => model.make.toLowerCase() === searchMake.toLowerCase() && searchYear >= model.startYear && searchYear <= model.endYear).map((model) => model.model)), searchModel]).sort((a, b) => a.localeCompare(b));
+  const matchingMappings = interchangeService.findInterchangeForVehicle(searchMake, searchModel, searchYear).filter((mapping) => !searchTerm.trim() || `${mapping.partName} ${mapping.partCategory} ${mapping.interchangeCode}`.toLowerCase().includes(searchTerm.trim().toLowerCase()));
+  const target = `${searchYear} ${searchMake} ${searchModel}`.trim();
+  const query = encodeURIComponent(`${target} ${searchTerm.trim() || 'parts'} interchange compatible years models OEM part number`);
+  const years = [...new Set([initialYear, ...Array.from({ length: new Date().getFullYear() + 2 - 1960 }, (_, index) => new Date().getFullYear() + 1 - index)])].sort((a, b) => b - a);
+  const hasTarget = !!searchMake && !!searchModel;
 
-  return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto bg-slate-950 text-slate-100 border-slate-800 p-6 font-sans">
-        <DialogHeader className="border-b border-slate-800 pb-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="p-2.5 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30">
-                <Layers3 className="w-6 h-6" />
-              </div>
-              <div>
-                <DialogTitle className="text-lg font-bold text-white flex items-center gap-2">
-                  Parts Interchange & Vehicle Compatibility Explorer
-                  <Sparkles className="w-4 h-4 text-amber-400" />
-                </DialogTitle>
-                <DialogDescription className="text-xs text-slate-400">
-                  Cross-reference donor vehicles on the yard that share compatible engines, transmissions, and components.
-                </DialogDescription>
-              </div>
-            </div>
-
-            <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/40 text-xs font-mono">
-              INTERCHANGE LOOKUP
-            </Badge>
+  return <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
+    <DialogContent className="max-h-[92dvh] max-w-5xl overflow-y-auto rounded-2xl border-teal-900 bg-slate-950 p-4 font-sans text-white sm:p-6">
+      <DialogHeader className="border-b border-slate-700 pb-4">
+        <div className="flex items-center gap-3"><span className="rounded-xl border border-emerald-700 bg-emerald-950 p-3 text-emerald-300"><Layers3 className="h-6 w-6" /></span><div><DialogTitle className="text-xl font-extrabold sm:text-2xl">Find compatible parts</DialogTitle><DialogDescription className="mt-1 text-sm text-slate-200">Choose a vehicle, then a component. See known compatible models anywhere—not just cars on our lot.</DialogDescription></div></div>
+      </DialogHeader>
+      <div className="space-y-6">
+        <section className="space-y-4 rounded-2xl border border-emerald-900 bg-slate-900 p-4 sm:p-5">
+          <h2 className="flex items-center gap-2 font-bold"><Car className="h-5 w-5 text-teal-300" />1. Choose your vehicle</h2>
+          <div className="grid gap-3 sm:grid-cols-[130px_1fr_1fr]">
+            <div className="space-y-2"><label htmlFor="interchange-year" className="text-xs font-semibold text-slate-200">Year</label><Select value={String(searchYear)} onValueChange={(value) => { setSearchYear(Number(value)); setSearchModel(''); }}><SelectTrigger id="interchange-year" className="h-12 rounded-xl border-slate-600 bg-slate-950 text-white"><SelectValue /></SelectTrigger><SelectContent className="max-h-64 rounded-xl border-slate-600 bg-slate-900 text-white">{years.map((year) => <SelectItem key={year} value={String(year)}>{year}</SelectItem>)}</SelectContent></Select></div>
+            <InterchangeVehiclePicker label="Make" value={searchMake} options={makeNames} loading={makes.isFetching} onChange={(make) => { setSearchMake(make); setSearchModel(''); }} />
+            <InterchangeVehiclePicker label="Model" value={searchModel} options={modelNames} disabled={!searchMake} loading={models.isFetching} onChange={setSearchModel} />
           </div>
-        </DialogHeader>
-
-        <div className="space-y-6 py-2">
-          
-          {/* Query Vehicle Specs Form Bar */}
-          <Card className="bg-slate-900 border-slate-800 text-white p-4">
-            <div className="space-y-2">
-              <span className="text-xs font-bold text-amber-400 uppercase tracking-wider block">
-                Target Vehicle Specs:
-              </span>
-              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-                <div>
-                  <label className="text-[10px] text-slate-400 block mb-1">Year</label>
-                  <Input
-                    type="number"
-                    value={searchYear}
-                    onChange={(e) => setSearchYear(parseInt(e.target.value) || 2008)}
-                    className="bg-slate-950 border-slate-800 text-white text-xs font-mono h-9"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-[10px] text-slate-400 block mb-1">Make</label>
-                  <Input
-                    value={searchMake}
-                    onChange={(e) => setSearchMake(e.target.value)}
-                    placeholder="e.g. Ford"
-                    className="bg-slate-950 border-slate-800 text-white text-xs h-9"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-[10px] text-slate-400 block mb-1">Model</label>
-                  <Input
-                    value={searchModel}
-                    onChange={(e) => setSearchModel(e.target.value)}
-                    placeholder="e.g. F-150"
-                    className="bg-slate-950 border-slate-800 text-white text-xs h-9"
-                  />
-                </div>
-
-                <div className="flex items-end">
-                  <div className="relative w-full">
-                    <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-500" />
-                    <Input
-                      placeholder="Filter by component name..."
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      className="bg-slate-950 border-slate-800 text-xs pl-8 h-9"
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-          </Card>
-
-          {/* SECTION 1: MATCHING DONOR VEHICLES ON YARD */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                <Car className="w-4 h-4 text-emerald-400" /> Matching Donor Vehicles Staged on Yard ({matchingDonorVehicles.length})
-              </h3>
-              <Badge variant="outline" className="border-emerald-500/40 text-emerald-400 text-[10px] font-mono">
-                COMPATIBLE DONORS ON LOT
-              </Badge>
-            </div>
-
-            {matchingDonorVehicles.length === 0 ? (
-              <Card className="bg-slate-900/60 border-slate-800 p-6 text-center text-slate-400 text-xs space-y-1">
-                <Info className="w-6 h-6 mx-auto text-slate-600" />
-                <p className="font-semibold text-slate-300">No donor cars currently staged for {searchYear} {searchMake} {searchModel}</p>
-                <p className="text-[11px] text-slate-500">Check general part interchange compatibility list below for cross-brand models.</p>
-              </Card>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {matchingDonorVehicles.map(({ vehicle, interchangeItem }, idx) => (
-                  <Card key={idx} className="bg-slate-900 border-2 border-emerald-500/40 text-white p-3.5 shadow-lg space-y-2">
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <Badge className="bg-emerald-950 text-emerald-300 border-emerald-500/40 text-[10px] mb-1">
-                          SECTION: {vehicle.section}
-                        </Badge>
-                        <h4 className="font-extrabold text-white text-base">
-                          {vehicle.year} {vehicle.make} {vehicle.model}
-                        </h4>
-                        <p className="text-[11px] text-slate-400 font-mono">
-                          Color: <span className="text-slate-200">{vehicle.color}</span> | VIN: {vehicle.vin.slice(0, 11)}...
-                        </p>
-                      </div>
-
-                      <div className="p-2 rounded-xl bg-amber-950/80 border border-amber-500/40 text-amber-300 text-center font-mono shrink-0">
-                        <span className="text-xs font-black block">{vehicle.rowNumber ?? '—'}</span>
-                        <span className="text-[9px] text-amber-400/80">{vehicle.section}</span>
-                      </div>
-                    </div>
-
-                    <div className="pt-2 border-t border-slate-800 flex items-center justify-between text-xs font-mono">
-                      <span className="text-amber-400 font-bold flex items-center gap-1">
-                        <Wrench className="w-3.5 h-3.5" /> Fits: {interchangeItem.partName}
-                      </span>
-                      <span className="text-slate-400 text-[10px]">
-                        Status: <strong className="text-emerald-400">{vehicle.status}</strong>
-                      </span>
-                    </div>
-                  </Card>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* SECTION 2: FULL INTERCHANGE MAPS & CROSS COMPATIBILITY LIST */}
-          <div className="space-y-3">
-            <h3 className="text-sm font-bold text-white flex items-center gap-2">
-              <Layers className="w-4 h-4 text-purple-400" /> Interchange Cross-Reference Mappings ({filteredMappings.length})
-            </h3>
-
-            <div className="space-y-3 max-h-[350px] overflow-y-auto pr-1">
-              {filteredMappings.map((item) => (
-                <Card key={item.id} className="bg-slate-900 border-slate-800 text-white p-4 space-y-3 hover:border-slate-700 transition-colors">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <Badge variant="outline" className="border-purple-500/40 text-purple-300 text-[10px]">
-                          {item.partCategory}
-                        </Badge>
-                        <span className="text-xs font-mono text-slate-400">{item.interchangeCode}</span>
-                      </div>
-                      <h4 className="text-base font-bold text-white mt-1">{item.partName}</h4>
-                      <p className="text-xs text-slate-400 mt-0.5">{item.description}</p>
-                    </div>
-                  </div>
-
-                  <div className="pt-2 border-t border-slate-800">
-                    <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wider block mb-1.5">
-                      Interchangeable Vehicle Years & Models:
-                    </span>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                      {item.compatibleModels.map((cm, cIdx) => (
-                        <div key={cIdx} className="p-2 rounded bg-slate-950 border border-slate-800 flex items-center justify-between font-mono">
-                          <span className="font-bold text-amber-300">{cm.startYear}-{cm.endYear} {cm.make} {cm.model}</span>
-                          {cm.notes && <span className="text-[10px] text-slate-400 truncate max-w-[140px]" title={cm.notes}>{cm.notes}</span>}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </Card>
-              ))}
-            </div>
-          </div>
-
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
+          <p className="text-xs leading-relaxed text-slate-200">Vehicle dropdowns: NHTSA vPIC online data plus vehicles already recorded here. {searchYear <= 1995 ? 'NHTSA does not offer year-filtered model lists for this year; check the model year yourself.' : 'Models are filtered by the selected year when NHTSA supports the make.'} Vehicle names alone do not establish parts fitment.</p>
+          {(makes.isError || models.isError) && <div role="alert" className="rounded-xl border border-amber-700 bg-amber-950 p-3 text-sm text-amber-100">Online options could not load. Existing yard selections remain available; there may be more models online. <Button onClick={() => { if (makes.isError) void makes.refetch(); if (models.isError) void models.refetch(); }} className="ml-2 h-8 rounded-lg bg-emerald-700 text-xs text-white">Retry online options</Button></div>}
+          <div className="space-y-2"><label htmlFor="interchange-component" className="text-sm font-semibold">2. Which part do you need?</label><div className="relative"><Search className="absolute left-3 top-3.5 h-4 w-4 text-slate-300" /><Input id="interchange-component" value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Part name or interchange number…" className="h-12 rounded-xl border-slate-600 bg-slate-950 pl-10 text-white" /></div><div className="flex flex-wrap gap-2">{['All parts', 'Engine', 'Transmission', 'Alternator', 'Starter', 'Door'].map((part) => <Button key={part} aria-pressed={searchTerm === (part === 'All parts' ? '' : part)} onClick={() => setSearchTerm(part === 'All parts' ? '' : part)} className={`h-8 rounded-full px-3 text-xs ${searchTerm === (part === 'All parts' ? '' : part) ? 'bg-teal-700 text-white' : 'bg-slate-800 text-slate-100'}`}>{part}</Button>)}</div></div>
+        </section>
+        {hasTarget ? <>
+          <InterchangeResults mappings={matchingMappings} yardVehicles={yardVehicles} target={target} />
+          <section className="space-y-3 rounded-2xl border border-teal-800 bg-teal-950 p-4 sm:p-5"><h3 className="flex items-center gap-2 font-bold"><ExternalLink className="h-5 w-5 text-teal-200" />Research fitment online</h3><p className="text-sm text-teal-100">Search for {target}{searchTerm ? ` · ${searchTerm}` : ''}. These links open external research—not confirmed compatibility results. Compare OEM/interchange numbers and application notes; matching model names are not enough.</p><div className="flex flex-wrap gap-3"><a href={`https://www.google.com/search?q=${query}`} target="_blank" rel="noopener noreferrer" className="rounded-xl bg-emerald-700 px-4 py-3 text-sm font-bold text-white hover:bg-emerald-600">Search cross-model interchange ↗</a><a href={`https://www.google.com/search?q=${encodeURIComponent(`site:rockauto.com ${target} ${searchTerm.trim() || 'parts'} OEM part number`)}`} target="_blank" rel="noopener noreferrer" className="rounded-xl border border-teal-600 bg-teal-900 px-4 py-3 text-sm font-semibold text-white">Research catalog part numbers ↗</a><a href="https://www.car-part.com/" target="_blank" rel="noopener noreferrer" className="rounded-xl border border-teal-600 bg-teal-900 px-4 py-3 text-sm font-semibold text-white">Open recycler interchange search ↗</a></div><p className="text-xs text-teal-100">A comprehensive in-app cross-model list still needs a licensed or verified fitment data source. No compatibility is inferred or invented from NHTSA listings.</p></section>
+        </> : <p className="rounded-xl border border-slate-700 p-5 text-sm text-slate-200">Choose a make and model to view compatibility and online research options.</p>}
+      </div>
+    </DialogContent>
+  </Dialog>;
 };

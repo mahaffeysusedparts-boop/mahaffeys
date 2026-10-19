@@ -590,12 +590,20 @@ export interface ShipmentSettlement {
   settledAt: string;
 }
 
+export interface ShipmentGradeLine {
+  id: string;
+  gradeName: string;
+  netWeightLbs: number;
+  soldPricePerLb: number;
+}
+
 export interface OutboundShipment {
   id: string;
   loadNumber: string;
   millId?: string;
   millName: string;
   materialCategory: string;
+  gradeLines?: ShipmentGradeLine[];
   trailerNumber?: string;
   driverName?: string;
   grossWeightLbs: number;

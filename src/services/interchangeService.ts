@@ -1,4 +1,4 @@
-import { PullYardVehicle } from "@/types/scrap";
+import type { PullYardVehicle } from '@/types/scrap';
 
 export interface InterchangeMapping {
   id: string;
@@ -16,61 +16,28 @@ export interface InterchangeMapping {
 }
 
 export const INITIAL_INTERCHANGE_DATABASE: InterchangeMapping[] = [];
+const normalized = (value: string) => value.trim().toLowerCase().replace(/[\s-]+/g, '');
+
+export function matchesInterchangeModel(make: string, model: string, year: number, compatible: InterchangeMapping['compatibleModels'][number]) {
+  return !!make.trim() && !!model.trim() && Number.isInteger(year)
+    && normalized(make) === normalized(compatible.make)
+    && normalized(model) === normalized(compatible.model)
+    && year >= compatible.startYear && year <= compatible.endYear;
+}
 
 export const interchangeService = {
   getInterchangeMappings(): InterchangeMapping[] {
     return INITIAL_INTERCHANGE_DATABASE;
   },
 
-  /**
-   * Finds matching interchange groups for a given vehicle make, model, and year.
-   */
-  findInterchangeForVehicle(make: string, model: string, year: number): InterchangeMapping[] {
-    const cleanMake = make.trim().toLowerCase();
-    const cleanModel = model.trim().toLowerCase();
-
-    return INITIAL_INTERCHANGE_DATABASE.filter((item) =>
-      item.compatibleModels.some((c) => {
-        const matchMake = c.make.toLowerCase().includes(cleanMake) || cleanMake.includes(c.make.toLowerCase());
-        const matchModel = c.model.toLowerCase().includes(cleanModel) || cleanModel.includes(c.model.toLowerCase());
-        const matchYear = year >= c.startYear && year <= c.endYear;
-        return matchMake && matchModel && matchYear;
-      })
-    );
+  findInterchangeForVehicle(make: string, model: string, year: number, mappings = INITIAL_INTERCHANGE_DATABASE): InterchangeMapping[] {
+    return mappings.filter((item) => item.compatibleModels.some((compatible) => matchesInterchangeModel(make, model, year, compatible)));
   },
 
-  /**
-   * Finds all donor vehicles in yard inventory that are interchangeable with a requested vehicle or part.
-   */
-  findMatchingDonorVehicles(
-    make: string,
-    model: string,
-    year: number,
-    yardVehicles: PullYardVehicle[]
-  ): { vehicle: PullYardVehicle; interchangeItem: InterchangeMapping }[] {
-    const mappings = this.findInterchangeForVehicle(make, model, year);
-    const results: { vehicle: PullYardVehicle; interchangeItem: InterchangeMapping }[] = [];
-
-    for (const mapping of mappings) {
-      for (const donorVeh of yardVehicles) {
-        if (donorVeh.status === "CRUSHED") continue;
-
-        const isDonorCompatible = mapping.compatibleModels.some((c) => {
-          const matchMake = donorVeh.make.toLowerCase().includes(c.make.toLowerCase());
-          const matchModel = donorVeh.model.toLowerCase().includes(c.model.toLowerCase());
-          const matchYear = donorVeh.year >= c.startYear && donorVeh.year <= c.endYear;
-          return matchMake && matchModel && matchYear;
-        });
-
-        if (isDonorCompatible) {
-          // Avoid duplicate entries
-          if (!results.some((r) => r.vehicle.id === donorVeh.id && r.interchangeItem.id === mapping.id)) {
-            results.push({ vehicle: donorVeh, interchangeItem: mapping });
-          }
-        }
-      }
-    }
-
-    return results;
+  findMatchingDonorVehicles(make: string, model: string, year: number, yardVehicles: PullYardVehicle[], catalogue = INITIAL_INTERCHANGE_DATABASE) {
+    const mappings = this.findInterchangeForVehicle(make, model, year, catalogue);
+    return mappings.flatMap((interchangeItem) => yardVehicles
+      .filter((vehicle) => vehicle.status !== 'CRUSHED' && interchangeItem.compatibleModels.some((compatible) => matchesInterchangeModel(vehicle.make, vehicle.model, vehicle.year, compatible)))
+      .map((vehicle) => ({ vehicle, interchangeItem })));
   },
 };
