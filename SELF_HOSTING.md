@@ -56,6 +56,71 @@ Docker Compose also starts a private `cups` container that runs the CUPS print s
   1.  `git pull origin main`
   2.  `sudo docker compose up --build -d`
 
+### CUPS TCP connectivity and persistent configuration
+
+The `cups-config` volume holds the active `/etc/cups` configuration and printer queues. The `cups-data` volume retains the mounted CUPS cache. **Rebuilding the image does not replace configuration already saved in `cups-config`.** The packaged `deploy/docker/cupsd.conf` already has `Port 631`, but an older volume may contain only `Listen /var/run/cups/cups.sock`. In that case CUPS can run locally while the app cannot reach `cups:631`.
+
+The Docker entrypoint repairs only the known socket-only configuration (also accepting `/run/cups/cups.sock`). Before appending `Port 631`, it creates a uniquely named `/etc/cups/cupsd.conf.before-tcp-631.*` backup, preserving file ownership and permissions. It retains the socket, authentication, access rules, and other settings. Existing `Port`, `SSLPort`, `SSLListen`, or other `Listen` directives are deliberately left alone, even if they do not enable the app's expected address. Repeated starts after a successful repair neither duplicate the listener nor create another migration backup.
+
+Every startup runs `cupsd -t` against the active file before starting CUPS in the foreground. If validation fails after a repair, the entrypoint restores the backup and exits with diagnostic logs. An already-invalid configuration that was not changed is left untouched and startup stops. The health check uses TCP at `127.0.0.1:631` under `LC_ALL=C`, checks command success, and requires exactly `scheduler is running`; a working Unix socket alone cannot pass.
+
+**Security:** The existing `631:631` host publication is unchanged. Restrict it to trusted networks using Docker-aware host firewall/network controls; do not forward it from the internet. Docker-published ports may bypass ordinary UFW rules. Never resolve a later authorization error by disabling authentication or adding unrestricted access.
+
+#### Non-destructive CUPS-only rollout
+
+Deployment checks below are performed on the Docker server, from the project directory with its existing `.env`. No database or application rebuild is needed for this listener fix.
+
+```bash
+# Validate shell syntax and Compose interpolation before rollout.
+sh -n deploy/docker/cups-entrypoint.sh
+docker compose config --quiet
+
+# Record existing queues/device URIs if the old scheduler is running via its socket.
+docker compose exec cups lpstat -h /var/run/cups/cups.sock -p -v
+
+# Rebuild/recreate only CUPS, retaining both named volumes.
+docker compose up -d --build cups
+
+# Review the migration backup path, validation output, and health status.
+docker compose logs --tail=100 cups
+docker compose ps cups
+docker compose exec cups cupsd -t
+
+# Prove TCP scheduler availability locally and from the app container.
+docker compose exec cups env LC_ALL=C lpstat -h 127.0.0.1:631 -r
+docker compose exec mahaffeys env LC_ALL=C lpstat -h cups:631 -r
+
+# Compare these queues/device URIs with the pre-rollout inventory.
+docker compose exec cups lpstat -h 127.0.0.1:631 -p -v
+```
+
+Both scheduler checks must report `scheduler is running`. A healthy loopback check alone does not prove the app can connect or administer queues. Do not use `docker compose down -v`, delete named volumes, or replace `/etc/cups` wholesale. If the old scheduler is stopped, retain a copy of its `printers.conf` for the queue comparison instead of treating a failed inventory command as an empty queue list.
+
+After the app check succeeds, use the existing **Settings → Shared network printers** interface to retry the Brother host `192.168.1.251` with its current `/ipp/print` path. Send a small document through the app and confirm actual paper output. Saving a profile or accepting a job is not proof of printing. An authentication/authorization failure, an unreachable printer, or a protocol failure is a separate issue; inspect application/CUPS logs and diagnose it without changing drivers or access rules merely to bypass an error.
+
+#### Rollback of the listener repair
+
+The backup filename is logged at startup and retained in `cups-config`. Stop CUPS before restoring it so the scheduler cannot rewrite the configuration. The one-off restore explicitly bypasses the repair entrypoint and mounts the existing volumes; replace the example suffix with the exact backup filename from the log.
+
+```bash
+docker compose stop cups
+docker compose run --rm --no-deps --entrypoint /bin/sh cups -c \
+  'cp -p /etc/cups/cupsd.conf.before-tcp-631.EXACT_SUFFIX /etc/cups/cupsd.conf && cupsd -t -c /etc/cups/cupsd.conf'
+```
+
+This rolls back only `cupsd.conf`, not queues or application data. Leave the service stopped while diagnosing the problem: normal startup will repair a socket-only file again. To run the restored configuration temporarily without the migration, use a local Compose override setting the `cups` service's `entrypoint` to `["cupsd", "-f"]`; remove that override when the issue is resolved. A socket-only rollback intentionally fails the TCP health check and does not restore app printing. Reverting/rebuilding the image alone does not undo a change in the persistent volume. If automatic restoration failed, recover from the logged backup before attempting another startup.
+
+#### Deployment verification checklist
+
+Use disposable CUPS configuration volumes, not production queues, for failure-case tests:
+
+- Socket-only file: verify a backup exists, exactly one `Port 631` is added, and removing the appended block gives byte-for-byte original content.
+- Second startup: verify the configuration and backup count are unchanged.
+- Existing `Port 631` or deliberately bound TCP listener: verify content is unchanged and no migration backup is created.
+- Socket-only file containing an invalid directive: verify validation stops startup and the original file is restored from the backup. An invalid existing TCP file must also stop startup without modification.
+- Socket-only scheduler started with the repair entrypoint bypassed: verify the TCP health probe fails despite local socket availability. With TCP enabled, verify the probe succeeds.
+- Production rollout: verify app-to-CUPS TCP connectivity, unchanged existing queues, successful printer addition, and physical test output separately.
+
 ---
 
 ## Option B: Traditional systemd Deployment
