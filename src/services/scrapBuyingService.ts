@@ -24,8 +24,9 @@ async function command(body: Record<string,unknown>) {
   if (retryStorageKey) { try { sessionStorage.removeItem(retryStorageKey); } catch { /* Payment has already been acknowledged. */ } }
   return cacheTicket(ticket);
 }
-async function recordPayment(action: 'PAY'|'FINALIZE_AND_PAY', ticket: Ticket, method: 'Cash'|'Check', reference: string, permitReference: string, documentationReference: string) {
-  const result = await command({action,id:ticket.id,revision:ticket.buying?.revision ?? 0,method,reference:method==='Check'?reference.trim():'',permitReference:permitReference.trim(),documentationReference:documentationReference.trim(),reviewed:true,disbursed:true});
+async function recordPayment(action: 'PAY'|'FINALIZE_AND_PAY', ticket: Ticket, method: 'Cash'|'Check', reference: string, permitReference: string, documentationReference: string, reviewed = false) {
+  if (method === 'Check' && !reference.trim()) throw new Error('Enter the actual issued check number');
+  const result = await command({action,id:ticket.id,revision:ticket.buying?.revision ?? 0,method,reference:method==='Check'?reference.trim():'',permitReference:permitReference.trim(),documentationReference:documentationReference.trim(),reviewed,disbursed:true});
   try {
     const state = await apiRequest<{state:Record<string,unknown>}>('/api/state');
     if (state.state.mahaffeys_cash_drawer) sharedStorage.applyServerValue('mahaffeys_cash_drawer',state.state.mahaffeys_cash_drawer);
@@ -36,10 +37,10 @@ export const scrapBuyingService = {
   create: (ticket: Ticket) => command({action:'CREATE',id:ticket.id,revision:0,ticket}),
   adopt: (id: string) => command({action:'ADOPT',id,revision:0}),
   save: (ticket: Ticket) => command({action:'SAVE',id:ticket.id,revision:ticket.buying?.revision ?? 0,ticket}),
-  finalize: (ticket: Ticket) => command({action:'FINALIZE',id:ticket.id,revision:ticket.buying?.revision ?? 0,reviewed:true}),
+  finalize: (ticket: Ticket,reviewed: boolean) => command({action:'FINALIZE',id:ticket.id,revision:ticket.buying?.revision ?? 0,reviewed}),
   void: (ticket: Ticket,reason: string) => command({action:'VOID',id:ticket.id,revision:ticket.buying?.revision ?? 0,reason}),
   eligibility: (ticket: Ticket) => apiRequest<PaymentEligibility>(`/api/scrap-buying/eligibility?id=${encodeURIComponent(ticket.id)}&revision=${ticket.buying?.revision ?? 0}`),
-  completeAndPay: (ticket: Ticket,method: 'Cash'|'Check',reference: string,permitReference: string,documentationReference: string) => recordPayment('FINALIZE_AND_PAY',ticket,method,reference,permitReference,documentationReference),
+  completeAndPay: (ticket: Ticket,method: 'Cash'|'Check',reference: string,permitReference: string,documentationReference: string,reviewed = false) => recordPayment('FINALIZE_AND_PAY',ticket,method,reference,permitReference,documentationReference,reviewed),
   pay: (ticket: Ticket,method: 'Cash'|'Check',reference: string,permitReference: string,documentationReference = '') => recordPayment('PAY',ticket,method,reference,permitReference,documentationReference),
   async queue() {
     const response = await apiRequest<{tickets:Ticket[];policy:BuyingPolicy|null;legacyReviews:LegacyBuyingReview[]}>('/api/scrap-buying/queue');

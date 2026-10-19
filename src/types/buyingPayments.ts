@@ -10,6 +10,10 @@ export interface BuyingState {
     requirePhotos: boolean;
     requirePhone: boolean;
     requireAddress: boolean;
+    requireSellerId?: boolean;
+    requireVehiclePlate?: boolean;
+    requireExplicitReview?: boolean;
+    reviewed?: boolean;
     optionalMissing: string[];
   };
   sellerIdentity?: {idType:string;idState:string;idNumber:string};
@@ -31,6 +35,7 @@ export interface PaymentEligibility {
   ticketId: string;
   revision: number;
   allowedMethods: Array<'Cash' | 'Check'>;
+  selectableMethods?: Array<'Cash' | 'Check'>;
   reasons: Array<{ code: string; message: string; method?: 'Cash' | 'Check' }>;
   permitRequired: boolean;
   documentationRequired: boolean;

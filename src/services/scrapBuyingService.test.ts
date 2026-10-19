@@ -16,13 +16,13 @@ describe('buying payment requests',()=>{
   it('uses combined command, preserves actual number and repeats the same key after an uncertain response and module reload',async()=>{
     mocks.request.mockRejectedValueOnce(new Error('Uncertain response'));
     let service=(await import('./scrapBuyingService')).scrapBuyingService;
-    await expect(service.completeAndPay(draft,'Check',' 000123-A ','','')).rejects.toThrow('Uncertain');
+    await expect(service.completeAndPay(draft,'Check',' 000123-A ','','',true)).rejects.toThrow('Uncertain');
     const first=JSON.parse(mocks.request.mock.calls[0][1].body);
     expect(first).toMatchObject({action:'FINALIZE_AND_PAY',method:'Check',reference:'000123-A',reviewed:true,disbursed:true,revision:4});
     vi.resetModules();
     service=(await import('./scrapBuyingService')).scrapBuyingService;
     mocks.request.mockResolvedValueOnce(paid).mockResolvedValueOnce({state:{}});
-    expect(await service.completeAndPay(draft,'Check',' 000123-A ','','')).toEqual(paid);
+    expect(await service.completeAndPay(draft,'Check',' 000123-A ','','',true)).toEqual(paid);
     const retry=JSON.parse(mocks.request.mock.calls[1][1].body);
     expect(retry.idempotencyKey).toBe(first.idempotencyKey);
     expect(mocks.request.mock.calls.filter(([url])=>url==='/api/scrap-buying/commands')).toHaveLength(2);
@@ -31,6 +31,18 @@ describe('buying payment requests',()=>{
     mocks.request.mockResolvedValueOnce(paid).mockResolvedValueOnce({state:{}});
     const service=(await import('./scrapBuyingService')).scrapBuyingService;
     await service.pay({...draft,buying:{...draft.buying!,stage:'FINALIZED'}},'Cash','old unused check','permit');
-    expect(JSON.parse(mocks.request.mock.calls[0][1].body)).toMatchObject({action:'PAY',method:'Cash',reference:'',disbursed:true});
+    expect(JSON.parse(mocks.request.mock.calls[0][1].body)).toMatchObject({action:'PAY',method:'Cash',reference:'',reviewed:false,disbursed:true});
+  });
+  it('does not manufacture review acknowledgement when completion has no review',async()=>{
+    mocks.request.mockResolvedValueOnce(paid).mockResolvedValueOnce({state:{}});
+    const service=(await import('./scrapBuyingService')).scrapBuyingService;
+    await service.completeAndPay(draft,'Check',' 0009042 ','','',false);
+    expect(JSON.parse(mocks.request.mock.calls[0][1].body)).toMatchObject({reviewed:false,reference:'0009042',disbursed:true});
+  });
+  it.each(['',' ','\t\n'])('rejects blank Check reference %j before sending a request',async reference=>{
+    const service=(await import('./scrapBuyingService')).scrapBuyingService;
+    await expect(service.completeAndPay(draft,'Check',reference,'','',false)).rejects.toThrow('actual issued check number');
+    await expect(service.pay(draft,'Check',reference,'')).rejects.toThrow('actual issued check number');
+    expect(mocks.request).not.toHaveBeenCalled();
   });
 });

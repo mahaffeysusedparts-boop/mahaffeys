@@ -6,7 +6,7 @@ import type { MetalGrade, Ticket } from '../types/scrap';
 
 const metal = { id:'grade', name:'Test', code:'T', category:'Ferrous', ratePerLb:1 } as MetalGrade;
 const policy: BuyingPolicy = { version:'test', sourceUrl:'https://www.scstatehouse.gov/code/t16c017.php', effectiveFrom:'2020-01-01', effectiveThrough:'2099-12-31', reviewer:'TEST ONLY', reviewReference:'TEST ONLY', grades:[{gradeId:metal.id,classification:'TEST',approved:true,requirePermit:false,paymentClass:'FERROUS',cashAtOrAboveCents:null,sellerDayCashLimitCents:null,definition:{name:metal.name,code:metal.code,category:metal.category}}] };
-const ticket = (amount: number, category = 'Ferrous') => ({id:'ticket',finalPayout:amount,buying:{version:1,revision:3,stage:'FINALIZED'},scrapLines:[{metalGradeId:metal.id,metalCategory:category}]} as Ticket);
+const ticket = (amount: number, category = 'Ferrous') => ({id:'ticket',finalPayout:amount,buying:{version:1,revision:3,stage:'FINALIZED',sellerIdentity:{idType:'STATE ID',idState:'SC',idNumber:'TEST-ID'}},scrapLines:[{metalGradeId:metal.id,metalCategory:category}]} as Ticket);
 const history = { cashCents:0, cashCount:0, unresolved:false, drawerBalance:1000 };
 const rules = (amount: number, paymentClass: NonNullable<BuyingPolicy['grades'][number]['paymentClass']> = 'FERROUS', extra = {}, overrides = {}) => evaluateBuyingPaymentRules(ticket(amount,paymentClass==='FERROUS'?'Ferrous':'Non-Ferrous'), {...policy,grades:[{...policy.grades[0],paymentClass,...overrides}]},[metal],'2026-01-01',{...history,...extra});
 
@@ -35,4 +35,20 @@ describe('payment rule boundaries and fail-closed setup',()=>{
   });
   it('blocks unknown, changed and specialized material definitions',()=>{expect(rules(1,'FERROUS',{}, {approved:false}).allowedMethods).toEqual([]);expect(rules(1,'FERROUS',{}, {definition:{name:'changed',code:'T',category:'Ferrous'}}).allowedMethods).toEqual([]);expect(rules(1,'REQUIRES_SPECIAL_DOCUMENTATION').allowedMethods).toEqual([]);});
   it('blocks cash, not check, for insufficient drawer or unresolved history',()=>{expect(rules(1,'FERROUS',{drawerBalance:0}).allowedMethods).toEqual(['Check']);expect(rules(1,'FERROUS',{unresolved:true}).allowedMethods).toEqual(['Check']);});
+  it('allows absent optional identity only where independently applicable rules permit',()=>{
+    const absent = {...ticket(1),buying:{...ticket(1).buying!,sellerIdentity:undefined}};
+    const unknown = {...history,cashCents:null,cashCount:null};
+    expect(evaluateBuyingPaymentRules(absent,policy,[metal],'2026-01-01',unknown).allowedMethods).toEqual(['Cash','Check']);
+    const dayLimited = {...policy,grades:[{...policy.grades[0],sellerDayCashLimitCents:1000}]};
+    const result=evaluateBuyingPaymentRules(absent,dayLimited,[metal],'2026-01-01',unknown);
+    expect(result.allowedMethods).toEqual(['Check']);
+    expect(result.reasons.some(reason=>reason.code==='SELLER_DAY_IDENTITY_UNKNOWN')).toBe(true);
+    const nonferrous = {...policy,grades:[{...policy.grades[0],paymentClass:'NONFERROUS' as const}]};
+    expect(evaluateBuyingPaymentRules(absent,nonferrous,[metal],'2026-01-01',unknown).reasons.some(reason=>reason.code==='MATERIAL_SELLER_ID_REQUIRED')).toBe(true);
+  });
+  it('keeps Check selectable even when global blockers prevent payment',()=>{
+    const result=rules(100,'NONFERROUS',{}, {approved:false});
+    expect(result.allowedMethods).toEqual([]);
+    expect(result.selectableMethods).toEqual(['Check']);
+  });
 });

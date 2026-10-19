@@ -64,6 +64,7 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
   const [selectedCustomerLabel, setSelectedCustomerLabel] = useState('');
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
+  const [customerAddress, setCustomerAddress] = useState('');
   const [customerIdNumber, setCustomerIdNumber] = useState('');
   const [customerIdState, setCustomerIdState] = useState('SC');
   const [vehicleLicensePlate, setVehicleLicensePlate] = useState('');
@@ -112,6 +113,7 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
       : customer.fullName);
     setCustomerName(customer.fullName);
     setCustomerPhone(customer.phone || '');
+    setCustomerAddress(customer.address || '');
     setCustomerIdNumber(customer.idNumber);
     setCustomerIdState(customer.idState);
     setVehicleLicensePlate(customer.vehicleLicensePlate || '');
@@ -151,9 +153,9 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
         fullName: customerName.trim(),
         phone: customerPhone.trim(),
         idType: selectedCustomer?.idType ?? 'Driver License',
-        idNumber: customerIdNumber.trim(),
+        idNumber: customerIdNumber.trim() || selectedCustomer?.idNumber || '',
         idState: customerIdState.trim().toUpperCase(),
-        address: selectedCustomer?.address ?? '',
+        address: customerAddress.trim(),
         vehicleLicensePlate: vehicleLicensePlate.trim().toUpperCase(),
         vehicleState: selectedCustomer?.vehicleState,
         notes: selectedCustomer?.notes,
@@ -187,6 +189,7 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
         customerId: customerId || undefined,
         customerName: customerName.trim(),
         customerPhone: customerPhone.trim() || undefined,
+        customerAddress: customerAddress.trim() || undefined,
         customerIdNumber: customerIdNumber.trim() || undefined,
         vehicleLicensePlate: vehicleLicensePlate.trim().toUpperCase() || undefined,
         scrapLines: [],
@@ -201,13 +204,13 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
 
       await scrapBuyingService.create(ticket);
 
-      if (!customerIdNumber.trim() || (!customerPhone.trim() && requirements.data?.requirePhone !== false)) {
-        toast.warning('Required seller information is missing', {
-          description: customerIdNumber.trim()
-            ? 'Phone is currently required by the yard before finalization. An administrator can make it optional in Settings.'
-            : 'An ID number is required to add this seller to the customer registry.',
-        });
-      }
+      const missing = [
+        ...(!customerInput.idNumber && requirements.data?.requireSellerId !== false ? ['seller ID'] : []),
+        ...(!customerPhone.trim() && requirements.data?.requirePhone !== false ? ['phone'] : []),
+        ...(!customerAddress.trim() && requirements.data?.requireAddress !== false ? ['address'] : []),
+        ...(!vehicleLicensePlate.trim() && requirements.data?.requireVehiclePlate !== false ? ['vehicle plate'] : []),
+      ];
+      if (missing.length) toast.warning('Required seller information is missing', { description: `Required before finalization: ${missing.join(', ')}. An administrator can change yard preferences in Settings.` });
 
       toast.success(`Intake #${finalId} saved`, {
         description: 'Seller details & photos stored. Continue to the scale to log the IN weight.',
@@ -377,7 +380,7 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
                   />
                 </div>
                 <div>
-                  <Label className="text-xs text-slate-300">Driver License / ID #</Label>
+                  <Label className="text-xs text-slate-300">Driver License / ID # · {requirements.data?.requireSellerId === false ? 'Optional' : 'Required before completion'}</Label>
                   <Input
                     value={customerIdNumber}
                     onChange={(e) => setCustomerIdNumber(e.target.value)}
@@ -386,7 +389,7 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
                   />
                 </div>
                 <div>
-                  <Label className="text-xs text-slate-300">Vehicle License Plate</Label>
+                  <Label className="text-xs text-slate-300">Vehicle License Plate · {requirements.data?.requireVehiclePlate === false ? 'Optional' : 'Required before completion'}</Label>
                   <Input
                     value={vehicleLicensePlate}
                     onChange={(e) => setVehicleLicensePlate(e.target.value.toUpperCase())}
@@ -397,9 +400,13 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
               </div>
 
               <div className="space-y-1">
+                <Label htmlFor="seller-address" className="text-xs text-slate-300">Seller address · {requirements.data?.requireAddress === false ? 'Optional' : 'Required before completion'}</Label>
+                <Input id="seller-address" value={customerAddress} onChange={(event) => setCustomerAddress(event.target.value)} maxLength={500} placeholder="Actual seller address" className="h-11 rounded-xl border-slate-700 bg-slate-950 text-white" />
+              </div>
+              <div className="space-y-1">
                 <Label htmlFor="seller-id-state" className="text-xs text-slate-300">Actual ID issuing state / jurisdiction</Label>
                 <Input id="seller-id-state" value={customerIdState} onChange={(event) => setCustomerIdState(event.target.value.toUpperCase())} maxLength={40} className="h-11 max-w-xs rounded-xl border-slate-700 bg-slate-950 text-white" />
-                <p className="text-xs text-slate-300">South Carolina is the local-entry default. Confirm against the actual ID; returning sellers keep their saved jurisdiction.</p>
+                <p className="text-xs text-slate-300">South Carolina is the local-entry default. Confirm against the actual ID; returning sellers keep their saved jurisdiction. ID details and intake photos are independent requirements. Without an ID, optional seller details stay on this ticket; no dummy customer is created.</p>
               </div>
 
               <div>
@@ -535,8 +542,8 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
           <div className="flex items-start gap-3 rounded-2xl border border-emerald-800 bg-emerald-950 p-4 text-xs text-emerald-100">
             <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-emerald-300" />
             <div>
-              <p>{requirements.data ? `Yard finalization settings — Photos: ${requirements.data.requirePhotos ? 'required' : 'optional'} · Phone: ${requirements.data.requirePhone ? 'required' : 'optional'} · Address: ${requirements.data.requireAddress ? 'required' : 'optional'}.` : 'Loading yard finalization settings…'}</p>
-              <p className="mt-2">Missing optional information will not block finalization. Seller identity and applicable legal/payment requirements remain protected. Finalize opens your printable voucher.</p>
+              <p>{requirements.data ? `Yard finalization settings — Photos: ${requirements.data.requirePhotos ? 'required' : 'optional'} · Phone: ${requirements.data.requirePhone ? 'required' : 'optional'} · Address: ${requirements.data.requireAddress ? 'required' : 'optional'} · Seller ID: ${requirements.data.requireSellerId ? 'required' : 'optional'} · Plate: ${requirements.data.requireVehiclePlate ? 'required' : 'optional'} · Explicit review: ${requirements.data.requireExplicitReview ? 'required' : 'optional'}.` : 'Loading yard finalization settings…'}</p>
+              <p className="mt-2">Missing optional information will not block finalization. ID details and photos are independent settings. Applicable material/payment obligations still apply. Complete &amp; Record Payment records actual disbursement and opens your receipt.</p>
               <a href="/settings#intake-requirements" className="mt-2 inline-block font-semibold underline">Administrator requirement settings</a>
             </div>
           </div>

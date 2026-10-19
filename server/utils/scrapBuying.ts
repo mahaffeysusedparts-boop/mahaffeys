@@ -8,7 +8,7 @@ import { serverScale } from './scale';
 import { normalizeWeight, validateScaleReading, validatedBreakdown } from '../../src/utils/weighingContract';
 import { yardDate } from '../../src/utils/yardDates';
 import { intakeRequirementReview } from '../../src/utils/intakeRequirements';
-import { DEFAULT_INTAKE_REQUIREMENTS, type IntakeRequirements } from '../../src/types/intakeRequirements';
+import { DEFAULT_INTAKE_REQUIREMENTS, normalizeIntakeRequirements, type IntakeRequirements } from '../../src/types/intakeRequirements';
 import type { Ticket, MetalGrade, ScaleConfig, CashDrawerLog } from '../../src/types/scrap';
 import { evaluateBuyingPaymentRules } from '../../src/utils/buyingPaymentRules';
 import { canRecordBuyingPayment } from '../../src/utils/buyingAuthorization';
@@ -208,23 +208,31 @@ export async function currentBuyingPolicy(client?: PoolClient): Promise<BuyingPo
   return result.rows[0] ? { ...result.rows[0].document, version: result.rows[0].version } : null;
 }
 
-async function finalizePurchase(client: PoolClient, ticket: Ticket, command: z.infer<typeof buyingCommandSchema>, user: PublicUser): Promise<Ticket> {
+async function sellerEvidence(client: PoolClient, ticket: Ticket) {
+  const seller = ticket.customerId ? (await client.query('SELECT id_type,id_state,id_number,address,phone FROM customers WHERE id=$1',[ticket.customerId])).rows[0] : undefined;
+  if (ticket.customerId && !seller) fail('The supplied seller profile no longer exists; correct the seller record');
+  if (ticket.customerIdNumber?.trim() && (!seller?.id_number || seller.id_number.trim().toUpperCase() !== ticket.customerIdNumber.trim().toUpperCase())) fail('Seller ID conflicts with or is missing from the confirmed customer profile');
+  const identity = seller?.id_type?.trim() && seller?.id_state?.trim() && seller?.id_number?.trim()
+    ? {idType:seller.id_type.trim().toUpperCase(),idState:seller.id_state.trim().toUpperCase(),idNumber:seller.id_number.trim().toUpperCase()} : undefined;
+  return {identity, phone:ticket.customerPhone, address:ticket.customerAddress?.trim() || seller?.address};
+}
+
+async function finalizePurchase(client: PoolClient, ticket: Ticket, command: z.infer<typeof buyingCommandSchema>, user: PublicUser, preview = false): Promise<Ticket> {
         if (ticket.buying!.stage !== 'DRAFT' || ticket.buying!.activeCycleId || ticket.pendingPlatformCapture || ticket.scaleGrossInWeight != null || !ticket.scrapLines?.length) fail('Finish every weighing cycle before final review');
-        if (!ticket.customerId || !ticket.customerIdNumber || !ticket.vehicleLicensePlate || !command.reviewed) fail('Seller ID, vehicle plate and explicit review are required');
-        const seller = await client.query('SELECT id_type,id_state,id_number,address,phone FROM customers WHERE id=$1',[ticket.customerId]);
-        if (!seller.rows[0]?.id_type || !seller.rows[0]?.id_state || !seller.rows[0]?.id_number) fail('Complete the seller identity and issuing jurisdiction in the customer registry');
-        if (seller.rows[0].id_number!==ticket.customerIdNumber) fail('Seller ID conflicts with the confirmed customer profile');
-        const requirements = await stateValue<IntakeRequirements>(client, 'mahaffeys_intake_requirements', DEFAULT_INTAKE_REQUIREMENTS);
-        const evidenceReview = intakeRequirementReview(requirements, { captures: ticket.complianceCaptures, phone: ticket.customerPhone?.trim() ? seller.rows[0].phone : undefined, address: seller.rows[0].address });
-        if (evidenceReview.blockers.length) fail(`Required before finalization: ${evidenceReview.blockers.join(', ')}. An administrator can change yard requirements in Settings.`);
+        const seller = await sellerEvidence(client,ticket);
+        const requirements = normalizeIntakeRequirements(await stateValue<IntakeRequirements>(client, 'mahaffeys_intake_requirements', DEFAULT_INTAKE_REQUIREMENTS));
+        const evidenceReview = intakeRequirementReview(requirements, { captures: ticket.complianceCaptures, phone: seller.phone, address: seller.address, sellerIdAvailable:!!seller.identity, plate:ticket.vehicleLicensePlate, reviewed:command.reviewed === true });
+        const blockers = preview ? evidenceReview.blockers.filter(label => label !== 'Explicit purchase review') : evidenceReview.blockers;
+        if (blockers.length) fail(`Required before finalization: ${blockers.join(', ')}. An administrator can change yard requirements in Settings.`);
         if (ticket.scrapLines.some((line) => !line.sourceCaptureIds?.length)) fail('Legacy weighed lines must be explicitly corrected and reweighed before canonical finalization');
         const lineIds = ticket.scrapLines.map((line) => line.id);
         const stored = await client.query('SELECT id FROM scrap_buying_lines WHERE ticket_id=$1 AND active=TRUE AND id=ANY($2::text[])',[ticket.id,lineIds]);
         if (stored.rows.length !== lineIds.length) fail('Every payable line must be server-confirmed');
         const cents = ticket.scrapLines.reduce((sum,line) => sum+Math.round(line.lineTotal*100),0);
         if (!Number.isSafeInteger(cents) || cents > 99999999999999) fail('Ticket amount exceeds supported limits');
+        const {requirePhotos,requirePhone,requireAddress,requireSellerId,requireVehiclePlate,requireExplicitReview,revision} = requirements;
         return { ...ticket,status:'COMPLETED',grossTotal:cents/100,finalPayout:cents/100,totalDeductions:0,
-          buying:{...ticket.buying,stage:'FINALIZED',finalizedAt:new Date().toISOString(),intakeRequirementReview:{revision:requirements.revision,requirePhotos:requirements.requirePhotos,requirePhone:requirements.requirePhone,requireAddress:requirements.requireAddress,optionalMissing:evidenceReview.optionalMissing},sellerIdentity:{idType:seller.rows[0].id_type.toUpperCase(),idState:seller.rows[0].id_state.toUpperCase(),idNumber:seller.rows[0].id_number.toUpperCase()}} };
+          buying:{...ticket.buying,stage:'FINALIZED',finalizedAt:new Date().toISOString(),intakeRequirementReview:{revision,requirePhotos,requirePhone,requireAddress,requireSellerId,requireVehiclePlate,requireExplicitReview,reviewed:command.reviewed === true,optionalMissing:evidenceReview.optionalMissing},sellerIdentity:seller.identity} };
 }
 
 export async function paymentEligibility(client: PoolClient, ticket: Ticket): Promise<PaymentEligibility> {
@@ -233,14 +241,14 @@ export async function paymentEligibility(client: PoolClient, ticket: Ticket): Pr
   const currentMetals = await stateValue<MetalGrade[]>(client,'mahaffeys_metals',[]);
   const identity = ticket.buying?.sellerIdentity;
   const daily = identity ? await client.query(`SELECT COALESCE(SUM(p.amount),0) AS total, COUNT(*) AS count FROM scrap_buying_payments p JOIN scrap_buying_tickets t ON t.ticket_id=p.ticket_id
-    WHERE p.method='Cash' AND t.document->'buying'->'sellerIdentity'=$1::jsonb AND (p.paid_at AT TIME ZONE 'America/New_York')::date=$2::date`,[JSON.stringify(identity),day]) : {rows:[{total:0,count:0}]};
+    WHERE p.method='Cash' AND t.document->'buying'->'sellerIdentity'=$1::jsonb AND (p.paid_at AT TIME ZONE 'America/New_York')::date=$2::date`,[JSON.stringify(identity),day]) : undefined;
   const legacyReviews = (await client.query('SELECT DISTINCT ON(ticket_id) ticket_id,document FROM scrap_buying_legacy_reviews ORDER BY ticket_id,revision DESC')).rows;
   const history = await stateValue<Ticket[]>(client,'mahaffeys_tickets',[]);
-  const unresolved = history.some(row => !row.buying && row.ticketType==='SCRAP_METAL' && ['COMPLETED','VOIDED'].includes(row.status) && row.finalPayout>0 && (row.customerId===ticket.customerId || (!!identity && row.customerIdNumber?.trim().toUpperCase()===identity.idNumber)) && !legacyReviews.some(review=>review.ticket_id===row.id));
-  const legacyCash = legacyReviews.map(row=>row.document as LegacyBuyingReview).filter(review=>review.disbursed && review.method==='Cash' && review.paidAt && yardDate(review.paidAt)===day && equal(review.sellerIdentity,identity));
+  const unresolved = history.some(row => !row.buying && row.ticketType==='SCRAP_METAL' && ['COMPLETED','VOIDED'].includes(row.status) && row.finalPayout>0 && ((!!ticket.customerId && row.customerId===ticket.customerId) || (!!identity && row.customerIdNumber?.trim().toUpperCase()===identity.idNumber)) && !legacyReviews.some(review=>review.ticket_id===row.id));
+  const legacyCash = legacyReviews.map(row=>row.document as LegacyBuyingReview).filter(review=>!!identity && review.disbursed && review.method==='Cash' && review.paidAt && yardDate(review.paidAt)===day && equal(review.sellerIdentity,identity));
   const drawer = await stateValue<CashDrawerLog[]>(client,'mahaffeys_cash_drawer',[]);
   const drawerBalance = [...drawer].sort((a,b)=>b.timestamp.localeCompare(a.timestamp))[0]?.balanceAfter ?? 0;
-  return evaluateBuyingPaymentRules(ticket,policy,currentMetals,day,{cashCents:Math.round(Number(daily.rows[0].total)*100)+legacyCash.reduce((sum,row)=>sum+Math.round(row.amount*100),0),cashCount:Number(daily.rows[0].count)+legacyCash.length,unresolved,drawerBalance});
+  return evaluateBuyingPaymentRules(ticket,policy,currentMetals,day,{cashCents:daily ? Math.round(Number(daily.rows[0].total)*100)+legacyCash.reduce((sum,row)=>sum+Math.round(row.amount*100),0) : null,cashCount:daily ? Number(daily.rows[0].count)+legacyCash.length : null,unresolved,drawerBalance});
 }
 
 export async function previewPaymentEligibility(id: string, revision: number, user: PublicUser): Promise<PaymentEligibility> {
@@ -252,11 +260,17 @@ export async function previewPaymentEligibility(id: string, revision: number, us
     if (ticket.buying.revision !== revision) fail('Ticket changed; refresh before reviewing payment methods');
     if (!['DRAFT','FINALIZED'].includes(ticket.buying.stage)) fail('This ticket is not awaiting payment');
     try {
-      const prepared = ticket.buying.stage === 'DRAFT' ? await finalizePurchase(client,ticket,{action:'FINALIZE',id,revision,idempotencyKey:randomUUID(),reviewed:true},user) : ticket;
+      const prepared = ticket.buying.stage === 'DRAFT' ? await finalizePurchase(client,ticket,{action:'FINALIZE',id,revision,idempotencyKey:randomUUID()},user,true) : ticket;
       return await paymentEligibility(client,prepared);
     } catch (error) {
       if (!(error as {statusCode?:number}).statusCode) throw error;
-      return {ticketId:id,revision,allowedMethods:[],permitRequired:false,documentationRequired:false,reasons:[{code:'INTAKE_NOT_READY',message:(error as {statusMessage?:string}).statusMessage ?? 'Complete seller information and weighing before payment'}]};
+      let identity: Awaited<ReturnType<typeof sellerEvidence>>['identity'];
+      try { identity = (await sellerEvidence(client,ticket)).identity; } catch (identityError) {
+        if (!(identityError as {statusCode?:number}).statusCode) throw identityError;
+        identity = undefined;
+      }
+      const methods = await paymentEligibility(client,{...ticket,finalPayout:(ticket.scrapLines ?? []).reduce((sum,line)=>sum+Math.round(line.lineTotal*100),0)/100,buying:{...ticket.buying,sellerIdentity:identity}});
+      return {...methods,allowedMethods:[],reasons:[...methods.reasons,{code:'INTAKE_NOT_READY',message:(error as {statusMessage?:string}).statusMessage ?? 'Complete seller information and weighing before payment'}]};
     }
   });
 }
@@ -264,7 +278,7 @@ export async function previewPaymentEligibility(id: string, revision: number, us
 async function pay(client: PoolClient, ticket: Ticket, command: z.infer<typeof buyingCommandSchema>, user: PublicUser) {
   if (!canRecordBuyingPayment(user)) fail('Payment is not permitted for this account',403);
   if (ticket.buying?.stage === 'PAID') return ticket;
-  if (ticket.buying?.stage !== 'FINALIZED' || !ticket.buying.sellerIdentity || !command.disbursed || !command.method) fail('Finalize the purchase and confirm actual cash handover or check issuance before recording payment');
+  if (ticket.buying?.stage !== 'FINALIZED' || !command.disbursed || !command.method) fail('Finalize the purchase and confirm actual cash handover or check issuance before recording payment');
   const eligibility = await paymentEligibility(client,ticket);
   if (!eligibility.allowedMethods.includes(command.method)) fail(eligibility.reasons.filter(reason => !reason.method || reason.method === command.method).map(reason => reason.message).join(' '));
   if (eligibility.permitRequired && !command.permitReference?.trim()) fail('Required valid seller permit reference is missing');
@@ -313,7 +327,7 @@ export async function executeBuyingCommand(command: z.infer<typeof buyingCommand
         next = { ...legacy };
       } else {
         if (legacy) fail('Ticket number already exists');
-        const seller = z.object({customerName:z.string().trim().min(1).max(200),customerId:z.string().max(120).optional(),customerPhone:z.string().max(80).optional(),customerIdNumber:z.string().max(120).optional(),vehicleLicensePlate:z.string().max(80).optional(),notes:z.string().max(2000).optional(),complianceCaptures:z.record(z.string().max(1000000).optional()).optional()}).safeParse(command.ticket);
+        const seller = z.object({customerName:z.string().trim().min(1).max(200),customerId:z.string().max(120).optional(),customerPhone:z.string().max(80).optional(),customerAddress:z.string().max(1000).optional(),customerIdNumber:z.string().max(120).optional(),vehicleLicensePlate:z.string().max(80).optional(),notes:z.string().max(2000).optional(),complianceCaptures:z.record(z.string().max(1000000).optional()).optional()}).safeParse(command.ticket);
         if (!seller.success) fail('Invalid seller draft',400);
         next = { ...seller.data,id:command.id,ticketType:'SCRAP_METAL',createdAt:new Date().toISOString(),status:'PENDING',scrapLines:[],grossTotal:0,totalDeductions:0,finalPayout:0,payoutMethod:'Cash',operatorName:user.fullName };
       }

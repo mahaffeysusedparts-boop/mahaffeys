@@ -73,7 +73,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ ticket, open, onOpen
               {ticket.buying ? ticket.buying.stage === 'PAID' ? 'PAYMENT RECEIPT — DUPLICATE COPY' : ticket.buying.stage === 'VOIDED' ? 'VOIDED — NOT PAYABLE' : 'UNPAID VOUCHER — COPY, NOT A PAYMENT' : ticket.ticketType === 'CAR_SALVAGE' ? 'AUTO SALVAGE INTAKE VOUCHER' : 'LEGACY SCRAP VOUCHER — PAYMENT STATUS NOT RECONCILED'}
             </span>
             <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-950 border border-emerald-400 font-bold text-[10px] uppercase rounded">
-              <ShieldCheck className="w-3 h-3 text-emerald-700 inline" /> {ticket.buying ? ticket.buying.stage === 'PAID' ? 'PAYMENT REVIEW RECORDED' : 'SELLER REVIEW — PAYMENT REVIEW PENDING' : 'LEGACY COMPLIANCE RECORD'}
+              <ShieldCheck className="w-3 h-3 text-emerald-700 inline" /> {ticket.buying ? ticket.buying.stage === 'PAID' ? 'ACTUAL PAYMENT RECORDED' : 'PAYMENT NOT RECORDED' : 'LEGACY COMPLIANCE RECORD'}
             </span>
           </div>
         </div>
@@ -92,10 +92,10 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ ticket, open, onOpen
             {ticket.customerPhone && (
               <p><span className="font-bold">PHONE #:</span> {ticket.customerPhone}</p>
             )}
-            <p><span className="font-bold">ID #:</span> {ticket.customerIdNumber || 'VERIFIED ON FILE'}</p>
-            {ticket.vehicleLicensePlate && (
-              <p><span className="font-bold">VEHICLE PLATE:</span> {ticket.vehicleLicensePlate}</p>
-            )}
+            {ticket.customerAddress && <p><span className="font-bold">ADDRESS:</span> {ticket.customerAddress}</p>}
+            <p><span className="font-bold">ID #:</span> {ticket.customerIdNumber || ticket.buying?.sellerIdentity?.idNumber || 'NOT SUPPLIED'}</p>
+            <p><span className="font-bold">VEHICLE PLATE:</span> {ticket.vehicleLicensePlate || 'NOT SUPPLIED'}</p>
+            {!!ticket.buying?.intakeRequirementReview?.optionalMissing.length && <p><span className="font-bold">OPTIONAL NOT PROVIDED:</span> {ticket.buying.intakeRequirementReview.optionalMissing.join(', ')}</p>}
           </div>
         </div>
 

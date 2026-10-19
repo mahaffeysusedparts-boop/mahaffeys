@@ -404,6 +404,7 @@ export interface Ticket {
   customerId?: string;
   customerName: string;
   customerPhone?: string;
+  customerAddress?: string;
   customerIdNumber?: string;
   vehicleLicensePlate?: string;
   
