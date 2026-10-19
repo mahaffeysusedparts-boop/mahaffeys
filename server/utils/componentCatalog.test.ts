@@ -6,6 +6,7 @@ vi.mock('./db', () => ({ query: mocks.query }));
 vi.mock('./componentSources', () => ({ COMPONENT_SOURCES: [
   { id: 'test-a', partName: 'Engine', provider: 'powertrain', url: 'https://www.powertrainproducts.net/product/test-a/' },
   { id: 'test-b', partName: 'Engine', provider: 'powertrain', url: 'https://www.powertrainproducts.net/product/test-b/' },
+  { id: 'test-c', partName: 'Headlight set', partCategory: 'Lights', partNumber: 'TEST-LIGHT', provider: '1aauto', url: 'https://www.1aauto.com/test/i/test-c' },
 ] }));
 const html = '<h1>Test engine</h1><table><tr><th>Year</th><th>Make</th><th>Model</th><th>Engine</th><th>Note</th></tr><tr><td>2000 - 2002</td><td>TEST MAKE</td><td>TEST MODEL</td><td>5.3L V8</td><td>TEST ONLY</td></tr></table>';
 const snapshot: InterchangeMapping = { id: 'test-a', partCategory: 'TEST', partName: 'Engine', interchangeCode: 'TEST', description: 'Test only', compatibleModels: [{ make: 'TEST MAKE', model: 'TEST MODEL', startYear: 2000, endYear: 2002 }], source: { name: 'Test', url: 'https://www.powertrainproducts.net/product/test-a/', fetchedAt: '2020-01-01T00:00:00.000Z', stale: false, verification: 'unverified' } };
@@ -47,5 +48,18 @@ describe('broader component catalog', () => {
     const { loadComponentCatalog } = await import('./componentCatalog');
     expect((await loadComponentCatalog()).mappings).toHaveLength(2);
     expect(mocks.fetch).toHaveBeenCalledTimes(1);
+  });
+  it('loads additional categories independently without contaminating main catalog caches', async () => {
+    const lightHtml = '<h1>Test headlight TEST-LIGHT</h1><table><tr><th>Year</th><th>Make</th><th>Model</th><th>Description</th></tr><tr><td>2004-2007</td><td>TEST MAKE</td><td>TEST MODEL</td><td>Halogen only</td></tr></table>';
+    mocks.fetch.mockImplementation(async (url: string) => new Response(url.includes('1aauto') ? lightHtml : html));
+    const { loadComponentCatalog } = await import('./componentCatalog');
+    const [main, additional, duplicate] = await Promise.all([loadComponentCatalog(), loadComponentCatalog('additional'), loadComponentCatalog('additional')]);
+    expect(main.mappings).toHaveLength(2);
+    expect(additional.mappings).toHaveLength(1);
+    expect(additional.mappings[0].partCategory).toBe('Lights');
+    expect(duplicate.sources[0].name).toContain('1A Auto');
+    expect(mocks.fetch).toHaveBeenCalledTimes(3);
+    await Promise.all([loadComponentCatalog(), loadComponentCatalog('additional')]);
+    expect(mocks.fetch).toHaveBeenCalledTimes(3);
   });
 });
