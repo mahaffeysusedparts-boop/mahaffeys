@@ -130,6 +130,13 @@ export function localEvidenceRequests(files: SshFiles) {
   ];
 }
 
+export function localProcessContext(): string {
+  const names = new Set(Object.keys(process.env).filter(key => process.env[key]).map(key => key.toUpperCase()));
+  const presence = ['SYSTEMROOT', 'WINDIR', 'USERPROFILE', 'HOMEDRIVE', 'HOMEPATH', 'PROGRAMDATA', 'TEMP', 'TMP', 'PATH']
+    .map(name => `${name}: ${names.has(name) ? 'present' : 'missing'}`).join('\n');
+  return `Bridge process context (environment values omitted):\nPlatform: ${process.platform}\nArchitecture: ${process.arch}\nNode: ${process.version}\n${presence}`;
+}
+
 async function collectLocalSshEvidence(files: SshFiles, signal?: AbortSignal): Promise<string> {
   const results = await Promise.all(localEvidenceRequests(files).map(async request => {
     try {
@@ -148,7 +155,7 @@ async function collectLocalSshEvidence(files: SshFiles, signal?: AbortSignal): P
       return `${request.label}:\n${redactLogs(detail || `Check failed (${failure.code ?? 'unknown'}): ${failure.message}`)}`;
     }
   }));
-  return results.join('\n\n');
+  return [localProcessContext(), ...results].join('\n\n');
 }
 
 async function diagnosticFailure(code: number | null, output: string, errors: string, request: DiagnosticRequest, files: SshFiles, traceFile?: string, signal?: AbortSignal): Promise<Error> {
