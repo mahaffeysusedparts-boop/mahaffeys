@@ -677,9 +677,10 @@ export const storageService = {
   // Returns a subscription fn; call it to unsubscribe.
   subscribe,
 
-  /** Drops the in-memory snapshot for a key so the next read re-parses localStorage. */
-  refreshCacheFromStorage(key: string): void {
-    cache.delete(key);
+  /** Refreshes the cache from a server snapshot or invalidates the stored value. */
+  refreshCacheFromStorage(key: string, serverValue?: unknown): void {
+    if (serverValue === undefined) cache.delete(key);
+    else cache.set(key, serverValue);
     subscribers.get(key)?.forEach((fn) => fn());
   },
 };

@@ -42,6 +42,7 @@ interface SyncState {
   lastSyncedAt: number;
   connectionStatus: ConnectionStatus;
   queueSize: number;
+  pendingWrites: number;
   isOnline: boolean;
 }
 
@@ -52,9 +53,11 @@ export const SyncStatusIndicator: React.FC = () => {
     lastSyncedAt: 0,
     connectionStatus: "local",
     queueSize: 0,
+    pendingWrites: 0,
     isOnline: typeof navigator !== "undefined" ? navigator.onLine : true,
   });
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [isResyncing, setIsResyncing] = useState(false);
 
   useEffect(() => {
     // Subscribe to sync service
@@ -64,7 +67,7 @@ export const SyncStatusIndicator: React.FC = () => {
 
     // Subscribe to sharedStorage connection status
     const unsubscribeStorage = sharedStorage.subscribe((status) => {
-      setSyncState((prev) => ({ ...prev, connectionStatus: status }));
+      setSyncState((prev) => ({ ...prev, connectionStatus: status, pendingWrites: sharedStorage.getPendingWriteCount() }));
     });
 
     // Subscribe to offline queue
@@ -96,10 +99,16 @@ export const SyncStatusIndicator: React.FC = () => {
   }, []);
 
   const handleForceResync = useCallback(async () => {
+    setIsResyncing(true);
     try {
-      toast.info("Force re-syncing all data...");
+      toast.info("Re-syncing server data...");
+      await offlineQueue.flushNow();
+      // Upload pending edits before hydration can replace local snapshots.
+      if (sharedStorage.getPendingWriteCount() > 0) await sharedStorage.flushNow();
       await sharedStorage.hydrate();
       await sharedStorage.flushNow();
+      await syncService.syncNow();
+      if (offlineQueue.getQueueSize() > 0) throw new Error("Offline changes are still waiting to sync.");
       diagnosticLogger.sync("SyncStatusIndicator", "Force re-sync completed");
       toast.success("Sync completed successfully");
       setIsDrawerOpen(false);
@@ -107,6 +116,8 @@ export const SyncStatusIndicator: React.FC = () => {
       const message = error instanceof Error ? error.message : "Sync failed";
       diagnosticLogger.error("SyncStatusIndicator", "Force re-sync failed", error as Error);
       toast.error(`Sync failed: ${message}`);
+    } finally {
+      setIsResyncing(false);
     }
   }, []);
 
@@ -135,48 +146,43 @@ export const SyncStatusIndicator: React.FC = () => {
     return `${hours}h ago`;
   };
 
-  // Determine badge status
+  const pendingCount = syncState.queueSize + syncState.pendingWrites;
+  const syncError = syncState.connectionStatus === "error"
+    ? sharedStorage.getLastError()
+    : syncState.syncStatus === "error" ? syncService.getStatus().lastError : null;
+
   const getBadgeStatus = () => {
     if (!syncState.isOnline) {
       return {
-        color: "bg-yellow-500",
-        text: "Offline",
-        icon: WifiOff,
+        className: "border-yellow-500/50 bg-yellow-950/30 text-yellow-300",
+        text: "Offline", icon: WifiOff,
         tooltip: "You are offline - changes queued locally",
       };
     }
-
-    if (syncState.queueSize > 0) {
-      return {
-        color: "bg-blue-500",
-        text: `Syncing (${syncState.queueSize})`,
-        icon: RefreshCw,
-        tooltip: "Syncing queued changes",
-      };
-    }
-
     if (syncState.syncStatus === "error" || syncState.connectionStatus === "error") {
       return {
-        color: "bg-red-500",
-        text: "Sync Alert",
-        icon: AlertTriangle,
-        tooltip: "Sync error - click for details",
+        className: "border-red-500/50 bg-red-950/30 text-red-300",
+        text: "Sync Alert", icon: AlertTriangle,
+        tooltip: syncError || "Sync error - click for details",
       };
     }
-
-    if (syncState.syncStatus === "polling") {
+    if (isResyncing || pendingCount > 0 || syncState.syncStatus === "polling" || syncState.connectionStatus === "connecting") {
       return {
-        color: "bg-blue-400",
-        text: "Syncing...",
-        icon: RefreshCw,
-        tooltip: "Syncing with server",
+        className: "border-blue-500/50 bg-blue-950/30 text-blue-300",
+        text: pendingCount > 0 ? `Syncing (${pendingCount})` : "Syncing...",
+        icon: RefreshCw, tooltip: "Syncing with server",
       };
     }
-
+    if (syncState.connectionStatus === "local" || syncState.lastSyncedAt === 0) {
+      return {
+        className: "border-yellow-500/50 bg-yellow-950/30 text-yellow-300",
+        text: "Not synced", icon: Clock,
+        tooltip: "Server sync has not completed yet",
+      };
+    }
     return {
-      color: "bg-emerald-500",
-      text: "Synced",
-      icon: CheckCircle2,
+      className: "border-emerald-500/50 bg-emerald-950/30 text-emerald-300",
+      text: "Synced", icon: CheckCircle2,
       tooltip: "All changes synced",
     };
   };
@@ -193,29 +199,17 @@ export const SyncStatusIndicator: React.FC = () => {
               <Button
                 variant="ghost"
                 size="sm"
-                className={`relative h-9 px-2.5 gap-1.5 rounded-lg border transition-all hover:scale-105 active:scale-95 ${
-                  syncState.isOnline
-                    ? syncState.queueSize > 0
-                      ? "border-blue-500/50 bg-blue-950/30 text-blue-300"
-                      : syncState.syncStatus === "error"
-                        ? "border-red-500/50 bg-red-950/30 text-red-300"
-                        : "border-emerald-500/50 bg-emerald-950/30 text-emerald-300"
-                    : "border-yellow-500/50 bg-yellow-950/30 text-yellow-300"
-                }`}
-                aria-label="Sync status"
+                className={`relative h-9 px-2.5 gap-1.5 rounded-lg border transition-colors ${badge.className}`}
+                aria-label={`Sync status: ${badge.text}`}
               >
-                <Icon
-                  className={`w-4 h-4 ${
-                    syncState.queueSize > 0 && syncState.isOnline ? "animate-spin" : ""
-                  }`}
-                />
+                <Icon className={`w-4 h-4 ${Icon === RefreshCw ? "motion-safe:animate-spin" : ""}`} />
                 <span className="text-xs font-semibold hidden sm:inline">{badge.text}</span>
-                {syncState.queueSize > 0 && (
+                {pendingCount > 0 && (
                   <Badge
                     variant="secondary"
-                    className="absolute -top-1 -right-1 h-4 w-4 rounded-full p-0 flex items-center justify-center text-[9px] bg-amber-500 text-slate-950"
+                    className="absolute -top-1 -right-1 h-4 min-w-4 rounded-full px-1 flex items-center justify-center text-[9px] bg-amber-500 text-slate-950"
                   >
-                    {syncState.queueSize}
+                    {pendingCount}
                   </Badge>
                 )}
               </Button>
@@ -230,6 +224,13 @@ export const SyncStatusIndicator: React.FC = () => {
               </SheetHeader>
 
               <div className="flex-1 overflow-y-auto py-4 space-y-4">
+                {syncError && (
+                  <div role="alert" className="rounded-xl border border-red-500/40 bg-red-950/30 p-3 text-sm text-red-200">
+                    <div className="mb-1 flex items-center gap-2 font-semibold"><AlertTriangle className="h-4 w-4" />Server sync failed</div>
+                    <p className="break-words">{syncError}</p>
+                    <p className="mt-2 text-xs">Pending uploads are retained for retry. Use Re-sync Now to try again.</p>
+                  </div>
+                )}
                 {/* Status Overview */}
                 <div className="grid grid-cols-2 gap-3">
                   <div className="p-3 bg-slate-900 rounded-xl border border-slate-800">
@@ -258,7 +259,7 @@ export const SyncStatusIndicator: React.FC = () => {
                   </div>
                   <div className="p-3 bg-slate-900 rounded-xl border border-slate-800">
                     <div className="text-[10px] text-slate-400 uppercase tracking-wider">Queued</div>
-                    <div className="text-sm font-bold mt-1 text-amber-400">{syncState.queueSize}</div>
+                    <div className="text-sm font-bold mt-1 text-amber-400">{pendingCount}</div>
                   </div>
                 </div>
 
@@ -299,11 +300,12 @@ export const SyncStatusIndicator: React.FC = () => {
                 <div className="space-y-2">
                   <Button
                     onClick={handleForceResync}
-                    className="w-full bg-emerald-600 hover:bg-emerald-500 text-white gap-2"
+                    disabled={isResyncing || !syncState.isOnline}
+                    className="w-full rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white gap-2"
                     size="sm"
                   >
-                    <RefreshCw className="w-4 h-4" />
-                    Force Re-sync Now
+                    <RefreshCw className={`w-4 h-4 ${isResyncing ? "motion-safe:animate-spin" : ""}`} />
+                    {isResyncing ? "Re-syncing..." : "Re-sync Now"}
                   </Button>
                   <Button
                     onClick={handleDownloadDiagnostics}

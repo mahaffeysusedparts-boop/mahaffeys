@@ -469,6 +469,7 @@ let flushPromise: Promise<void> | null = null;
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
 let retryCount = 0;
 let retryTimer: ReturnType<typeof setTimeout> | null = null;
+let lastSyncError: string | null = null;
 const FLUSH_DEBOUNCE_MS = 200;
 const MAX_RETRY_DELAY_MS = 30_000;
 
@@ -478,6 +479,7 @@ function isQuotaErrorSafe(error: unknown) {
 
 async function flushWrites(): Promise<void> {
   if (flushPromise) return flushPromise;
+  if (!remoteEnabled) return;
 
   if (flushTimer) {
     clearTimeout(flushTimer);
@@ -485,19 +487,21 @@ async function flushWrites(): Promise<void> {
   }
 
   flushPromise = (async () => {
-    while (pendingWrites.size > 0) {
+    while (pendingWrites.size > 0 && remoteEnabled) {
       const batch = [...pendingWrites.entries()];
-      pendingWrites.clear();
 
       for (const [key, serialized] of batch) {
+        if (!remoteEnabled) return;
         try {
           await uploadSerializedState(key, serialized);
-          setStatus("connected");
-          retryCount = 0;
+          // Keep newer edits queued if they arrived while this upload was running.
+          if (pendingWrites.get(key) === serialized) pendingWrites.delete(key);
+          setStatus(connectionStatus);
         } catch (error) {
           const message = error instanceof Error ? error.message : "The server rejected the update.";
           console.error(`Server sync failed for ${key}:`, error);
-          if (!pendingWrites.has(key)) pendingWrites.set(key, serialized);
+          lastSyncError = message;
+          diagnosticLogger.error("sharedStorage", `Upload failed for ${key}`, error instanceof Error ? error : undefined);
           setStatus("error");
           notifySyncError(message);
           retryCount += 1;
@@ -505,6 +509,13 @@ async function flushWrites(): Promise<void> {
           return;
         }
       }
+    }
+    if (remoteEnabled) {
+      lastSyncError = null;
+      retryCount = 0;
+      if (retryTimer) clearTimeout(retryTimer);
+      retryTimer = null;
+      setStatus("connected");
     }
   })().finally(() => {
     flushPromise = null;
@@ -576,6 +587,7 @@ export const sharedStorage = {
     notifyKey(key);
     if (remoteEnabled && (SHARED_KEYS as readonly string[]).includes(key)) {
       pendingWrites.set(key, value);
+      setStatus(connectionStatus);
       if (connectionStatus === "connected") {
         scheduleFlush();
       }
@@ -597,7 +609,14 @@ export const sharedStorage = {
 
   async hydrate() {
     setStatus("connecting");
-    const response = await apiRequest<{ state: Record<string, unknown> }>("/api/state");
+    let response: { state: Record<string, unknown> };
+    try {
+      response = await apiRequest<{ state: Record<string, unknown> }>("/api/state");
+    } catch (error) {
+      lastSyncError = error instanceof Error ? error.message : "Unable to load server data.";
+      setStatus("error");
+      throw error;
+    }
     const entries = Object.entries(response.state);
     const serverKeys = new Set(entries.map(([key]) => key));
     const mergeKeys = new Set(["mahaffeys_tickets", "mahaffeys_pull_yard_vehicles", "mahaffeys_yard_layout", "mahaffeys_tools", "mahaffeys_tool_checkouts"]);
@@ -626,12 +645,22 @@ export const sharedStorage = {
     }
 
     remoteEnabled = true;
-    setStatus("connected");
-    if (pendingWrites.size > 0) void flushWrites();
+    if (pendingWrites.size > 0) {
+      void flushWrites();
+    } else {
+      lastSyncError = null;
+      setStatus("connected");
+    }
   },
 
   disconnect() {
     remoteEnabled = false;
+    if (flushTimer) clearTimeout(flushTimer);
+    if (retryTimer) clearTimeout(retryTimer);
+    flushTimer = null;
+    retryTimer = null;
+    pendingWrites.clear();
+    lastSyncError = null;
     setStatus("local");
   },
 
@@ -651,8 +680,17 @@ export const sharedStorage = {
     return connectionStatus;
   },
 
+  getLastError() {
+    return lastSyncError;
+  },
+
+  getPendingWriteCount() {
+    return pendingWrites.size;
+  },
+
   subscribe(listener: StatusListener) {
     listeners.add(listener);
+    listener(connectionStatus);
     return () => {
       listeners.delete(listener);
     };
@@ -666,7 +704,11 @@ export const sharedStorage = {
   },
 
   async flushNow() {
-    return flushWrites();
+    if (!remoteEnabled) throw new Error("Server sync is not connected. Reload server data before retrying.");
+    await flushWrites();
+    if (lastSyncError || pendingWrites.size > 0) {
+      throw new Error(lastSyncError || "Some changes are still waiting to upload.");
+    }
   },
 
   readMtime(key: SharedKey | string) {

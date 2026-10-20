@@ -136,6 +136,8 @@ class SyncService {
   private heartbeatTimer: ReturnType<typeof setTimeout> | null = null;
   private intervalMs = POLL_INTERVAL_MS;
   private inFlight = false;
+  private pollPromise: Promise<void> | null = null;
+  private lastError: string | null = null;
   private docVisible = typeof document === "undefined" || document.visibilityState !== "hidden";
   private errorCount = 0;
   private lastNotifiedError = 0;
@@ -222,8 +224,16 @@ class SyncService {
     };
   }
 
-  getStatus(): { status: SyncStatus; lastSyncedAt: number; isOnline: boolean; serverTimeOffset: number } {
-    return { status: this.status, lastSyncedAt: this.lastSyncedAt, isOnline: this.isOnline, serverTimeOffset: this.serverTimeOffset };
+  getStatus() {
+    return { status: this.status, lastSyncedAt: this.lastSyncedAt, isOnline: this.isOnline, serverTimeOffset: this.serverTimeOffset, lastError: this.lastError };
+  }
+
+  async syncNow(): Promise<void> {
+    if (!this.isOnline) throw new Error("You are offline. Reconnect before syncing.");
+    // Finish any active poll, then make a fresh request after manual recovery.
+    if (this.pollPromise) await this.pollPromise;
+    await this.poll();
+    if (this.lastError) throw new Error(this.lastError);
   }
 
   private notify() {
@@ -242,7 +252,14 @@ class SyncService {
     this.pollTimer = setTimeout(() => void this.poll(), delay);
   }
 
-  private async poll() {
+  private poll(): Promise<void> {
+    if (!this.pollPromise) {
+      this.pollPromise = this.performPoll().finally(() => { this.pollPromise = null; });
+    }
+    return this.pollPromise;
+  }
+
+  private async performPoll() {
     if (this.inFlight) {
       this.scheduleNextPoll();
       return;
@@ -270,19 +287,16 @@ class SyncService {
         const merged = MERGE_KEYS.has(entry.key) && localValue
           ? mergeArrays(localValue, entry.value)
           : entry.value;
-        const serialized = JSON.stringify(merged);
-        localStorage.setItem(entry.key, serialized);
-        // mtime key is updated by persistLocalSnapshot, so mirror it.
-        try { localStorage.setItem(`${entry.key}__mtime__`, String(Date.parse(entry.updatedAt))); } catch { /* ignore */ }
+        sharedStorage.applyServerValue(entry.key, merged);
         applied += 1;
-        // Drop storageService's stale in-memory snapshot for this key so any
-        // getTickets()/getMetals() call re-reads the merged localStorage data.
-        storageService.refreshCacheFromStorage(entry.key);
-        // Trigger a soft refresh on any open components.
+        // Keep the full server value in memory even if the local cache is full.
+        storageService.refreshCacheFromStorage(entry.key, merged);
         window.dispatchEvent(new CustomEvent("mahaffeys:remote-sync", { detail: { key: entry.key } }));
       }
       this.lastSyncedAt = Date.parse(response.serverTime) || Date.now();
       this.errorCount = 0;
+      this.lastError = null;
+      this.intervalMs = this.docVisible ? POLL_INTERVAL_MS : SLOW_POLL_INTERVAL_MS;
       this.setStatus("idle");
       if (applied > 0) {
         // Throttle success toasts so a busy shared database doesn't spam users.
@@ -290,6 +304,7 @@ class SyncService {
       }
     } catch (error) {
       this.errorCount += 1;
+      this.lastError = error instanceof Error ? error.message : "Background sync failed.";
       this.setStatus("error");
       // Exponential backoff on consecutive failures (capped at 60s).
       this.intervalMs = Math.min(this.intervalMs * 2, 60_000);
