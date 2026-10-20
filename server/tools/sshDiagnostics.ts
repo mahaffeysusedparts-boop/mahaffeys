@@ -3,6 +3,7 @@ import { access, mkdtemp, open, rm } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
+import { runWindowsSshProcess } from './windowsSshProcess';
 
 const execFileAsync = promisify(execFile);
 
@@ -132,10 +133,15 @@ export function localEvidenceRequests(files: SshFiles) {
 async function collectLocalSshEvidence(files: SshFiles, signal?: AbortSignal): Promise<string> {
   const results = await Promise.all(localEvidenceRequests(files).map(async request => {
     try {
-      const { stdout, stderr } = await execFileAsync(openSshExecutable(request.executable), request.args, {
-        windowsHide: true, timeout: 4000, maxBuffer: 8192, encoding: 'utf8', signal,
-      });
-      return `${request.label}:\n${redactLogs(`${stdout}\n${stderr}`).trim() || 'No output returned.'}`;
+      const executable = openSshExecutable(request.executable);
+      const result = process.platform === 'win32'
+        ? await runWindowsSshProcess(executable, request.args, { timeout: 4000, maxBuffer: 8192, signal })
+        : await execFileAsync(executable, request.args, {
+          windowsHide: true, timeout: 4000, maxBuffer: 8192, encoding: 'utf8', signal,
+        });
+      const detail = redactLogs(`${result.stdout}\n${result.stderr}`).trim();
+      const status = 'code' in result && result.code !== 0 ? `Check failed (${result.code}).\n` : '';
+      return `${request.label}:\n${status}${detail || 'No output returned.'}`;
     } catch (error) {
       const failure = error as Error & { stdout?: string; stderr?: string; code?: string | number };
       const detail = `${failure.stdout ?? ''}\n${failure.stderr ?? ''}`.trim();
@@ -143,6 +149,17 @@ async function collectLocalSshEvidence(files: SshFiles, signal?: AbortSignal): P
     }
   }));
   return results.join('\n\n');
+}
+
+async function diagnosticFailure(code: number | null, output: string, errors: string, request: DiagnosticRequest, files: SshFiles, traceFile?: string, signal?: AbortSignal): Promise<Error> {
+  const trace = traceFile ? await readSshTrace(traceFile) : '';
+  const detail = [errors.trim(), output.trim(), trace].filter(Boolean).join('\n');
+  const explanation = sshFailure(detail);
+  const localEvidence = request.operation === 'connection' ? await collectLocalSshEvidence(files, signal) : '';
+  const message = detail
+    ? `SSH exited with code ${code}.\n${explanation}${trace && explanation !== detail ? `\nOpenSSH trace:\n${trace}` : ''}`
+    : `SSH exited with code ${code} without an error message${traceFile ? ' or a readable OpenSSH trace' : ''}. Private-key and known_hosts files were found, but authentication and connectivity remain unverified.`;
+  return new Error(`${message}${localEvidence ? `\n\nLocal read-only checks:\n${localEvidence}` : ''}`);
 }
 
 export async function runDiagnostic(request: DiagnosticRequest, files: SshFiles, signal?: AbortSignal): Promise<string> {
@@ -155,6 +172,13 @@ export async function runDiagnostic(request: DiagnosticRequest, files: SshFiles,
   const traceFile = traceDirectory ? join(traceDirectory, 'connection.log') : undefined;
   const args = [...(traceFile ? ['-vv', '-E', traceFile] : []), ...sshArgs(request, files)];
   try {
+    if (process.platform === 'win32') {
+      const { code, stdout, stderr } = await runWindowsSshProcess(executable, args, {
+        timeout: 25_000, maxBuffer: 256 * 1024, signal,
+      });
+      if (code !== 0) throw await diagnosticFailure(code, stdout, stderr, request, files, traceFile, signal);
+      return redactLogs(stdout + (stderr ? `\nSSH notices:\n${stderr}` : '')).trim();
+    }
     return await new Promise<string>((resolve, reject) => {
     const child = spawn(executable, args, { shell: false, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
     child.stdin.end();
@@ -197,16 +221,7 @@ export async function runDiagnostic(request: DiagnosticRequest, files: SshFiles,
         resolve(redactLogs(output + (errors ? `\nSSH notices:\n${errors}` : '')).trim());
         return;
       }
-      void (async () => {
-        const trace = traceFile ? await readSshTrace(traceFile) : '';
-        const detail = [errors.trim(), output.trim(), trace].filter(Boolean).join('\n');
-        const explanation = sshFailure(detail);
-        const localEvidence = request.operation === 'connection' ? await collectLocalSshEvidence(files, signal) : '';
-        const message = detail
-          ? `SSH exited with code ${code}.\n${explanation}${trace && explanation !== detail ? `\nOpenSSH trace:\n${trace}` : ''}`
-          : `SSH exited with code ${code} without an error message${traceFile ? ' or a readable OpenSSH trace' : ''}. Private-key and known_hosts files were found, but authentication and connectivity remain unverified.`;
-        reject(new Error(`${message}${localEvidence ? `\n\nLocal read-only checks:\n${localEvidence}` : ''}`));
-      })().catch(reject);
+      void diagnosticFailure(code, output, errors, request, files, traceFile, signal).then(reject).catch(reject);
     });
     });
   } finally {

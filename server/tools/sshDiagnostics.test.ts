@@ -7,8 +7,33 @@ import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { checkSshFiles, localEvidenceRequests, readSshTrace, redactLogs, requestToken, sshArgs, sshFailure, type DiagnosticRequest } from './sshDiagnostics';
+import { runWindowsSshProcess } from './windowsSshProcess';
 
 const files = { identityFile: 'C:\\Users\\jackh\\.ssh\\mahaffeys_mcp', knownHostsFile: 'C:\\Users\\jackh\\.ssh\\known_hosts' };
+
+describe('file-backed SSH subprocesses', () => {
+  it('provides empty stdin and captures both output streams and the exit code', async () => {
+    const result = await runWindowsSshProcess(process.execPath, ['-e',
+      'const fs = require("node:fs"); if (fs.readFileSync(0).length) process.exit(9); fs.writeSync(1, "version output"); fs.writeSync(2, "error output"); process.exitCode = 7;',
+    ], { timeout: 4000, maxBuffer: 8192 });
+    expect(result).toEqual({ code: 7, stdout: 'version output', stderr: 'error output' });
+  });
+
+  it('rejects combined output above the configured limit', async () => {
+    await expect(runWindowsSshProcess(process.execPath, ['-e',
+      'require("node:fs").writeSync(1, "x".repeat(9000));',
+    ], { timeout: 4000, maxBuffer: 8192 })).rejects.toThrow('output exceeded');
+  });
+
+  it('terminates timed-out processes and rejects cancelled requests', async () => {
+    await expect(runWindowsSshProcess(process.execPath, ['-e', 'setInterval(() => {}, 1000);'],
+      { timeout: 200, maxBuffer: 8192 })).rejects.toThrow('timed out');
+    const controller = new AbortController();
+    controller.abort();
+    await expect(runWindowsSshProcess(process.execPath, ['-V'],
+      { timeout: 4000, maxBuffer: 8192, signal: controller.signal })).rejects.toThrow('cancelled');
+  });
+});
 
 describe('read-only SSH diagnostics', () => {
   it('accepts only approved diagnostic tokens and bounded logs', () => {
