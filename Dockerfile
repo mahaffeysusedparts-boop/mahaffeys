@@ -18,7 +18,9 @@ RUN apt-get update \
         cups-client \
         chromium \
     && rm -rf /var/lib/apt/lists/* \
-    && chown -R node:node /app
+    && chown -R node:node /app \
+    && test "$(id -u node)" = 1000 \
+    && test "$(id -g node)" = 1000
 USER node
 EXPOSE 3000
 CMD ["node", ".output/server/index.mjs"]

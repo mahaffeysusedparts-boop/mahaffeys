@@ -126,6 +126,7 @@ type KeyListener = (key: string) => void;
 
 let connectionStatus: ConnectionStatus = "local";
 let remoteEnabled = false;
+let syncGeneration = 0;
 const listeners = new Set<StatusListener>();
 const keyListeners = new Set<KeyListener>();
 
@@ -477,7 +478,9 @@ const FLUSH_DEBOUNCE_MS = 200;
 const MAX_RETRY_DELAY_MS = 30_000;
 
 async function reconcileHistoricalTickets(): Promise<boolean> {
+  const generation = syncGeneration;
   const response = await apiRequest<{ state: Record<string, unknown> }>("/api/state");
+  if (!remoteEnabled || generation !== syncGeneration) return false;
   const serialized = pendingWrites.get("mahaffeys_tickets");
   const serverTickets = response.state.mahaffeys_tickets;
   if (!serialized || !Array.isArray(serverTickets)) return false;
@@ -511,24 +514,45 @@ async function flushWrites(): Promise<void> {
     flushTimer = null;
   }
 
+  const generation = syncGeneration;
   flushPromise = (async () => {
+    let reconciledHistory = false;
     while (pendingWrites.size > 0 && remoteEnabled) {
-      const batch = [...pendingWrites.entries()];
+      const batch = [...pendingWrites.entries()].filter(([key]) => !blockedWrites.has(key));
+      if (batch.length === 0) break;
 
       for (const [key, serialized] of batch) {
-        if (!remoteEnabled) return;
+        if (!remoteEnabled || generation !== syncGeneration) return;
         try {
           await uploadSerializedState(key, serialized);
+          if (!remoteEnabled || generation !== syncGeneration) return;
           // Keep newer edits queued if they arrived while this upload was running.
           if (pendingWrites.get(key) === serialized) pendingWrites.delete(key);
+          blockedWrites.delete(key);
           setStatus(connectionStatus);
         } catch (error) {
+          if (!remoteEnabled || generation !== syncGeneration) return;
           const message = error instanceof Error ? error.message : "The server rejected the update.";
-          console.error(`Server sync failed for ${key}:`, error);
+          if (!reconciledHistory && key === "mahaffeys_tickets" && error instanceof ApiError && error.status === 409 && message === "Historical financial meaning cannot be replaced by generic state writes") {
+            reconciledHistory = true;
+            try {
+              if (await reconcileHistoricalTickets()) continue;
+            } catch (refreshError) {
+              diagnosticLogger.warn("sharedStorage", "Unable to refresh protected ticket history", {
+                error: refreshError instanceof Error ? refreshError.message : String(refreshError),
+              });
+            }
+          }
+          if (!remoteEnabled || generation !== syncGeneration) return;
+          const permanent = error instanceof ApiError && error.status >= 400 && error.status < 500 && ![408, 429].includes(error.status);
           lastSyncError = message;
           diagnosticLogger.error("sharedStorage", `Upload failed for ${key}`, error instanceof Error ? error : undefined);
           setStatus("error");
-          notifySyncError(message);
+          notifySyncError(message, !permanent);
+          if (permanent) {
+            if (pendingWrites.get(key) === serialized) blockedWrites.set(key, message);
+            continue;
+          }
           retryCount += 1;
           scheduleRetry();
           return;
@@ -536,11 +560,11 @@ async function flushWrites(): Promise<void> {
       }
     }
     if (remoteEnabled) {
-      lastSyncError = null;
       retryCount = 0;
       if (retryTimer) clearTimeout(retryTimer);
       retryTimer = null;
-      setStatus("connected");
+      lastSyncError = blockedWrites.values().next().value ?? null;
+      setStatus(lastSyncError ? "error" : "connected");
     }
   })().finally(() => {
     flushPromise = null;
@@ -611,11 +635,10 @@ export const sharedStorage = {
     persistLocalSnapshot(key, value);
     notifyKey(key);
     if (remoteEnabled && (SHARED_KEYS as readonly string[]).includes(key)) {
+      if (pendingWrites.get(key) !== value) blockedWrites.delete(key);
       pendingWrites.set(key, value);
       setStatus(connectionStatus);
-      if (connectionStatus === "connected") {
-        scheduleFlush();
-      }
+      scheduleFlush();
     }
   },
 
@@ -648,7 +671,9 @@ export const sharedStorage = {
 
     for (const [key, serverValue] of entries) {
       if (!(SHARED_KEYS as readonly string[]).includes(key)) continue;
-      const localRaw = localStorage.getItem(key);
+      const localRaw = key === "mahaffeys_tickets"
+        ? pendingWrites.get(key) ?? localStorage.getItem(key)
+        : localStorage.getItem(key);
       const localValue = localRaw ? safeParseJSON(key, localRaw) : null;
       const mergedValue = mergeKeys.has(key) && localValue
         ? mergeRecords(localValue, serverValue)
@@ -657,7 +682,13 @@ export const sharedStorage = {
       const serialized = JSON.stringify(value);
       persistLocalSnapshot(key, serialized);
       notifyKey(key);
-      if (serialized !== JSON.stringify(serverValue)) pendingWrites.set(key, serialized);
+      if (serialized !== JSON.stringify(serverValue)) {
+        if (pendingWrites.get(key) !== serialized) blockedWrites.delete(key);
+        pendingWrites.set(key, serialized);
+      } else if (key === "mahaffeys_tickets") {
+        pendingWrites.delete(key);
+        blockedWrites.delete(key);
+      }
     }
 
     for (const [key, localValue] of Object.entries(collectLocalState())) {
@@ -680,11 +711,14 @@ export const sharedStorage = {
 
   disconnect() {
     remoteEnabled = false;
+    syncGeneration += 1;
     if (flushTimer) clearTimeout(flushTimer);
     if (retryTimer) clearTimeout(retryTimer);
     flushTimer = null;
     retryTimer = null;
     pendingWrites.clear();
+    blockedWrites.clear();
+    rejectedFinancialSnapshots.clear();
     lastSyncError = null;
     setStatus("local");
   },
@@ -713,6 +747,14 @@ export const sharedStorage = {
     return pendingWrites.size;
   },
 
+  getBlockedWriteCount() {
+    return blockedWrites.size;
+  },
+
+  getRejectedFinancialSnapshots() {
+    return Object.fromEntries(rejectedFinancialSnapshots);
+  },
+
   subscribe(listener: StatusListener) {
     listeners.add(listener);
     listener(connectionStatus);
@@ -730,6 +772,8 @@ export const sharedStorage = {
 
   async flushNow() {
     if (!remoteEnabled) throw new Error("Server sync is not connected. Reload server data before retrying.");
+    // An explicit retry may retry rejected updates once; background retries skip them.
+    blockedWrites.clear();
     await flushWrites();
     if (lastSyncError || pendingWrites.size > 0) {
       throw new Error(lastSyncError || "Some changes are still waiting to upload.");

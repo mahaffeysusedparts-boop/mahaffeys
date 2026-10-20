@@ -50,4 +50,19 @@ describe('background sync alert recovery', () => {
     expect(syncService.getStatus().lastError).toBeNull();
     syncService.stop();
   });
+
+  it('does not let a newer workstation copy overwrite historical financial fields', async () => {
+    const remote = { id: 'history', ticketType: 'SCRAP_METAL', status: 'COMPLETED', finalPayout: 150, updatedAt: '2025-01-01' };
+    const local = { ...remote, finalPayout: 0, status: 'PENDING', updatedAt: '2026-01-01' };
+    vi.stubGlobal('localStorage', { getItem: () => JSON.stringify([local]) });
+    mocks.request.mockResolvedValueOnce({
+      entries: [{ key: 'mahaffeys_tickets', value: [remote], updatedAt: new Date().toISOString(), updatedBy: 'other-user' }],
+      serverTime: new Date().toISOString(), count: 1,
+    });
+    const { syncService } = await import('./syncService');
+    await syncService.syncNow();
+    const applied = mocks.apply.mock.calls[0][1];
+    expect(applied[0]).toMatchObject({ status: 'COMPLETED', finalPayout: 150 });
+    syncService.stop();
+  });
 });

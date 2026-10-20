@@ -122,8 +122,11 @@ export const SyncStatusIndicator: React.FC = () => {
   }, []);
 
   const handleDownloadDiagnostics = useCallback(() => {
-    const logs = diagnosticLogger.exportLogs();
-    const blob = new Blob([logs], { type: "application/json" });
+    const bundle = {
+      logs: JSON.parse(diagnosticLogger.exportLogs()),
+      rejectedFinancialSnapshots: sharedStorage.getRejectedFinancialSnapshots(),
+    };
+    const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -228,7 +231,15 @@ export const SyncStatusIndicator: React.FC = () => {
                   <div role="alert" className="rounded-xl border border-red-500/40 bg-red-950/30 p-3 text-sm text-red-200">
                     <div className="mb-1 flex items-center gap-2 font-semibold"><AlertTriangle className="h-4 w-4" />Server sync failed</div>
                     <p className="break-words">{syncError}</p>
-                    <p className="mt-2 text-xs">Pending uploads are retained for retry. Use Re-sync Now to try again.</p>
+                    <p className="mt-2 text-xs">{sharedStorage.getBlockedWriteCount() > 0
+                      ? "The server rejected this update. Automatic retries are paused; review the error before using Re-sync Now."
+                      : "Pending uploads are retained for retry. Use Re-sync Now to try again."}</p>
+                  </div>
+                )}
+                {Object.keys(sharedStorage.getRejectedFinancialSnapshots()).length > 0 && (
+                  <div className="rounded-xl border border-amber-500/40 bg-amber-950/30 p-3 text-sm text-amber-200">
+                    <p className="font-semibold">Protected financial history reconciled</p>
+                    <p className="mt-1 text-xs">The server's protected values were kept. Download the Diagnostic Bundle below before closing or reloading this page to retain the rejected local snapshot. It contains sensitive ticket data; store it securely.</p>
                   </div>
                 )}
                 {/* Status Overview */}

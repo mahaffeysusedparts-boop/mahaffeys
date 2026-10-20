@@ -8,6 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { networkPrinterService, type NetworkPrinter, type PrinterKind } from "@/services/networkPrinterService";
+import { diagnosticLogger } from "@/services/diagnosticLogger";
+import { redactDiagnosticText } from "@/lib/diagnosticReport";
 
 export function NetworkPrinterManager() {
   const [printers, setPrinters] = useState<NetworkPrinter[]>([]);
@@ -39,9 +41,11 @@ export function NetworkPrinterManager() {
       setPrinters((current) => [...current, printer].sort((a, b) => a.name.localeCompare(b.name)));
       setName("");
       setHost("");
-      toast.success("Network printer added", { description: `${printer.name} is ready for shared printing.` });
+      toast.success("Network printer queue created", { description: `${printer.name} is saved. No test page was sent; physical printing has not been verified.` });
     } catch (error) {
-      toast.error("Could not add printer", { description: error instanceof Error ? error.message : "CUPS could not configure this printer" });
+      const description = redactDiagnosticText(error instanceof Error ? error.message : "CUPS could not configure this printer", 600);
+      diagnosticLogger.log("error", "NetworkPrinterManager", `Printer queue add failed: ${description}`);
+      toast.error("Could not add printer", { description });
     } finally {
       setAdding(false);
     }
@@ -54,7 +58,9 @@ export function NetworkPrinterManager() {
       setPrinters((current) => current.filter((item) => item.id !== printer.id));
       toast.success(`${printer.name} removed`);
     } catch (error) {
-      toast.error("Could not remove printer", { description: error instanceof Error ? error.message : "CUPS could not remove this printer" });
+      const description = redactDiagnosticText(error instanceof Error ? error.message : "CUPS could not remove this printer", 600);
+      diagnosticLogger.log("error", "NetworkPrinterManager", `Printer queue remove failed: ${description}`);
+      toast.error("Could not remove printer", { description });
     } finally {
       setRemovingId(null);
     }

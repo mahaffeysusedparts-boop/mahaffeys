@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { createError } from "nitro/h3";
@@ -47,13 +47,36 @@ async function runCups(program: string, args: string[]) {
   try {
     const server = process.env.NITRO_CUPS_SERVER;
     const serverArgs = server ? ["-h", server] : [];
-    return await execFileAsync(program, [...serverArgs, ...args], { env: cupsEnv(), timeout: 30_000, maxBuffer: 1024 * 1024 });
+    // Local PeerCred requires the CUPS username to match the executing UID.
+    return await execFileAsync(program, [...serverArgs, ...args], {
+      env: { ...cupsEnv(), LC_ALL: "C", CUPS_USER: userInfo().username },
+      timeout: 30_000,
+      maxBuffer: 1024 * 1024,
+    });
   } catch (error) {
-    const detail = error instanceof Error ? error.message : "Unknown CUPS error";
-    if (detail.includes("ENOENT")) {
+    const failure = error as { code?: string; killed?: boolean; stderr?: string; message?: string } | null;
+    // execFile messages include command arguments; never return them to the browser.
+    const detail = String(failure?.stderr || failure?.message || "").slice(0, 8192);
+    console.error("[printer-diagnostic] " + JSON.stringify({ operation: program, failed: true, timedOut: Boolean(failure?.killed) }));
+    if (failure?.code === "ENOENT") {
       throw createError({ statusCode: 503, statusMessage: "CUPS client tools are not installed on the application server" });
     }
-    throw createError({ statusCode: 502, statusMessage: `CUPS request failed: ${detail.slice(0, 400)}` });
+    if (/forbidden|unauthori[sz]ed|not[- ]authori[sz]ed|authori[sz]ation (?:failed|cancell?ed)|authentication (?:failed|required)|password for/i.test(detail)) {
+      throw createError({ statusCode: 502, statusMessage: "The server printing identity is not authorized by CUPS. Ask the server administrator to verify the deployed identity and CUPS administration/access policy. Do not change the printer address to fix authorization." });
+    }
+    if (failure?.killed) {
+      throw createError({ statusCode: 504, statusMessage: "CUPS did not complete the request within 30 seconds. Ask the server administrator to check scheduler and printer connectivity." });
+    }
+    if (failure?.code === "EACCES" || /permission denied/i.test(detail)) {
+      throw createError({ statusCode: 502, statusMessage: "The application cannot access the CUPS client or connection. Ask the server administrator to check the printing identity and socket permissions." });
+    }
+    if (/unable to connect|connection refused|host is down|no such file or directory/i.test(detail)) {
+      throw createError({ statusCode: 502, statusMessage: "The application cannot connect to the CUPS scheduler. Ask the server administrator to check the configured CUPS transport and service." });
+    }
+    if (/unable to query printer|unable to get.*attributes|ipp.*(?:failed|error)|does not support.*ipp/i.test(detail)) {
+      throw createError({ statusCode: 502, statusMessage: "CUPS could not negotiate IPP with the printer. Ask the server administrator to verify printer reachability and IPP support separately from CUPS authorization." });
+    }
+    throw createError({ statusCode: 502, statusMessage: "CUPS could not complete the request. Ask the server administrator to inspect the CUPS logs; queue setup is not proof of physical printing." });
   }
 }
 

@@ -8,14 +8,19 @@ This is a local stdio MCP bridge for Dyad on Windows. It connects through Window
 - Docker Compose container states and health.
 - Checkout commit and working-tree status (not a running-image version guarantee).
 - 10–200 recent log lines from one of six approved Compose services.
-- Active CUPS listener/hostname directives, local and app-to-CUPS scheduler checks, and up to 80 recent CUPS error-log lines.
+- Active CUPS listener/hostname directives, bounded administrative group settings, CUPS package versions/container-local node identity, local TCP and app configured-transport scheduler checks, and up to 80 recent CUPS error-log lines.
+- The app probe reads only `NITRO_CUPS_SERVER`, reports numeric app UID/GID, and, for socket transport, fixed runtime/socket owner/mode/type metadata (not certificate contents). Allowed addresses are `cups:631`, `/run/cups/cups.sock`, and `/var/run/cups/cups.sock`; other values fail without probing. No environment dump, arbitrary address, or arbitrary command is permitted. Scheduler subprocesses are bounded to six seconds; app output is capped at 8 KiB.
 - TCP reachability of the Brother printer at `192.168.1.251:631`, from the app container. No document is printed and IPP compatibility is not inferred from TCP reachability.
 
 There are no deployment, rebuild, restart, arbitrary shell, file upload, environment dump, Docker cleanup, or volume-deletion tools. This first phase is intentionally read-only. Diagnostic results are snapshots taken when a tool is called, not a background live log stream.
 
+**Printing authorization:** a scheduler response, accessible socket, matching username, or `lpstat -r` success is not proof of administrative permission. The probe does not call `lpadmin` or test peer authorization. Printed group directives are evidence for review, not a complete effective-policy audit. Actual container UID mappings, LSM restrictions, effective policy and disposable authorized/unauthorized queue operations must be checked before enabling socket administration. Production still uses TCP; see [CUPS_SOCKET_VERIFICATION.md](CUPS_SOCKET_VERIFICATION.md) and SELF_HOSTING.md for blocked acceptance, backup/spool preservation, approved rollout and rollback gates. The source dispatcher must be reviewed and reinstalled as a root-owned file before these updated probes are available on the live connection. Updating the repository or MCP bridge alone is insufficient.
+
 ## Browser and app failure reporting
 
 New diagnostic-logger warnings/errors, React error-boundary failures, uncaught browser errors, and unhandled promise errors are sent to `/api/diagnostics/browser`. An approved signed-in account is required. The server writes single-line JSON marked `[browser-diagnostic]` to the app container's stderr, readable through the existing Mahaffeys container-log tool. No new MCP permissions or public log-reading endpoint are needed.
+
+Shared network printer add/remove failures now use `NetworkPrinterManager` diagnostic errors. They contain the operation and a bounded, redacted failure message, not form input, printer IDs, raw Error objects or stacks. Server CUPS failures use fixed classifications instead of exposing subprocess command lines/stderr. Authorization failures direct administrators to the deployed printing identity and policy, not a different printer address. Queue-creation success explicitly states that physical printing remains unverified and no test page was submitted. Reproduce while signed in after deployment and request bounded app logs to retrieve `[browser-diagnostic]` reports.
 
 Reports contain timestamp, ID, severity, source, message, error/stack/component stack, and online/offline status only. Arbitrary context, request bodies, cookies, user-agent data, and page query strings are not transmitted. Text is bounded and common secrets are redacted before sending and again before logging. Redaction is best-effort; free-form error messages may still contain sensitive data. Treat reports as sensitive, untrusted evidence.
 
