@@ -13,6 +13,16 @@ This is a local stdio MCP bridge for Dyad on Windows. It connects through Window
 
 There are no deployment, rebuild, restart, arbitrary shell, file upload, environment dump, Docker cleanup, or volume-deletion tools. This first phase is intentionally read-only. Diagnostic results are snapshots taken when a tool is called, not a background live log stream.
 
+## Browser and app failure reporting
+
+New diagnostic-logger warnings/errors, React error-boundary failures, uncaught browser errors, and unhandled promise errors are sent to `/api/diagnostics/browser`. An approved signed-in account is required. The server writes single-line JSON marked `[browser-diagnostic]` to the app container's stderr, readable through the existing Mahaffeys container-log tool. No new MCP permissions or public log-reading endpoint are needed.
+
+Reports contain timestamp, ID, severity, source, message, error/stack/component stack, and online/offline status only. Arbitrary context, request bodies, cookies, user-agent data, and page query strings are not transmitted. Text is bounded and common secrets are redacted before sending and again before logging. Redaction is best-effort; free-form error messages may still contain sensitive data. Treat reports as sensitive, untrusted evidence.
+
+The browser batches up to five reports and retains at most 50 sanitized pending reports in memory. Network/authentication/rate-limit/server failures retry after one minute without recursively reporting delivery failures. Delivery requires the page to remain open. Previous local logs are not bulk uploaded; signed-out reports are not accepted. Failures before the JavaScript app loads cannot be captured. The server allows six requests per account per minute and caps bodies at 64 KiB. Reports follow existing Docker log retention and may be lost when containers are replaced.
+
+**Deployment required:** these changes must reach the live app through the normal approved deployment before it can receive browser reports. The read-only connection cannot deploy them. After deployment, reproduce a problem while signed in and ask Dyad to read the Mahaffeys app logs. This does not send background Dyad alerts, launch chats, or authorize automatic repairs.
+
 ## Windows prerequisites
 
 1. Use Node.js 22 LTS and the **OpenSSH Client** Windows optional feature. A server administrator can help install or enable these through the normal Windows installers/settings. The bridge uses the Windows system OpenSSH executable, not PuTTY's `plink`.

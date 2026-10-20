@@ -1,5 +1,7 @@
 "use strict";
 
+import { queueServerDiagnostic } from "./serverDiagnosticReporter";
+
 // ---------------------------------------------------------------------------
 // Diagnostic Logger Service
 // ---------------------------------------------------------------------------
@@ -85,6 +87,7 @@ class DiagnosticLogger {
     };
 
     this.logs.push(log);
+    queueServerDiagnostic(log);
     this.saveToStorage();
     this.notifyListeners();
 
