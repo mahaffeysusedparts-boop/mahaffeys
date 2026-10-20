@@ -1,7 +1,8 @@
-import { apiRequest } from "./apiClient";
+import { ApiError, apiRequest } from "./apiClient";
 import { toast } from "sonner";
 import { diagnosticLogger } from "./diagnosticLogger";
 import { offlineQueue } from "./offlineQueue";
+import { preserveServerFinancialFields } from "./financialSync";
 
 const SHARED_KEYS = [
   "mahaffeys_metals",
@@ -400,18 +401,18 @@ function mergeRecords(localValue: unknown, serverValue: unknown) {
   const localIds = new Set(localRecords.map((item) => String(item.id)));
   const mergedLocalRecords = localRecords.map((item) => {
     const serverRecord = serverById.get(String(item.id));
-    return serverRecord ? mergeRecord(item, serverRecord) : item;
+    return serverRecord ? preserveServerFinancialFields(mergeRecord(item, serverRecord), serverRecord) : item;
   });
   return [...mergedLocalRecords, ...serverRecords.filter((item) => !localIds.has(String(item.id)))];
 }
 
 let lastErrorToast = 0;
-function notifySyncError(message: string) {
+function notifySyncError(message: string, retrying = true) {
   const now = Date.now();
   if (now - lastErrorToast > 15_000) {
     lastErrorToast = now;
-    toast.error("Server sync failed — changes saved locally", {
-      description: `${message} Retrying automatically.`,
+    toast.error(retrying ? "Server sync failed — changes saved locally" : "Server rejected an update — review required", {
+      description: `${message} ${retrying ? "Retrying automatically." : "Automatic retries paused for this update. Other data can still sync."}`,
       duration: 10_000,
     });
   }
@@ -465,6 +466,8 @@ function safeParseJSON(key: string, raw: string | null): unknown {
 // ---------------------------------------------------------------------------
 
 const pendingWrites = new Map<string, string>();
+const blockedWrites = new Map<string, string>();
+const rejectedFinancialSnapshots = new Map<string, string>();
 let flushPromise: Promise<void> | null = null;
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
 let retryCount = 0;
@@ -472,6 +475,28 @@ let retryTimer: ReturnType<typeof setTimeout> | null = null;
 let lastSyncError: string | null = null;
 const FLUSH_DEBOUNCE_MS = 200;
 const MAX_RETRY_DELAY_MS = 30_000;
+
+async function reconcileHistoricalTickets(): Promise<boolean> {
+  const response = await apiRequest<{ state: Record<string, unknown> }>("/api/state");
+  const serialized = pendingWrites.get("mahaffeys_tickets");
+  const serverTickets = response.state.mahaffeys_tickets;
+  if (!serialized || !Array.isArray(serverTickets)) return false;
+  const localTickets: unknown = JSON.parse(serialized);
+  if (!Array.isArray(localTickets)) return false;
+  const reconciled = JSON.stringify(mergeRecords(localTickets, serverTickets));
+  if (reconciled === serialized) return false;
+
+  rejectedFinancialSnapshots.set("mahaffeys_tickets", serialized);
+  pendingWrites.set("mahaffeys_tickets", reconciled);
+  persistLocalSnapshot("mahaffeys_tickets", reconciled);
+  notifyKey("mahaffeys_tickets");
+  window.dispatchEvent(new CustomEvent("mahaffeys:remote-sync", { detail: { key: "mahaffeys_tickets" } }));
+  toast.warning("Server financial history restored", {
+    description: "Protected ticket values now match the server. The rejected local snapshot is retained in memory for download in Sync Diagnostics; download it before closing or reloading this page.",
+    duration: 15_000,
+  });
+  return true;
+}
 
 function isQuotaErrorSafe(error: unknown) {
   return error instanceof DOMException && (error.name === "QuotaExceededError" || error.name === "NS_ERROR_DOM_QUOTA_REACHED");

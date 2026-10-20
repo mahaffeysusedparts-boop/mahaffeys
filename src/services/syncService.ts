@@ -5,6 +5,7 @@ import { storageService } from "./storageService";
 import { toast } from "sonner";
 import { diagnosticLogger } from "./diagnosticLogger";
 import { offlineQueue } from "./offlineQueue";
+import { preserveServerFinancialFields } from "./financialSync";
 
 const SHARED_KEYS = [
   "mahaffeys_metals",
@@ -109,7 +110,7 @@ function mergeArrays(localValue: unknown, remoteValue: unknown): unknown {
   const localIds = new Set(localRecords.map((item) => String(item.id)));
   const mergedLocal = localRecords.map((item) => {
     const remoteRecord = remoteById.get(String(item.id));
-    return remoteRecord ? mergeRecord(item, remoteRecord) : item;
+    return remoteRecord ? preserveServerFinancialFields(mergeRecord(item, remoteRecord), remoteRecord) : item;
   });
   return [...mergedLocal, ...remoteRecords.filter((item) => !localIds.has(String(item.id)))];
 }
