@@ -1,0 +1,15 @@
+# Candidate only: not automatically loaded by Docker Compose.
+# Blocked until final cross-container PeerCred, permission, namespace and spool
+# preservation checks in docs/CUPS_SOCKET_VERIFICATION.md pass and rollout is approved.
+# Base compose.yaml must be the first file so its project-root paths are retained.
+services:
+  cups:
+    volumes:
+      - cups-runtime:/run/cups
+  mahaffeys:
+    environment:
+      NITRO_CUPS_SERVER: /run/cups/cups.sock
+    volumes:
+      - cups-runtime:/run/cups:ro
+volumes:
+  cups-runtime:

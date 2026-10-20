@@ -55,7 +55,6 @@ services:
     volumes:
       - cups-data:/var/cache/cups
       - cups-config:/etc/cups
-      - cups-runtime:/run/cups
     healthcheck:
       test: ["CMD", "sh", "-c", "status=$(LC_ALL=C lpstat -h 127.0.0.1:631 -r 2>/dev/null) && [ \"$$status\" = \"scheduler is running\" ]"]
       interval: 10s
@@ -88,7 +87,7 @@ services:
       NITRO_VISION_RETENTION_DAYS: ${NITRO_VISION_RETENTION_DAYS:-90}
       NITRO_SCALE_SERIAL_PORT: ${SCALE_SERIAL_PORT:-/dev/ttyS4}
       NITRO_SCALE_SERIAL_BAUD_RATE: ${SCALE_SERIAL_BAUD_RATE:-2400}
-      NITRO_CUPS_SERVER: /run/cups/cups.sock
+      NITRO_CUPS_SERVER: cups:631
     devices:
       - "/dev/ttyS4:/dev/ttyS4"
       - "/dev/ttyS5:/dev/ttyS5"
@@ -99,7 +98,6 @@ services:
       - "20"
     volumes:
       - mahaffeys-vision-images:/var/lib/mahaffeys/vision-images
-      - cups-runtime:/run/cups:ro
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(response => { if (!response.ok) process.exit(1) }).catch(() => process.exit(1))"]
       interval: 10s
@@ -130,4 +128,3 @@ volumes:
   mahaffeys-vision-images:
   cups-data:
   cups-config:
-  cups-runtime:

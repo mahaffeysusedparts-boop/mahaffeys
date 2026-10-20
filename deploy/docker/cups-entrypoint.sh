@@ -25,39 +25,6 @@ if [ ! -f "$config" ]; then
     exit 1
 fi
 
-# CUPS resolves socket peer UID 1000 against its own account/group database.
-if [ "$(id -u node)" != 1000 ] || [ "$(id -g node)" != 1000 ]; then
-    log "ERROR: CUPS printing identity must match the app's non-root node UID/GID 1000."
-    exit 1
-fi
-if ! id -nG node | tr ' ' '\n' | grep -qx lpadmin; then
-    log "ERROR: The CUPS-local node identity is not a member of lpadmin. Rebuild the CUPS image."
-    exit 1
-fi
-if ! awk '
-    /^[[:space:]]*#/ { next }
-    tolower($1) == "systemgroup" {
-        found = 0
-        for (i = 2; i <= NF; i++) {
-            if ($i ~ /^#/) break
-            if ($i == "lpadmin") found = 1
-        }
-    }
-    END { exit found ? 0 : 1 }
-' /etc/cups/cups-files.conf; then
-    log "ERROR: Saved cups-files.conf does not include lpadmin in SystemGroup. Have an administrator review the intended system group; no authentication settings were changed."
-    exit 1
-fi
-if ! awk '
-    /^[[:space:]]*#/ { next }
-    tolower($1) == "listen" && ($2 == "/run/cups/cups.sock" || $2 == "/var/run/cups/cups.sock") { found = 1 }
-    END { exit found ? 0 : 1 }
-' "$config"; then
-    log "ERROR: Shared /run/cups/cups.sock listener is missing. Review the saved listener configuration; no access rules were changed."
-    exit 1
-fi
-mkdir -p /run/cups
-
 # Repair only the known local-socket configuration, never deliberate TCP listeners.
 listener_state=$(awk '
     /^[[:space:]]*#/ { next }

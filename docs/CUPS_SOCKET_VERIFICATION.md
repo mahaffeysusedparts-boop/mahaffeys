@@ -50,8 +50,9 @@ gid=$(docker run --rm --network none --entrypoint id "$app_image" -g)
 [ "$uid:$gid" = 1000:1000 ] || { echo 'Actual app identity differs; revise candidate.' >&2; exit 1; }
 
 cp deploy/docker/cups.Dockerfile "$work/cups.Dockerfile"
-# This adds an identity in the disposable server ONLY. No password/login shell.
-printf '\nRUN groupadd --gid 1000 node && useradd --uid 1000 --gid node --no-create-home --shell /usr/sbin/nologin node && usermod -aG lpadmin node\nRUN grep -Eq "^SystemGroup[[:space:]].*lpadmin" /etc/cups/cups-files.conf\nRUN printf "\\nLogLevel debug\\n" >> /etc/cups/cupsd.conf\n' >> "$work/cups.Dockerfile"
+# The repository now contains the candidate node identity and build-time smoke
+# check. Add debug evidence only in this disposable image, not production config.
+printf '\nRUN test "$(id -u node):$(id -g node)" = 1000:1000 && grep -Eq "^SystemGroup[[:space:]].*lpadmin" /etc/cups/cups-files.conf\nRUN printf "\\nLogLevel debug\\n" >> /etc/cups/cupsd.conf\n' >> "$work/cups.Dockerfile"
 docker build -f "$work/cups.Dockerfile" -t "$cups_image" .
 for volume in "$runtime" "$config" "$cache"; do docker volume create "$volume" >/dev/null; done
 
