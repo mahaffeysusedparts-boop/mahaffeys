@@ -1,7 +1,22 @@
 import { spawn } from 'node:child_process';
 import { mkdtemp, open, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, win32 } from 'node:path';
+
+export function windowsSshEnvironment(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const env = { ...source };
+  const keys = Object.keys(env);
+  const programDataKey = keys.find(key => key.toUpperCase() === 'PROGRAMDATA') ?? 'ProgramData';
+  const systemRootKey = keys.find(key => key.toUpperCase() === 'SYSTEMROOT');
+  if (!env[programDataKey]) {
+    const root = win32.parse((systemRootKey && env[systemRootKey]) || 'C:\\Windows').root;
+    env[programDataKey] = win32.join(root, 'ProgramData');
+  }
+  const tmpKey = keys.find(key => key.toUpperCase() === 'TMP') ?? 'TMP';
+  const tempKey = keys.find(key => key.toUpperCase() === 'TEMP');
+  if (!env[tmpKey] && tempKey && env[tempKey]) env[tmpKey] = env[tempKey];
+  return env;
+}
 
 // Regular file handles avoid Windows OpenSSH's dependence on Node pipe handles.
 export async function runWindowsSshProcess(
@@ -21,6 +36,7 @@ export async function runWindowsSshProcess(
       const child = spawn(executable, args, {
         shell: false,
         windowsHide: true,
+        env: process.platform === 'win32' ? windowsSshEnvironment(process.env) : process.env,
         stdio: [input.fd, output.fd, errors.fd],
       });
       let stoppedReason = '';
