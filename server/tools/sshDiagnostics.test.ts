@@ -6,7 +6,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
-import { checkSshFiles, readSshTrace, redactLogs, requestToken, sshArgs, sshFailure, type DiagnosticRequest } from './sshDiagnostics';
+import { checkSshFiles, localEvidenceRequests, readSshTrace, redactLogs, requestToken, sshArgs, sshFailure, type DiagnosticRequest } from './sshDiagnostics';
 
 const files = { identityFile: 'C:\\Users\\jackh\\.ssh\\mahaffeys_mcp', knownHostsFile: 'C:\\Users\\jackh\\.ssh\\known_hosts' };
 
@@ -28,6 +28,14 @@ describe('read-only SSH diagnostics', () => {
     expect(args.slice(-2)).toEqual(['jhilliard@192.168.1.210', 'containers']);
     expect(args).toContain(files.identityFile);
     expect(args).toContain(`UserKnownHostsFile=${files.knownHostsFile}`);
+  });
+
+  it('limits local evidence checks to version and public fingerprint reads', () => {
+    const checks = localEvidenceRequests(files);
+    expect(checks.map(check => check.executable)).toEqual(['ssh', 'ssh-add', 'ssh-keygen']);
+    expect(checks[0].args).toEqual(['-V']);
+    expect(checks[1].args).toEqual(['-l', '-E', 'sha256']);
+    expect(checks[2].args).toEqual(['-l', '-f', `${files.identityFile}.pub`, '-E', 'sha256']);
   });
 
   it('redacts common credentials from diagnostics', () => {

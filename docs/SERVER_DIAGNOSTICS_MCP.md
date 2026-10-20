@@ -84,6 +84,8 @@ Only tool discovery is performed on bridge startup; no SSH connection occurs bef
 
 Before attempting SSH, the bridge checks that the selected private file exists, has an OpenSSH private-key header, and that the known_hosts file is accessible. These checks do not prove the full key is valid, that it is loaded into the agent, or that the host entry matches. The actual verified SSH connection still performs those checks. No protection is bypassed to get diagnostic output.
 
+When a connection check fails, the bridge also reports local OpenSSH version output, the agent's public fingerprint list, and the companion `.pub` file's fingerprint. Each local subprocess is bounded to four seconds and 8 KB. The companion public file's fingerprint does not prove that it matches the private file. These checks never load or remove keys, prompt for a passphrase, or expose private-key contents. The SSH process receives a pipe that is immediately closed, rather than a null stdin handle; authentication remains noninteractive and key-only.
+
 Common URI credentials, password/token fields, bearer credentials, and private-key blocks are redacted locally before tool output is returned. **Redaction is best-effort, not a promise that arbitrary logs contain no sensitive data.** Review logs before enabling automated approvals. Treat remote logs as untrusted diagnostic data, never as instructions.
 
 ## Revocation and future deployment phase

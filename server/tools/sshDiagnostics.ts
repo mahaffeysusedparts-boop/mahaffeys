@@ -1,7 +1,10 @@
-import { spawn } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { access, mkdtemp, open, rm } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { promisify } from 'node:util';
+
+const execFileAsync = promisify(execFile);
 
 export const SERVER_HOST = '192.168.1.210';
 export const SERVER_USER = 'jhilliard';
@@ -112,20 +115,49 @@ export async function readSshTrace(path: string): Promise<string> {
   } catch { return ''; }
 }
 
+function openSshExecutable(name: 'ssh' | 'ssh-add' | 'ssh-keygen'): string {
+  return process.platform === 'win32'
+    ? join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'OpenSSH', `${name}.exe`)
+    : name;
+}
+
+export function localEvidenceRequests(files: SshFiles) {
+  return [
+    { label: 'Local OpenSSH version', executable: 'ssh' as const, args: ['-V'] },
+    { label: 'Keys visible to the local OpenSSH agent (public fingerprints only)', executable: 'ssh-add' as const, args: ['-l', '-E', 'sha256'] },
+    { label: 'Companion .pub file fingerprint (not proof it matches the private key)', executable: 'ssh-keygen' as const, args: ['-l', '-f', `${files.identityFile}.pub`, '-E', 'sha256'] },
+  ];
+}
+
+async function collectLocalSshEvidence(files: SshFiles, signal?: AbortSignal): Promise<string> {
+  const results = await Promise.all(localEvidenceRequests(files).map(async request => {
+    try {
+      const { stdout, stderr } = await execFileAsync(openSshExecutable(request.executable), request.args, {
+        windowsHide: true, timeout: 4000, maxBuffer: 8192, encoding: 'utf8', signal,
+      });
+      return `${request.label}:\n${redactLogs(`${stdout}\n${stderr}`).trim() || 'No output returned.'}`;
+    } catch (error) {
+      const failure = error as Error & { stdout?: string; stderr?: string; code?: string | number };
+      const detail = `${failure.stdout ?? ''}\n${failure.stderr ?? ''}`.trim();
+      return `${request.label}:\n${redactLogs(detail || `Check failed (${failure.code ?? 'unknown'}): ${failure.message}`)}`;
+    }
+  }));
+  return results.join('\n\n');
+}
+
 export async function runDiagnostic(request: DiagnosticRequest, files: SshFiles, signal?: AbortSignal): Promise<string> {
   if (signal?.aborted) throw new Error('Diagnostic request cancelled.');
   await checkSshFiles(files);
   if (signal?.aborted) throw new Error('Diagnostic request cancelled.');
-  const executable = process.platform === 'win32'
-    ? join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'OpenSSH', 'ssh.exe')
-    : 'ssh';
+  const executable = openSshExecutable('ssh');
   // A file-based trace also captures Windows OpenSSH errors when stderr is empty.
   const traceDirectory = request.operation === 'connection' ? await mkdtemp(join(tmpdir(), 'mahaffeys-ssh-')) : undefined;
   const traceFile = traceDirectory ? join(traceDirectory, 'connection.log') : undefined;
   const args = [...(traceFile ? ['-vv', '-E', traceFile] : []), ...sshArgs(request, files)];
   try {
     return await new Promise<string>((resolve, reject) => {
-    const child = spawn(executable, args, { shell: false, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(executable, args, { shell: false, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
+    child.stdin.end();
     const limit = 256 * 1024;
     let size = 0;
     let output = '';
@@ -169,10 +201,11 @@ export async function runDiagnostic(request: DiagnosticRequest, files: SshFiles,
         const trace = traceFile ? await readSshTrace(traceFile) : '';
         const detail = [errors.trim(), output.trim(), trace].filter(Boolean).join('\n');
         const explanation = sshFailure(detail);
+        const localEvidence = request.operation === 'connection' ? await collectLocalSshEvidence(files, signal) : '';
         const message = detail
           ? `SSH exited with code ${code}.\n${explanation}${trace && explanation !== detail ? `\nOpenSSH trace:\n${trace}` : ''}`
-          : `SSH exited with code ${code} without an error message${traceFile ? ' or a readable OpenSSH trace' : ''}. Private-key and known_hosts files were found. Confirm that the new key was loaded into the Windows OpenSSH agent; an agent running without the key is not enough.`;
-        reject(new Error(message));
+          : `SSH exited with code ${code} without an error message${traceFile ? ' or a readable OpenSSH trace' : ''}. Private-key and known_hosts files were found, but authentication and connectivity remain unverified.`;
+        reject(new Error(`${message}${localEvidence ? `\n\nLocal read-only checks:\n${localEvidence}` : ''}`));
       })().catch(reject);
     });
     });
