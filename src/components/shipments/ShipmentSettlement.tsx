@@ -6,9 +6,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { storageService } from '@/services/storageService';
+import { shipmentService } from '@/services/shipmentService';
 import type { OutboundShipment, ShipmentPriceUnit, ShipmentSettlementGradeLine } from '@/types/scrap';
-import { displayRate, ratePerLb, settlementTotals, shipmentGrades, shipmentMoney as money } from '@/utils/shipments';
+import { displayRate, ratePerLb, settlementTotals, shipmentGrades, shipmentMoney as money, shipmentSnapshot } from '@/utils/shipments';
 
 const inputStyle = 'mt-1 rounded-xl border-slate-700 bg-slate-950';
 
@@ -18,6 +18,8 @@ export function ShipmentSettlement({ shipment, onClose, onSaved, onBack }: {
   onSaved: () => void;
   onBack: () => void;
 }) {
+  const [expectedSnapshot] = useState(() => shipmentSnapshot(shipment));
+  const [saving, setSaving] = useState(false);
   const [mode, setMode] = useState<'GRADES' | 'TOTAL'>(shipment.settlement && !shipment.settlement.gradeLines?.length ? 'TOTAL' : 'GRADES');
   const [actual, setActual] = useState(String(shipment.settlement?.actualNetWeightLbs ?? shipment.netWeightLbs));
   const [paid, setPaid] = useState(shipment.settlement ? String(shipment.settlement.amountPaid) : '');
@@ -36,7 +38,8 @@ export function ShipmentSettlement({ shipment, onClose, onSaved, onBack }: {
   const updateLine = (id: string, field: 'weight' | 'price' | 'deduction', value: string) => setLines(current => current.map(line => line.id === id ? { ...line, [field]: value } : line));
   const changeUnit = (id: string, unit: ShipmentPriceUnit) => setLines(current => current.map(line => line.id === id ? { ...line, unit, price: line.price === '' ? '' : String(displayRate(ratePerLb(Number(line.price), line.unit), unit)) } : line));
 
-  const save = () => {
+  const save = async () => {
+    if (saving) return;
     if (mode === 'GRADES' && lines.some(line => line.weight === '' || !Number.isFinite(Number(line.weight)) || Number(line.weight) < 0 || line.price === '' || !Number.isFinite(Number(line.price)) || Number(line.price) < 0 || !Number.isFinite(Number(line.deduction)) || Number(line.deduction) < 0 || Number(line.deduction) > Number(line.weight) * ratePerLb(Number(line.price), line.unit))) {
       toast.error('Enter valid grade weights, prices, and deductions no greater than the grade value');
       return;
@@ -48,34 +51,23 @@ export function ShipmentSettlement({ shipment, onClose, onSaved, onBack }: {
       toast.error('Enter a positive mill weight and valid payment/deductions');
       return;
     }
-    const latest = storageService.getShipments().find(load => load.id === shipment.id);
-    if (!latest || (!latest.settlement && latest.status !== 'DELIVERED')) {
-      toast.error('Mark the shipment delivered before reconciling its settlement');
-      return;
-    }
-    if (JSON.stringify(latest) !== JSON.stringify(shipment)) {
-      toast.error('This load has changed. Close and reopen it before settling.');
-      return;
-    }
-    const tolerance = storageService.getSettings().shipmentVarianceTolerancePct ?? 2;
-    const discrepancy = Math.abs(amount - shipment.expectedRevenue) / Math.max(shipment.expectedRevenue, 1) * 100 > tolerance;
-    storageService.saveShipment({
-      ...latest,
-      status: discrepancy ? 'DISCREPANCY' : 'SETTLED',
-      deliveredAt: latest.deliveredAt || new Date().toISOString(),
-      settlement: {
+    setSaving(true);
+    try {
+      const saved = await shipmentService.settle(shipment, {
         scaleTicketNumber: ticket.trim() || `MILL-${Date.now().toString().slice(-6)}`,
         actualNetWeightLbs: actualWeight,
-        actualRatePerLb: (amount + totalDeductions) / actualWeight,
         deductions: totalDeductions,
         amountPaid: amount,
-        settledAt: new Date().toISOString(),
         ...(mode === 'GRADES' ? { gradeLines } : {}),
-      },
-    });
-    toast.success(discrepancy ? 'Settlement saved with discrepancy flag' : 'Settlement reconciled');
-    onSaved();
-    onBack();
+      }, expectedSnapshot);
+      toast.success(saved.status === 'DISCREPANCY' ? 'Settlement saved with discrepancy flag' : 'Settlement reconciled');
+      onSaved();
+      onBack();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Settlement was not confirmed. Your entered values have been kept.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return <Dialog open onOpenChange={open => !open && onClose()}>
@@ -105,7 +97,7 @@ export function ShipmentSettlement({ shipment, onClose, onSaved, onBack }: {
         <div><Label htmlFor="settlement-paid">Actual amount paid ($)</Label><Input id="settlement-paid" type="number" min="0" step="0.01" placeholder={expectedPayment.toFixed(2)} value={paid} onChange={event => setPaid(event.target.value)} className={inputStyle} /><p className="mt-1 text-xs text-slate-300">Leave blank to use the calculated payment, or enter the mill’s actual payment.</p></div>
         <div className="flex flex-wrap justify-between gap-2 text-sm"><span>{mode === 'GRADES' ? totals.weight.toLocaleString() : Number(actual).toLocaleString()} lbs mill net</span><b className={variance < 0 ? 'text-amber-300' : 'text-emerald-300'}>{variance >= 0 ? '+' : ''}{money(variance)} vs. expected</b></div>
       </div>
-      <Button onClick={save} className="h-11 rounded-xl bg-emerald-600 font-bold hover:bg-emerald-500"><CheckCircle2 className="mr-2 h-4 w-4" />Reconcile settlement</Button>
+      <Button onClick={save} disabled={saving || shipment.status === 'VOIDED'} className="h-11 rounded-xl bg-emerald-600 font-bold hover:bg-emerald-500"><CheckCircle2 className="mr-2 h-4 w-4" />{saving ? 'Saving settlement…' : 'Reconcile settlement'}</Button>
     </DialogContent>
   </Dialog>;
 }

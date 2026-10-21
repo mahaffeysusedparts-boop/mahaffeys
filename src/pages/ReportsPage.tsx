@@ -55,7 +55,7 @@ export default function ReportsPage() {
       return timestamp >= now - 2 * windowMs && timestamp < now - windowMs;
     });
     const settledShipments = shipments.filter(
-      (shipment) => shipment.settlement && new Date(shipment.settlement.settledAt).getTime() >= now - windowMs,
+      (shipment) => shipment.status !== 'VOIDED' && shipment.settlement && new Date(shipment.settlement.settledAt).getTime() >= now - windowMs,
     );
     const derived = deriveOperationsMetrics({ tickets: activeTickets, shipments: settledShipments, vehicles, openQueueCount: 0, delayedTaskCount: 0 });
     return {

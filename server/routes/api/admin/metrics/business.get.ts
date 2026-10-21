@@ -107,6 +107,7 @@ export default defineHandler(async (event) => {
 
   let settledShipments7Days = 0;
   for (const shipment of shipments) {
+    if (shipment.status === "VOIDED") continue;
     const settlement = shipment.settlement;
     if (!settlement || typeof settlement !== "object" || Array.isArray(settlement)) continue;
     const record = settlement as StateRecord;

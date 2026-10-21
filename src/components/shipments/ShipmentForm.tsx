@@ -59,8 +59,8 @@ export function ShipmentForm({ onClose, mills, onSaved, shipment }: {
       priceUnit: line.unit,
     }));
     const latest = shipment ? storageService.getShipments().find(load => load.id === shipment.id) : undefined;
-    if (shipment && (!latest || latest.settlement || ['SETTLED', 'DISCREPANCY'].includes(latest.status))) {
-      toast.error('Settled loads cannot be edited. Reopen the load to review its settlement.');
+    if (shipment && (!latest || latest.settlement || ['SETTLED', 'DISCREPANCY', 'VOIDED'].includes(latest.status))) {
+      toast.error('Settled or voided loads cannot be edited. Reopen the load to review its history.');
       return;
     }
     const millName = fields.millName.trim();

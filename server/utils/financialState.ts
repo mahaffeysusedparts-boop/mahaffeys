@@ -24,6 +24,21 @@ export const legacyFinancialFields = ['ticketType','createdAt','customerId','cus
 // Protected records omitted by an evicted/stale cache are retained, not deleted.
 export async function protectFinancialState(client: PoolClient, key: string, incoming: unknown, actorRole: string, actorName: string) {
   if (key === 'mahaffeys_payment_safeguards' || key.startsWith('mahaffeys_payment_safeguards_revision_')) throw createError({statusCode:403,statusMessage:'Payment safeguards must use the revisioned administrator safeguards endpoint'});
+  if (key === 'mahaffeys_shipments') {
+    await lockFinancialState(client);
+    if (!Array.isArray(incoming) || incoming.some(row => !row || typeof row.id !== 'string') || new Set(incoming.map(row => row.id)).size !== incoming.length) throw createError({statusCode:400,statusMessage:'Shipments require uniquely identified records'});
+    const previous = await stateValue<Array<Record<string, unknown>>>(client, key, []);
+    const manager = ['admin', 'yard_manager'].includes(actorRole);
+    const rows = incoming.map(row => {
+      const old = previous.find(load => load.id === row.id);
+      // Stale sync/imports cannot reopen a void or replace recorded settlements.
+      if (old && (old.settlement || ['SETTLED', 'DISCREPANCY', 'VOIDED'].includes(String(old.status)))) return old;
+      if (row.settlement || ['SETTLED', 'DISCREPANCY', 'VOIDED'].includes(row.status) || row.voidRecord) conflict('Settlement and voiding must use shipment commands');
+      if ((!old || stableFinancialJSON(old) !== stableFinancialJSON(row)) && !manager) throw createError({statusCode:403,statusMessage:'Shipment changes require a manager or administrator'});
+      return row;
+    });
+    return [...rows, ...previous.filter(old => !rows.some(row => row.id === old.id))];
+  }
   if (['mahaffeys_metals','mahaffeys_car_rates','mahaffeys_cat_codes'].includes(key)) {
     if (!['admin','yard_manager'].includes(actorRole)) throw createError({statusCode:403,statusMessage:'Buying rate/grade changes require a manager or administrator'});
     await lockFinancialState(client);return incoming;

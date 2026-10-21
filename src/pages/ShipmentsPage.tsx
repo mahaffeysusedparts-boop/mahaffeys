@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Navbar } from '@/components/layout/Navbar';
 import { ShipmentForm } from '@/components/shipments/ShipmentForm';
 import { ShipmentSettlement } from '@/components/shipments/ShipmentSettlement';
 import { ShipmentDetails } from '@/components/shipments/ShipmentDetails';
 import { storageService } from '@/services/storageService';
+import { sharedStorage } from '@/services/sharedStorage';
 import type { ShipmentStatus } from '@/types/scrap';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -13,8 +14,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Truck, Plus, Scale, Factory, DollarSign } from 'lucide-react';
 import { useLinkedSearch } from '@/hooks/useLinkedSearch';
 
-const statuses: ShipmentStatus[] = ['STAGED', 'IN_TRANSIT', 'DELIVERED', 'SETTLED', 'DISCREPANCY'];
-const statusStyle: Record<ShipmentStatus, string> = { STAGED: 'bg-slate-700 text-slate-200', IN_TRANSIT: 'bg-blue-500/20 text-blue-300', DELIVERED: 'bg-amber-500/20 text-amber-300', SETTLED: 'bg-emerald-500/20 text-emerald-300', DISCREPANCY: 'bg-red-500/20 text-red-300' };
+const statuses: ShipmentStatus[] = ['STAGED', 'IN_TRANSIT', 'DELIVERED', 'SETTLED', 'DISCREPANCY', 'VOIDED'];
+const statusStyle: Record<ShipmentStatus, string> = { STAGED: 'bg-slate-700 text-slate-200', IN_TRANSIT: 'bg-blue-500/20 text-blue-300', DELIVERED: 'bg-amber-500/20 text-amber-300', SETTLED: 'bg-emerald-500/20 text-emerald-300', DISCREPANCY: 'bg-red-500/20 text-red-300', VOIDED: 'bg-rose-950 text-rose-200' };
 const money = (value: number) => value.toLocaleString(undefined, { style: 'currency', currency: 'USD' });
 
 export default function ShipmentsPage() {
@@ -27,6 +28,9 @@ export default function ShipmentsPage() {
   const selected = shipments.find(shipment => shipment.id === selectedId);
   const [search, setSearch] = useLinkedSearch();
   const refresh = () => { setShipments(storageService.getShipments()); setMills(storageService.getMills()); };
+  useEffect(() => sharedStorage.subscribeKey(key => {
+    if (key === 'mahaffeys_shipments' || key === 'mahaffeys_mills') refresh();
+  }), []);
   const filtered = shipments.filter(shipment => (filter === 'ALL' || shipment.status === filter) && `${shipment.loadNumber} ${shipment.millName} ${shipment.materialCategory} ${shipment.driverName ?? ''} ${shipment.trailerNumber ?? ''}`.toLowerCase().includes(search.trim().toLowerCase())).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const settled = shipments.filter(shipment => shipment.status === 'SETTLED' || shipment.status === 'DISCREPANCY');
   const now = new Date();

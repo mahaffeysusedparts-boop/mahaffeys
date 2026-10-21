@@ -571,7 +571,7 @@ export interface YardSettings {
   rolePageAccess?: Partial<Record<UserRole, string[]>>;
 }
 
-export type ShipmentStatus = 'STAGED' | 'IN_TRANSIT' | 'DELIVERED' | 'SETTLED' | 'DISCREPANCY';
+export type ShipmentStatus = 'STAGED' | 'IN_TRANSIT' | 'DELIVERED' | 'SETTLED' | 'DISCREPANCY' | 'VOIDED';
 
 export interface MillShipper {
   id: string;
@@ -630,6 +630,13 @@ export interface OutboundShipment {
   departedAt?: string;
   deliveredAt?: string;
   settlement?: ShipmentSettlement;
+  voidRecord?: {
+    reason: string;
+    voidedAt: string;
+    voidedBy: string;
+    voidedById: string;
+    previousStatus: Exclude<ShipmentStatus, 'VOIDED'>;
+  };
 }
 
 export interface MetalRateChangeLog {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { displayRate, formatShipmentRate, ratePerLb, settlementLineTotal, settlementTotals, shipmentGrades } from './shipments';
+import { displayRate, formatShipmentRate, ratePerLb, settlementLineTotal, settlementTotals, shipmentGrades, shipmentSnapshot } from './shipments';
 import type { OutboundShipment, ShipmentSettlementGradeLine } from '@/types/scrap';
 
 const legacy: OutboundShipment = {
@@ -9,6 +9,10 @@ const legacy: OutboundShipment = {
 };
 
 describe('mill shipment pricing', () => {
+  it('compares values rather than object key order and omitted optional fields', () => {
+    expect(shipmentSnapshot({ ...legacy, driverName: undefined })).toBe(shipmentSnapshot(Object.fromEntries(Object.entries(legacy).reverse())));
+    expect(shipmentSnapshot({ ...legacy, expectedRevenue: 1 })).not.toBe(shipmentSnapshot(legacy));
+  });
   it('uses 2,000 pounds per US short ton', () => {
     expect(ratePerLb(300, 'TON')).toBe(0.15);
     expect(40000 * ratePerLb(300, 'TON')).toBe(6000);

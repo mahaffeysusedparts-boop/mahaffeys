@@ -1,5 +1,15 @@
 import type { OutboundShipment, ShipmentPriceUnit, ShipmentSettlementGradeLine } from '@/types/scrap';
 
+// JSONB can reorder object keys. Preserve values and array order, not key order.
+export function shipmentSnapshot(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(shipmentSnapshot).join(',')}]`;
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record).sort().filter(key => record[key] !== undefined).map(key => `${JSON.stringify(key)}:${shipmentSnapshot(record[key])}`).join(',')}}`;
+  }
+  return JSON.stringify(value) ?? 'null';
+}
+
 export const shipmentMoney = (value: number) => value.toLocaleString(undefined, { style: 'currency', currency: 'USD' });
 export const shipmentStatusLabel = (status: OutboundShipment['status']) => status.toLowerCase().replace(/_/g, ' ');
 export const ratePerLb = (price: number, unit: ShipmentPriceUnit) => unit === 'TON' ? price / 2000 : price;

@@ -6,6 +6,7 @@ import './shipment-print.css';
 export function ShipmentPrintSheet({ shipment }: { shipment: OutboundShipment }) {
   return createPortal(<article id="mill-shipment-print" className="hidden space-y-6 bg-white text-slate-900">
     <div className="flex justify-between border-b-2 border-slate-900 pb-4"><div><p className="text-xs font-bold uppercase tracking-widest">Outbound mill shipment</p><h1 className="text-2xl font-black">{shipment.loadNumber}</h1><p>{shipment.millName}</p></div><div className="text-right text-sm"><p className="capitalize">{shipmentStatusLabel(shipment.status)}</p><p>Created {new Date(shipment.createdAt).toLocaleString()}</p></div></div>
+    {shipment.voidRecord && <section className="border-2 border-rose-800 p-4"><h2 className="font-bold">VOIDED — HISTORY ONLY</h2><p>{shipment.voidRecord.reason}</p><p className="text-sm">{shipment.voidRecord.voidedBy} · {new Date(shipment.voidRecord.voidedAt).toLocaleString()}</p><p className="text-xs">Original payment retained for history; excluded from shipment revenue. No refund or physical shipment reversal recorded.</p></section>}
     <div className="grid grid-cols-2 gap-4 text-sm">
       <div><p><b>Driver:</b> {shipment.driverName || '—'}</p><p><b>Trailer / bin:</b> {shipment.trailerNumber || '—'}</p></div>
       <div><p><b>Gross:</b> {shipment.grossWeightLbs.toLocaleString()} lbs</p><p><b>Tare:</b> {shipment.tareWeightLbs.toLocaleString()} lbs</p><p><b>Net:</b> {shipment.netWeightLbs.toLocaleString()} lbs ({(shipment.netWeightLbs / 2000).toLocaleString()} US tons)</p></div>

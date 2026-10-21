@@ -12,7 +12,7 @@ export const deriveOperationsMetrics = ({ tickets, shipments, vehicles, openQueu
   tickets: Ticket[]; shipments: OutboundShipment[]; vehicles: PullYardVehicle[]; openQueueCount: number; delayedTaskCount: number; now?: Date;
 }): OperationsMetrics => {
   const todaysCompleted = tickets.filter((ticket) => ticket.status === 'COMPLETED' && isSameDay(ticket.createdAt, now));
-  const settledToday = shipments.filter((shipment) => shipment.settlement && isSameDay(shipment.settlement.settledAt, now));
+  const settledToday = shipments.filter((shipment) => shipment.status !== 'VOIDED' && shipment.settlement && isSameDay(shipment.settlement.settledAt, now));
   const intakeCycles = todaysCompleted.map((ticket) => minutesSince(ticket.createdAt, now));
   const payouts = todaysCompleted.reduce((total, ticket) => total + ticket.finalPayout, 0);
   const shipmentRevenue = settledToday.reduce((total, shipment) => total + (shipment.settlement?.amountPaid ?? 0), 0);
