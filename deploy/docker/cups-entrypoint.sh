@@ -98,6 +98,60 @@ else
     log "Existing configuration already accepts the cups service hostname."
 fi
 
+# Opt-in candidate: expose only a socket, never CUPS's StateDir/certificates.
+if [ "${CUPS_PROTECTED_SOCKET:-0}" = 1 ]; then
+    transport=/run/mahaffeys-cups
+    socket=$transport/cups.sock
+    if [ -L "$transport" ] || [ ! -d "$transport" ] ||
+        ! awk -v path="$transport" '$5 == path { found = 1 } END { exit !found }' /proc/self/mountinfo; then
+        log "ERROR: Protected transport must be a separately mounted directory."
+        restore_and_stop
+    fi
+    if [ -n "$(find "$transport" -mindepth 1 -maxdepth 1 ! -name cups.sock -print -quit)" ] ||
+        [ -L "$socket" ] || { [ -e "$socket" ] && { [ ! -S "$socket" ] || [ "$(stat -c %u "$socket")" != 0 ]; }; }; then
+        log "ERROR: Protected transport contains unexpected files; refusing to expose them."
+        restore_and_stop
+    fi
+    if [ "$(id -u node):$(id -g node)" != 1000:1000 ] ||
+        ! id -nG node | tr ' ' '\n' | grep -qx lpadmin ||
+        ! awk '
+            /^[[:space:]]*#/ { next }
+            tolower($1) == "systemgroup" {
+                found = 0
+                for (i = 2; i <= NF && $i !~ /^#/; i++) if ($i == "lpadmin") found = 1
+            }
+            END { exit !found }
+        ' /etc/cups/cups-files.conf; then
+        log "ERROR: Expected node UID/GID and existing lpadmin SystemGroup are required; no policy changes made."
+        restore_and_stop
+    fi
+    if ! awk -v path="$transport" '
+        /^[[:space:]]*#/ { next }
+        tolower($1) == "statedir" && ($2 == path || index($2, path "/") == 1) { unsafe = 1 }
+        END { exit unsafe }
+    ' /etc/cups/cups-files.conf "$config"; then
+        log "ERROR: CUPS state/certificates must not use the shared socket directory."
+        restore_and_stop
+    fi
+    # CUPS recreates the socket, but does not manage this separate parent.
+    if ! chown 0:1000 "$transport" || ! chmod 0750 "$transport"; then
+        restore_and_stop
+    fi
+    if ! awk -v socket="$socket" '
+        /^[[:space:]]*#/ { next }
+        tolower($1) == "listen" && $2 == socket { found = 1 }
+        END { exit !found }
+    ' "$config"; then
+        if [ -z "$backup" ]; then
+            backup=$(mktemp "${config}.before-protected-socket.XXXXXX") || restore_and_stop
+            cp -p "$config" "$backup" || restore_and_stop
+            log "Backed up configuration to $backup."
+        fi
+        printf '\n# Protected local peer-credential transport; policies remain unchanged.\nListen %s\n' "$socket" >> "$config" || restore_and_stop
+    fi
+    log "Protected socket listener configured; CUPS access/authentication policies unchanged."
+fi
+
 if ! cupsd -t -c "$config"; then
     restore_and_stop
 fi

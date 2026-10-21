@@ -1,6 +1,6 @@
-# CUPS socket authorization: isolated acceptance procedure
+# CUPS socket authorization: historical isolated experiment
 
-**Status: not executed by Dyad. Production socket transport is blocked.** This procedure tests a candidate identity, not a deployed repair. The available SSH diagnostics connection is read-only and cannot create these containers. An administrator must review and execute this procedure on an isolated Docker test machine, record results, and approve a revised implementation before production configuration changes.
+**Superseded experiment — do not run this `/run/cups` sharing procedure on production or use it to approve the current candidate.** The repository now implements a distinct protected `/run/mahaffeys-cups` socket parent, and the guarded management preparation is its acceptance path. See [CUPS_AUTHORIZATION.md](CUPS_AUTHORIZATION.md) for current status and gates. The experiment below is retained as historical evidence of why sharing StateDir and relying on socket chmod are unsafe. Neither historical source findings nor local builds establish live authorization or paper output.
 
 ## Findings and assumptions
 

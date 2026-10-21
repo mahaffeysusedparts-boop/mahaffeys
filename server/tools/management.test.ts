@@ -78,6 +78,28 @@ describe('restricted deployment manifest', () => {
     expect(() => validateManifest(baseline(), candidate())).not.toThrow();
     expect(digest({ b: 1, a: 2 })).toBe(digest({ a: 2, b: 1 }));
   });
+  it('normalizes only checkout-relative unmanaged build contexts without mutating manifests', () => {
+    const before: any = baseline();
+    const after = candidate();
+    const roots = { baseline: join(tmpdir(), 'live-checkout'), candidate: join(tmpdir(), 'isolated-checkout') };
+    before.services.worker = { build: { context: join(roots.baseline, 'vision-worker'), dockerfile: 'Dockerfile' } };
+    after.services.worker = { build: { context: join(roots.candidate, 'vision-worker'), dockerfile: 'Dockerfile' } };
+    const hashes = [digest(before), digest(after)];
+    expect(() => validateManifest(before, after, roots)).not.toThrow();
+    expect([digest(before), digest(after)]).toEqual(hashes);
+    for (const change of [
+      { context: join(roots.candidate, 'other-worker'), dockerfile: 'Dockerfile' },
+      { context: join(roots.candidate, 'vision-worker'), dockerfile: 'other.Dockerfile' },
+      { context: join(roots.candidate, '..', 'outside'), dockerfile: 'Dockerfile' },
+      { context: 'https://example.com/repository.git', dockerfile: 'Dockerfile' },
+    ]) {
+      after.services.worker.build = change;
+      expect(() => validateManifest(before, after, roots)).toThrow();
+    }
+    after.services.worker.build = { context: join(roots.candidate, 'vision-worker'), dockerfile: 'Dockerfile' };
+    after.services.postgres.environment = { UNAPPROVED: 'change' };
+    expect(() => validateManifest(before, after, roots)).toThrow(/out of scope/);
+  });
   it('removes dependency paths so Compose create cannot create/recreate a database or other service', () => {
     const full = candidate();
     full.services.mahaffeys.depends_on = { postgres: { condition: 'service_healthy' }, cups: { condition: 'service_started' } };

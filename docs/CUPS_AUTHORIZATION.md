@@ -1,27 +1,29 @@
 # Brother printer: CUPS authorization status
 
-**The live printer is not repaired. Production socket administration remains blocked.**
+**A protected-socket repair candidate is implemented in the repository. Live authorization and physical printing are NOT verified. Do not deploy it until guarded server tests pass.**
 
-The reported `lpadmin: Forbidden` means CUPS is refusing queue administration. It is separate from Brother reachability or IPP-path negotiation. The app runs as a non-root account and its default `NITRO_CUPS_SERVER` remains `cups:631`.
+The app's reported authorization error is separate from Brother reachability or IPP negotiation. The previously running app used `cups:631`; TCP scheduler health does not establish permission to administer queues.
 
-## Completed application safeguards
+## Repair candidate
 
-CUPS failures return bounded, actionable authorization, socket-permission, connection, timeout and IPP-negotiation messages instead of exposing subprocess command arguments. The CUPS client username is taken from the executing account, not an impersonated root account. Failed add/remove actions reach the existing diagnostic logger, and server-side failures emit a `[printer-diagnostic]` marker without raw command output. Creating a queue does not claim successful physical printing.
+The candidate Compose configuration uses `/run/mahaffeys-cups/cups.sock` and a dedicated `cups-transport` named volume. CUPS mounts it writable; the non-root app mounts it read-only. The parent is root-owned, group 1000, mode 0750, separate from CUPS StateDir. CUPS may recreate a permissively-mode socket, but cannot grant access through this protected parent to other groups. No certificates or other files are shared.
 
-## Blocked transport change
+The CUPS image provisions a locked, non-login `node` identity with UID/GID 1000:1000 and lpadmin membership. Startup checks the existing effective `cups-files.conf` SystemGroup and refuses incompatible configurations rather than broadening access. It adds only the missing socket listener, retaining TCP, hostname, authentication and access policies. Active configuration is backed up before modification and validated with `cupsd -t`; invalid changes are restored. The app continues using its actual non-root username for CUPS PeerCred authentication.
 
-A successful scheduler response is not proof of administration permission. Sharing all of `/run/cups` also risks exposing local administrator certificates, and CUPS can recreate a permissively-mode socket. A read-only app mount does not itself resolve certificate privacy or socket authorization.
+## Verification and deployment gates
 
-The default Compose file does not enable a shared runtime mount. `deploy/docker/cups-socket.compose.yaml`, if present, is an experimental, non-default candidate only; **do not enable it on production**. The production CUPS image retains its existing identity provisioning and listener/alias repair. No image-build authentication gate or cross-container authentication test has been successfully executed by Dyad.
+Guarded preparation must use the exact published revision with the reviewed installed management modules. The manifest comparator now compares repository-relative build contexts for unchanged services across live/test checkouts, while retaining exact checks for all other fields, mounts, Dockerfiles and unrelated services. It rejects contexts outside a checkout. This addresses the path-related false mismatch without permitting database/proxy deployment.
 
-Before promoting a repair, follow [the isolated CUPS acceptance procedure](CUPS_SOCKET_VERIFICATION.md) on a Docker-capable test machine. It must demonstrate the actual app's non-root UID/GID, effective CUPS policies, authorized queue creation/deletion, unauthorized denial, root-certificate non-readability, acceptable socket/directory permissions, and socket recreation after restart. Resolve failing permission or privacy checks with a separately reviewed protected socket-directory design; do not disable CUPS authentication, run the app as root, share host PID namespaces, mount Docker's socket, or add a background chmod workaround.
+Preparation copies the live CUPS configuration into disposable, network-isolated containers. It must demonstrate app UID/GID, protected directory ownership/permissions, socket-only contents, PeerCred log evidence, unauthorized denial, actual root-certificate existence and non-readability, TCP scheduler health, CUPS restart and app recreation. Test queues remain disabled and have no physical printer; no document is submitted. Debug logging is confined to the disposable configuration.
 
-## Deployment and recovery
+**The root-owned installed dispatcher does not update when repository files change.** An administrator must review and refresh the installed management modules before these revised checks can run. Finish outstanding jobs first. The connection cannot modify its own trusted dispatcher. See [SERVER_MANAGEMENT_MCP.md](SERVER_MANAGEMENT_MCP.md).
 
-The currently connected diagnostics key is still read-only. The optional [guarded management extension](SERVER_MANAGEMENT_MCP.md) adds separate-key, approval-gated isolated tests and exact-revision app/CUPS deployment with config/cache/spool archives. A server administrator must review/install that root-owned dispatcher and authorize its separate key before the connection can use it. Adding the code does not authorize writes or establish a successful authorization test. Physical test printing is not exposed by the extension.
+Once the new revision is published and preparation succeeds, a separate deployment approval is required. Use the guarded app/CUPS-only rollout, which captures private config/cache/spool backups while services are stopped and restores queued-document spool before the replacement CUPS starts. Preserve all existing volumes, queues and documents. Do not use a general Compose redeploy as a substitute: `/var/spool/cups` is still not a named volume, so an unguarded recreation can lose pending documents.
 
-After provisioning, its preparation job must actually pass non-root administration, unauthorized denial, certificate privacy, protected socket-parent, TCP health, CUPS restart and app recreation checks using the committed images and live CUPS configuration in disposable, network-isolated containers. Failed checks block deployment; the existing experimental `/run/cups` overlay is not promoted automatically. A separate deployment approval is still required.
+After deployment, compare existing queues/jobs and retry the Brother at `192.168.1.251` using `/ipp/print` in Settings → Shared network printers. Saving a profile proves neither physical printing nor Brother IPP compatibility. Only with separate user approval, submit one small document and confirm actual paper output.
 
-Follow the backup, queue/device inventory, queued-document/spool preservation and rollback gates in [SELF_HOSTING.md](../SELF_HOSTING.md). In particular, the current CUPS spool is not a named volume: recreating CUPS without preserving it can lose pending documents even when config/cache volumes are retained. Preserve every existing volume, configuration, queue and pending job; never delete volumes to fix authorization.
+## Prohibited shortcuts
 
-After an approved rollout, retry the Brother at `192.168.1.251` using `/ipp/print`. Diagnose any subsequent IPP failure separately. Only with the user's approval, submit one small test document and confirm paper output. No live repair or physical print success is claimed until those checks are completed.
+Do not enable the old experimental `/run/cups` overlay, share administrator certificates, disable authentication, run the app as root, mount Docker's socket, share host PID namespaces, delete volumes, or add a background chmod workaround. Failed verification blocks deployment; resolve the specific failure rather than bypassing it.
+
+The detailed preservation and rollback gates are in [SELF_HOSTING.md](../SELF_HOSTING.md). Earlier `/run/cups` experiments in [CUPS_SOCKET_VERIFICATION.md](CUPS_SOCKET_VERIFICATION.md) are historical and are not the current protected-socket acceptance path.

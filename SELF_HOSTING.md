@@ -2,6 +2,8 @@
 
 This guide deploys Mahaffeys on an Ubuntu or Debian server at your site. You can use the traditional systemd service approach or the simpler, fully containerized Docker Compose method.
 
+> **CUPS authorization candidate — not live-verified:** Current Compose uses the protected `/run/mahaffeys-cups/cups.sock` transport. Before any existing-server rollout, follow [CUPS_AUTHORIZATION.md](docs/CUPS_AUTHORIZATION.md): refresh the reviewed root-owned management modules, publish the exact revision, pass isolated tests, and approve the spool-preserving app/CUPS-only deployment. Do not use the general build/redeploy instructions below to bypass this gate. Pending documents in `/var/spool/cups` are not protected by the current named config/cache volumes. The older TCP-only and `/run/cups` socket discussion below describes previous configurations, not the current candidate. No physical print success is claimed.
+
 ## Option A: Docker Compose Deployment (Recommended)
 
 This is the simplest and most robust way to run Mahaffeys. It packages the application, database, and web server into isolated containers.

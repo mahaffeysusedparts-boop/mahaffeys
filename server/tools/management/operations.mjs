@@ -117,6 +117,11 @@ async function test(policy, directory, images, candidate, liveConfig, progress) 
   try {
     const cups = await create(['--env-file', envFiles.cups, '--mount', `type=bind,source=${runtime},target=/run/mahaffeys-cups`, images.cups]);
     await archive(cups, '/etc/cups', liveConfig, true);
+    // Debug evidence is enabled only in the disposable copy of the live config.
+    const debugConfig = join(directory, 'test-cupsd.conf');
+    await docker(['cp', `${cups}:/etc/cups/cupsd.conf`, debugConfig]);
+    await writeFile(debugConfig, `${await readFile(debugConfig, 'utf8')}\nLogLevel debug\n`, { mode: 0o600 });
+    await docker(['cp', debugConfig, `${cups}:/etc/cups/cupsd.conf`]);
     await docker(['start', cups]);
     const createApp = () => create(['--env-file', envFiles.mahaffeys, ...(candidate.services.mahaffeys.user ? ['--user', candidate.services.mahaffeys.user] : []), '--mount', `type=bind,source=${runtime},target=/run/mahaffeys-cups,readonly`, '--entrypoint', 'node', images.mahaffeys, '-e', 'setInterval(()=>{},1000)']);
     let app = await createApp();
@@ -144,8 +149,18 @@ async function test(policy, directory, images, candidate, liveConfig, progress) 
       catch (error) { if (/forbidden|unauthorized|password|authorization|authentication/i.test(error.message)) denied = true; }
       if (!denied) throw new Error('Unauthorized-client denial was not demonstrated.');
     };
+    const peerPrivacy = async () => {
+      await appExec(cups, ['grep', '-q', 'Authorized as node using PeerCred', '/var/log/cups/error_log']);
+      const state = (await appExec(cups, ['sh', '-c', 'awk \'/^[[:space:]]*#/ { next } tolower($1) == "statedir" { path=$2 } END { print path ? path : "/run/cups" }\' /etc/cups/cups-files.conf'])).stdout.trim();
+      if (!state.startsWith('/') || /[\r\n\0]/.test(state)) throw new Error('Invalid effective CUPS StateDir.');
+      const certificate = `${state}/certs/0`;
+      await appExec(cups, ['test', '-f', certificate]);
+      await appExec(cups, ['test', '!', '-r', certificate], '1000:1000');
+      await appExec(cups, ['test', '!', '-r', certificate], '65534:1000');
+    };
     // Disabled raw queues isolate authorization; no lp/lpr, real printer or print job.
     await appExec(app, [...args, '-p', 'management_proof', '-v', 'socket://127.0.0.1:9', '-m', 'raw']);
+    await peerPrivacy();
     await deny();
     await docker(['restart', cups]);
     app = await createApp();
@@ -156,8 +171,9 @@ async function test(policy, directory, images, candidate, liveConfig, progress) 
     await deny();
     await appExec(app, [...args, '-x', 'management_proof']);
     await appExec(app, [...args, '-p', 'management_recreated', '-v', 'socket://127.0.0.1:9', '-m', 'raw']);
+    await peerPrivacy();
     await appExec(app, [...args, '-x', 'management_recreated']);
-    progress('Isolated non-root authorization, denial, certificate privacy, protected socket, TCP health, CUPS restart and app recreation checks passed. No print job sent.');
+    progress('Isolated non-root PeerCred authorization, denial, certificate privacy, protected socket, TCP health, CUPS restart and app recreation checks passed. No print job sent.');
   } finally {
     for (const id of ids.reverse()) {
       const info = JSON.parse((await docker(['inspect', id])).stdout)[0];
@@ -182,7 +198,11 @@ export async function prepare(policy, job, directory, progress) {
   const baseline = await baselineManifest(policy);
   const baselineHash = digest(baseline);
   const candidate = await manifest(policy, join(source, 'compose.yaml'));
-  validateManifest(baseline, candidate);
+  validateManifest(baseline, candidate, { baseline: policy.repository, candidate: source });
+  // Keep unchanged services anchored to the live checkout in saved manifests.
+  for (const name of Object.keys(candidate.services)) {
+    if (!SERVICES.includes(name)) candidate.services[name] = structuredClone(baseline.services[name]);
+  }
   for (const service of SERVICES) {
     const build = candidate.services[service].build;
     const expected = service === 'cups' ? 'deploy/docker/cups.Dockerfile' : 'Dockerfile';

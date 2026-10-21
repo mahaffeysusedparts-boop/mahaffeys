@@ -1,5 +1,6 @@
 import { lstat, readFile, realpath } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
+import { isAbsolute, relative, sep } from 'node:path';
 
 export const SERVICES = ['cups', 'mahaffeys'];
 export const INSTALL = '/usr/local/lib/mahaffeys/management';
@@ -45,9 +46,23 @@ export async function loadPolicy() {
 }
 
 // Approved source still executes build/startup code: Git origin/main maintainers are trusted.
-export function validateManifest(baseline, candidate) {
+export function validateManifest(baseline, candidate, roots) {
   const before = structuredClone(baseline);
   const after = structuredClone(candidate);
+  // Compose resolves build contexts against each checkout. Compare only their
+  // repository-relative paths; mounts and all other configuration remain exact.
+  if (roots) {
+    for (const [manifest, root] of [[before, roots.baseline], [after, roots.candidate]]) {
+      if (!isAbsolute(root)) throw new Error('Manifest checkout roots must be absolute.');
+      for (const [name, service] of Object.entries(manifest.services || {})) {
+        if (SERVICES.includes(name) || !service.build?.context) continue;
+        const context = service.build.context;
+        const path = relative(root, context);
+        if (!isAbsolute(context) || path === '..' || path.startsWith(`..${sep}`) || isAbsolute(path)) throw new Error('Unmanaged build context must remain inside its checkout.');
+        service.build.context = path || '.';
+      }
+    }
+  }
   for (const service of SERVICES) {
     const current = before.services?.[service];
     const proposed = after.services?.[service];
