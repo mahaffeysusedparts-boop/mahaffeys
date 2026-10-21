@@ -4,6 +4,7 @@ import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { runWindowsSshProcess } from './windowsSshProcess';
+import { managementToken, type ManagementRequest } from './managementProtocol';
 
 const execFileAsync = promisify(execFile);
 
@@ -13,7 +14,8 @@ export const SERVICES = ['mahaffeys', 'cups', 'nginx', 'postgres', 'storage-agen
 export type Service = typeof SERVICES[number];
 export type DiagnosticRequest =
   | { operation: 'connection' | 'containers' | 'version' | 'cups' | 'printer' }
-  | { operation: 'logs'; service: Service; lines: number };
+  | { operation: 'logs'; service: Service; lines: number }
+  | ManagementRequest;
 
 export interface SshFiles {
   identityFile: string;
@@ -28,6 +30,7 @@ export function defaultSshFiles(): SshFiles {
 }
 
 export function requestToken(request: DiagnosticRequest): string {
+  if (request.operation === 'management') return managementToken(request);
   if (request.operation === 'logs') {
     if (!SERVICES.includes(request.service) || !Number.isInteger(request.lines) || request.lines < 10 || request.lines > 200) {
       throw new Error('Choose an approved service and between 10 and 200 log lines.');

@@ -58,7 +58,11 @@ Docker Compose also starts a `cups` container that runs the CUPS print service o
 
 ### Read-only diagnostics from Dyad on Windows
 
-See [SERVER_DIAGNOSTICS_MCP.md](docs/SERVER_DIAGNOSTICS_MCP.md) for the stdio plugin fields, dedicated SSH key prerequisites, and restricted server dispatcher. This bridge reads container status, bounded logs, and CUPS/printer connectivity; it does not deploy, restart services, or expose Docker management on the network. One-time administrator provisioning is required before live diagnostics work.
+See [SERVER_DIAGNOSTICS_MCP.md](docs/SERVER_DIAGNOSTICS_MCP.md) for the stdio plugin fields, dedicated SSH key prerequisites, and restricted server dispatcher. This key reads container status, bounded logs, and CUPS/printer connectivity; it does not deploy, restart services, or expose Docker management on the network. One-time administrator provisioning is required before live diagnostics work.
+
+### Optional guarded verification and deployment
+
+See [SERVER_MANAGEMENT_MCP.md](docs/SERVER_MANAGEMENT_MCP.md) for the separate management key, interactive administrator installer, fixed root-owned policy, and opt-in bridge arguments. Once provisioned, approval-gated jobs can fetch an exact origin/main commit, build/test isolated app/CUPS images, deploy a passed plan with configuration/cache/spool backups, and recover the latest attempt. No arbitrary shell, database/proxy deployment, volume deletion or unauthenticated CUPS administration is exposed. The default diagnostics key remains read-only, and the current printer configuration remains blocked until real protected-socket acceptance tests pass.
 
 ### CUPS TCP connectivity and persistent configuration
 

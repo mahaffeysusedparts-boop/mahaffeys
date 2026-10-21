@@ -5,10 +5,11 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import { defaultSshFiles, runDiagnostic, SERVER_HOST, SERVICES, type DiagnosticRequest } from './sshDiagnostics';
+import { managementRequest, managementTools } from './managementTools';
 
 const { values } = parseArgs({
   args: process.argv.slice(2),
-  options: { 'identity-file': { type: 'string' }, 'known-hosts-file': { type: 'string' } },
+  options: { 'identity-file': { type: 'string' }, 'known-hosts-file': { type: 'string' }, 'enable-management': { type: 'boolean', default: false }, 'management-identity-file': { type: 'string' } },
   strict: true,
 });
 const defaults = defaultSshFiles();
@@ -19,6 +20,11 @@ const files = {
 for (const path of Object.values(files)) {
   if (!isAbsolute(path) || /[\r\n\0]/.test(path)) throw new Error('SSH key and known_hosts paths must be absolute local file paths.');
 }
+const managementIdentity = values['management-identity-file'];
+if (values['enable-management'] && (!managementIdentity || !isAbsolute(managementIdentity) || /[\r\n\0]/.test(managementIdentity) || managementIdentity === files.identityFile)) {
+  throw new Error('Management requires a separate absolute private-key path. Never reuse the read-only diagnostics key.');
+}
+const managementFiles = managementIdentity ? { ...files, identityFile: managementIdentity } : undefined;
 
 const annotations = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true };
 const emptySchema = { type: 'object' as const, properties: {}, additionalProperties: false };
@@ -32,12 +38,17 @@ const tools = [
 ];
 const emptyArgs = z.object({}).strict();
 const logArgs = z.object({ service: z.enum(SERVICES), lines: z.number().int().min(10).max(200).default(60) }).strict();
-const server = new Server({ name: 'mahaffeys-readonly-diagnostics', version: '1.0.0' }, { capabilities: { tools: {} } });
-server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools }));
+const server = new Server({ name: 'mahaffeys-server-connection', version: '2.0.0' }, { capabilities: { tools: {} } });
+server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: [...tools, ...(values['enable-management'] ? managementTools : [])] }));
 server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
   try {
     let diagnostic: DiagnosticRequest;
-    if (request.params.name === 'mahaffeys_container_logs') {
+    let sshFiles = files;
+    if (managementTools.some(tool => tool.name === request.params.name)) {
+      if (!values['enable-management'] || !managementFiles) throw new Error('Management is disabled. Provision the separate restricted key and enable it explicitly.');
+      diagnostic = managementRequest(request.params.name, request.params.arguments ?? {});
+      sshFiles = managementFiles;
+    } else if (request.params.name === 'mahaffeys_container_logs') {
       diagnostic = { operation: 'logs', ...logArgs.parse(request.params.arguments ?? {}) };
     } else {
       emptyArgs.parse(request.params.arguments ?? {});
@@ -47,10 +58,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
         case 'mahaffeys_project_version': diagnostic = { operation: 'version' }; break;
         case 'mahaffeys_cups_diagnostics': diagnostic = { operation: 'cups' }; break;
         case 'mahaffeys_printer_connectivity': diagnostic = { operation: 'printer' }; break;
-        default: throw new Error('Unknown tool. This bridge only exposes read-only diagnostics.');
+        default: throw new Error('Unknown tool.');
       }
     }
-    const output = await runDiagnostic(diagnostic, files, extra.signal);
+    const output = await runDiagnostic(diagnostic, sshFiles, extra.signal);
     return { content: [{ type: 'text' as const, text: JSON.stringify({ server: SERVER_HOST, checkedAt: new Date().toISOString(), output }, null, 2) }] };
   } catch (error) {
     return { isError: true, content: [{ type: 'text' as const, text: error instanceof Error ? error.message : 'Diagnostics failed.' }] };
@@ -59,6 +70,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
 
 const transport = new StdioServerTransport();
 await server.connect(transport);
-process.stderr.write('Mahaffeys read-only MCP bridge ready. SSH is attempted only when a diagnostic tool is called.\n');
+process.stderr.write(`Mahaffeys MCP bridge ready (${values['enable-management'] ? 'guarded management enabled with separate key' : 'read-only mode'}). SSH is attempted only when a tool is called.\n`);
 process.once('SIGINT', () => { void server.close(); });
 process.once('SIGTERM', () => { void server.close(); });
