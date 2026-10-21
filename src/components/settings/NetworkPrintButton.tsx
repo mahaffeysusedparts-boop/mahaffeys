@@ -6,6 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useNetworkPrinters } from "@/hooks/useNetworkPrinters";
 import { networkPrinterService, type PrinterKind } from "@/services/networkPrinterService";
 import { printRoutingService } from "@/services/printRoutingService";
+import { preparePrintDocument } from "@/utils/preparePrintDocument";
 
 interface NetworkPrintButtonProps {
   kind: PrinterKind;
@@ -46,8 +47,16 @@ export function NetworkPrintButton({ kind, rootSelector, documentName, className
       return;
     }
     setSending(true);
+    let html: string;
     try {
-      const html = `<style>${collectStyles()}</style><main>${root.outerHTML}</main>`;
+      html = `<style>${collectStyles()}</style><main>${await preparePrintDocument(root)}</main>`;
+      if (html.length > 4_000_000) throw new Error("The document with photos is too large for direct printing. The print job was not sent.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not prepare photos. The print job was not sent.");
+      setSending(false);
+      return;
+    }
+    try {
       const result = await networkPrinterService.print(selected.id, html, documentName);
       if (kind === "sticker") printRoutingService.setStickerPrinter(selected.id);
       else printRoutingService.setStandardPrinter(selected.id);

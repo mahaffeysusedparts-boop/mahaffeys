@@ -29,12 +29,17 @@ for (const scenario of [
       let response: unknown = { ok: true };
       if (path === '/api/auth/status') response = { user, hasAdmin: true };
       else if (path === '/api/state') response = { state: state() };
+      else if (path === '/api/printers') response = [];
       else if (path === '/api/scale/status') response = { connected: false, weight: 0, unit: 'LBS', isStable: false, isZero: true, registry: [] };
       else if (path === '/api/scrap-buying/queue') response = { tickets: [ticket], policy: null, legacyReviews: [] };
       else if (path === '/api/scrap-buying/requirements') response = { revision: 1, requirePhotos: false, requirePhone: false, requireAddress: false, requireSellerId: false, requireVehiclePlate: false, requireExplicitReview: false };
       else if (path === '/api/scrap-buying/eligibility') response = evaluateBuyingPaymentRules(ticket);
       else if (path === '/api/scrap-buying/commands') {
         const command = route.request().postDataJSON();
+        if (command.action === 'ADOPT') {
+          await route.fulfill({ json: ticket });
+          return;
+        }
         expect(command.action).toBe('FINALIZE_AND_PAY');
         expect(command.method).toBe(scenario.method);
         expect(command.disbursed).toBe(true);

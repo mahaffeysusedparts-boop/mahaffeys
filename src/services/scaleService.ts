@@ -169,23 +169,34 @@ class ScaleService {
     this.baselineGrossLbs = null;
     this.journalCandidate = null;
 
+    this.noiseFilterWindow = [];
+    this.status.connected = false;
+    this.status.isStable = false;
     this.persistCurrentScale();
-    this.updateWeights(this.status.grossWeight);
-    this.notify();
+    this.updateWeights(0);
     // Trigger an immediate poll for the new scale
     void this.pollServer();
   }
 
   /** Re-reads scale configuration from storage (cross-workstation sync). */
   public reloadScales() {
+    const previousScaleId = this.currentScaleId;
     this.loadScales();
     if (this.currentScaleId && !this.scales.some((s) => s.id === this.currentScaleId)) {
       // The active platform was deleted on another workstation.
       this.currentScaleId = null;
-      this.status.tareWeight = 0;
       this.status.mode = 'SERVER';
     }
-    this.notify();
+    if (previousScaleId !== this.currentScaleId) {
+      this.status.connected = false;
+      this.status.isStable = false;
+      this.status.tareWeight = 0;
+      this.noiseFilterWindow = [];
+      this.baselineGrossLbs = null;
+      this.journalCandidate = null;
+      this.updateWeights(0);
+      void this.pollServer();
+    } else this.notify();
   }
 
   /**
@@ -371,6 +382,12 @@ class ScaleService {
       const response = await fetch(`/api/scale/status?${params.toString()}`, { cache: 'no-store' });
       if (!response.ok) throw new Error(`Scale server returned ${response.status}`);
       const serverStatus = await response.json() as ServerScaleStatus;
+      // A response from the previous platform must never become capturable.
+      if ((currentScale?.id ?? null) !== this.currentScaleId) return;
+      if (!Number.isFinite(serverStatus.weight) || !['LBS', 'KG'].includes(serverStatus.unit)) {
+        throw new Error('Scale server returned an invalid reading');
+      }
+      if (serverStatus.unit !== this.status.unit) this.noiseFilterWindow = [];
 
       // Success - reset circuit breaker
       this.circuitBreaker = {
@@ -394,8 +411,11 @@ class ScaleService {
         this.registry = serverStatus.registry;
       }
 
-      // Apply noise filtering to weight readings
-      const filteredWeight = this.applyNoiseFilter(serverStatus.weight);
+      // Trust the hardware's stable reading; never label a delayed median stable.
+      if (serverStatus.isStable) this.noiseFilterWindow = [];
+      const filteredWeight = serverStatus.isStable
+        ? serverStatus.weight : this.applyNoiseFilter(serverStatus.weight);
+      this.lastSuccessfulWeight = filteredWeight;
       this.updateWeights(filteredWeight);
 
       // Weight Activity Journal — evaluate the settled reading against the

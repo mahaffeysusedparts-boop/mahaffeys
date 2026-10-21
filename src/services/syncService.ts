@@ -1,5 +1,4 @@
 import { apiRequest } from "./apiClient";
-import { authService } from "./authService";
 import { sharedStorage } from "./sharedStorage";
 import { storageService } from "./storageService";
 import { toast } from "sonner";
@@ -41,7 +40,7 @@ const SHARED_KEYS = [
   "mahaffeys_operations_summaries",
 ] as const;
 
-const POLL_INTERVAL_MS = 2_000;
+const POLL_INTERVAL_MS = 1_000;
 const SLOW_POLL_INTERVAL_MS = 30_000;
 const HEARTBEAT_INTERVAL_MS = 30_000;
 const MERGE_KEYS = new Set(["mahaffeys_tickets", "mahaffeys_pull_yard_vehicles", "mahaffeys_yard_layout", "mahaffeys_tools", "mahaffeys_tool_checkouts"]);
@@ -279,15 +278,16 @@ class SyncService {
       }
       params.set("limit", "2000");
       const response = await apiRequest<SinceResponse>(`/api/state/since?${params.toString()}`);
-      const currentUserId = authService.getCurrentUser()?.id;
       let applied = 0;
       for (const entry of response.entries) {
         if (!(SHARED_KEYS as readonly string[]).includes(entry.key)) continue;
-        if (currentUserId && entry.updatedBy === currentUserId && !['mahaffeys_tickets','mahaffeys_cash_drawer'].includes(entry.key)) continue;
         const localValue = readLocalValue(entry.key);
         const merged = MERGE_KEYS.has(entry.key) && localValue
           ? mergeArrays(localValue, entry.value)
           : entry.value;
+        // The same login can be active on multiple devices. Skip unchanged
+        // values, not the author's user ID, including overlapping poll results.
+        if (JSON.stringify(localValue) === JSON.stringify(merged)) continue;
         sharedStorage.applyServerValue(entry.key, merged);
         applied += 1;
         // Keep the full server value in memory even if the local cache is full.

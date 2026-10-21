@@ -65,9 +65,7 @@ const MAX_ACTIVE_LOADS = 10;
 
 type SingleTareMode = 'NONE' | 'SCALE_TARE' | 'MANUAL';
 
-// Auto-capture tuning: a reading only fires after it stays stable this long,
-// and must exceed this floor so idle platform drift never auto-logs.
-const AUTO_CAPTURE_SETTLE_MS = 1500;
+// The hardware must report stability and exceed this floor to reject idle drift.
 const AUTO_CAPTURE_MIN_LBS = 20;
 
 interface ScaleWeightLoggerProps {
@@ -117,9 +115,8 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
   const [manualWeight, setManualWeight] = useState('');
 
   // Hands-free logging: when armed, the next stable reading auto-commits as
-  // the IN (or OUT) weight after the settle window elapses.
+  // the IN (or OUT) weight immediately.
   const [autoCapture, setAutoCapture] = useState(false);
-  const stableSinceRef = useRef<number | null>(null);
   const autoCaptureContextRef = useRef<string | null>(null);
   // Manual capture attempted while the reading was still in MOTION — parked
   // here until the operator confirms or waits for stability.
@@ -504,28 +501,18 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
   };
 
   // ---- Auto-capture engine -----------------------------------------------------
-  // Watches the live poll: once a reading holds stable (and above the floor)
-  // for the settle window, it commits itself as the armed IN/OUT weight.
+  // Capture the hardware-confirmed stable reading without an extra UI delay.
   useEffect(() => {
-    if (!autoCapture || !activeTicket || remoteConflict || weighingMode !== 'VEHICLE_IN_OUT' || !modeCompatible) return;
+    if (!autoCapture || !activeTicket || remoteConflict || busyRef.current || weighingMode !== 'VEHICLE_IN_OUT' || !modeCompatible) return;
     const context = `${activeTicket.id}:${weighingMode}:${currentScaleId}:${weighState}`;
     if (autoCaptureContextRef.current !== context) {
       setAutoCapture(false);
-      stableSinceRef.current = null;
       return;
     }
-    if (!scale.connected || !scale.isStable || currentLbs <= AUTO_CAPTURE_MIN_LBS) {
-      stableSinceRef.current = null;
-      return;
-    }
-    if (stableSinceRef.current === null) {
-      stableSinceRef.current = Date.now();
-      return;
-    }
-    if (Date.now() - stableSinceRef.current < AUTO_CAPTURE_SETTLE_MS) return;
+    if (!scale.connected || !scale.isStable || currentLbs <= AUTO_CAPTURE_MIN_LBS) return;
 
-    // Stable long enough — fire and disarm.
-    stableSinceRef.current = null;
+    // Disarm synchronously as well as in state to prevent duplicate captures.
+    autoCaptureContextRef.current = null;
     setAutoCapture(false);
     navigator.vibrate?.(40);
 
@@ -548,7 +535,6 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
   // Context changes must disarm and discard any unconfirmed hardware prompt.
   useEffect(() => {
     setAutoCapture(false);
-    stableSinceRef.current = null;
     autoCaptureContextRef.current = null;
     setPendingUnstable(null);
     setCorrectionTarget(null);
@@ -875,7 +861,6 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
       type="button"
       onClick={() => {
         autoCaptureContextRef.current = autoCapture ? null : `${activeTicket?.id}:${weighingMode}:${currentScaleId}:${weighState}`;
-        stableSinceRef.current = null;
         setAutoCapture(!autoCapture);
       }}
       disabled={!scale.connected || !modeCompatible || remoteConflict}
@@ -887,8 +872,8 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
     >
       <Radar className={`h-4 w-4 ${autoCapture ? 'animate-pulse' : ''}`} />
       {autoCapture
-        ? `AUTO-CAPTURE ARMED — logs when stable (${AUTO_CAPTURE_SETTLE_MS / 1000}s)`
-        : 'Arm Auto-Capture (logs when the reading settles)'}
+        ? 'AUTO-CAPTURE ARMED — captures immediately when stable'
+        : 'Arm Auto-Capture (capture immediately when stable)'}
     </button>
   );
 
