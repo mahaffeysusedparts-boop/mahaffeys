@@ -34,7 +34,11 @@ Administrator prerequisites:
 - Existing `jhilliard` account with already-approved Docker access. No permissions should be broadened as a shortcut.
 - Separate passphrase-protected Ed25519 **management** key on the Windows machine. Only its public `.pub` file is transferred to the administrator through an approved channel. Load the private key into the Windows OpenSSH agent and retain verified `known_hosts`.
 
-The reviewed installer is `scripts/install-mahaffeys-management.mjs`. A server administrator launches it locally as root in an interactive terminal, supplying the public-key file path as its sole argument. It validates the public key, confirms existing Docker access, and requires the administrator to type `ENABLE MAHAFFEYS MANAGEMENT` before making changes. It cannot be invoked through the old read-only key.
+The reviewed installer is `scripts/install-mahaffeys-management.mjs`. A server administrator launches it locally as root in an interactive terminal, supplying the public-key file path as its argument. It validates the public key, confirms existing Docker access, and requires the administrator to type `ENABLE MAHAFFEYS MANAGEMENT` before making changes. It cannot be invoked through the old read-only key.
+
+For the supplied separate management public key, `scripts/redeploy-docker.mjs` is a host-side entry point that calls this installer with `deploy/ssh/mahaffeys-management.pub` and `--if-needed` before the existing Docker Compose build/start operation. The key was converted from SSH2 to OpenSSH format; no private key is bundled. The optional flag skips installation only for the exact already-installed forced-command entry with the expected root-owned files, enabled policy and restrictive state/SSH permissions. It never upgrades diagnostics access, re-enables a disabled policy, or refreshes installed modules silently. New installation still requires the typed administrator confirmation. An active management operation blocks this helper.
+
+The helper requires host Node.js 22+, root and an interactive terminal in the fixed server checkout. It does not fetch the updated code, upload from the PC, run inside Docker, or change what a plain Docker Compose invocation does. Its Compose step is the existing manual deployment, not the guarded workflow below: preserve pending printing documents and review downtime separately. The protected-socket tests still gate later remote MCP deployments. See [the self-hosting guide](../SELF_HOSTING.md#docker-redeploy-with-one-time-management-key-installation).
 
 The installer:
 

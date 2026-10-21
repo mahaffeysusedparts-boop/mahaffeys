@@ -32,7 +32,8 @@ try {
   if (process.getuid?.() !== 0 || !process.stdin.isTTY) throw new Error('A server administrator must review and run this installer as root in an interactive terminal. It cannot be bootstrapped through the read-only key.');
   if (Number(process.versions.node.split('.')[0]) < 22) throw new Error('Install Node.js 22 or newer on the host first.');
   const publicKeyPath = process.argv[2];
-  if (!publicKeyPath || process.argv.length !== 3) throw new Error('Select a file containing the separate management OpenSSH public key as the installer argument. Never provide a private key.');
+  const ifNeeded = process.argv.length === 4 && process.argv[3] === '--if-needed';
+  if (!publicKeyPath || (process.argv.length !== 3 && !ifNeeded)) throw new Error('Select a file containing the separate management OpenSSH public key, optionally followed by --if-needed. Never provide a private key.');
   const publicKeyStat = await lstat(resolve(publicKeyPath));
   if (!publicKeyStat.isFile() || publicKeyStat.size > 4096) throw new Error('Select a small regular OpenSSH public-key file, not a symlink or directory.');
   const publicKey = (await readFile(resolve(publicKeyPath), 'utf8')).trim();
@@ -52,7 +53,24 @@ try {
   await noSymlink(authorized);
   let existing = '';
   try { existing = await readFile(authorized, 'utf8'); } catch (error) { if (error.code !== 'ENOENT') throw error; }
-  if (existing.includes(match[1])) throw new Error('This public key is already authorized. Use a different dedicated key; do not reuse the diagnostics key.');
+  const entry = `restrict,command="/usr/bin/node ${installation}/runner.mjs" ssh-ed25519 ${match[1]} Mahaffeys-management`;
+  if (existing.includes(match[1])) {
+    const matching = existing.split(/\r?\n/).filter(line => line.includes(match[1]));
+    if (!ifNeeded || matching.length !== 1 || matching[0] !== entry) throw new Error('This public key is already authorized with unexpected access. Use a different dedicated key; do not reuse the diagnostics key.');
+    for (const path of ['/usr/local/lib/mahaffeys', installation, policy, ...['runner.mjs', 'operations.mjs', 'policy.mjs'].map(name => join(installation, name))]) {
+      const value = await lstat(path);
+      const directory = path === '/usr/local/lib/mahaffeys' || path === installation;
+      if (value.isSymbolicLink() || (directory ? !value.isDirectory() : !value.isFile()) || value.uid !== 0 || (value.mode & 0o022)) throw new Error(`Existing management installation requires administrator review: ${path}`);
+    }
+    const configuration = JSON.parse(await readFile(policy, 'utf8'));
+    if (configuration.enabled !== true || configuration.repository !== '/var/www/mahaffeys' || configuration.project !== 'mahaffeys' || configuration.branch !== 'main' || configuration.stateDirectory !== state) throw new Error('Existing management policy is disabled or unexpected. Administrator review is required; it will not be silently re-enabled.');
+    const stateStat = await lstat(state);
+    const sshStat = await lstat(join(home, '.ssh'));
+    const authorizedStat = await lstat(authorized);
+    if (!stateStat.isDirectory() || stateStat.isSymbolicLink() || stateStat.uid !== uid || (stateStat.mode & 0o077) || !sshStat.isDirectory() || sshStat.isSymbolicLink() || sshStat.uid !== uid || (sshStat.mode & 0o077) || authorizedStat.uid !== uid || (authorizedStat.mode & 0o077)) throw new Error('Existing management state or SSH permissions require administrator review.');
+    console.log('Separate restricted management key is already installed. No keys, policy or installed modules changed.');
+    process.exit(0);
+  }
   console.log('This installs approval-gated exact-revision app/CUPS test, deploy and recovery operations for the dedicated key. Existing SSH access is preserved. Docker access already held by this account is effectively host-root. Review all three management modules before proceeding. No firewall, SSH daemon, database or Docker-group changes will be made.');
   const input = createInterface({ input: process.stdin, output: process.stdout });
   let answer;
@@ -82,7 +100,6 @@ try {
     await writeFile(backup, existing, { mode: 0o600 });
     await chown(backup, uid, gid);
   }
-  const entry = `restrict,command="/usr/bin/node ${installation}/runner.mjs" ssh-ed25519 ${match[1]} Mahaffeys-management`;
   await writeFile(authorized, `${existing}${existing && !existing.endsWith('\n') ? '\n' : ''}${entry}\n`, { mode: 0o600 });
   await chmod(authorized, 0o600);
   await chown(authorized, uid, gid);

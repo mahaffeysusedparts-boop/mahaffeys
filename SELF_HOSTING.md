@@ -64,6 +64,16 @@ See [SERVER_DIAGNOSTICS_MCP.md](docs/SERVER_DIAGNOSTICS_MCP.md) for the stdio pl
 
 See [SERVER_MANAGEMENT_MCP.md](docs/SERVER_MANAGEMENT_MCP.md) for the separate management key, interactive administrator installer, fixed root-owned policy, and opt-in bridge arguments. Once provisioned, approval-gated jobs can fetch an exact origin/main commit, build/test isolated app/CUPS images, deploy a passed plan with configuration/cache/spool backups, and recover the latest attempt. No arbitrary shell, database/proxy deployment, volume deletion or unauthenticated CUPS administration is exposed. The default diagnostics key remains read-only, and the current printer configuration remains blocked until real protected-socket acceptance tests pass.
 
+### Docker redeploy with one-time management-key installation
+
+The host-side entry point `scripts/redeploy-docker.mjs` combines the existing Docker Compose build/start operation with restricted management-key provisioning. A server administrator launches this file using host Node.js 22 or newer, as root in an interactive terminal, from the approved checkout `/var/www/mahaffeys`. The checkout must already contain the published changes; this helper does not pull or upload source from the PC.
+
+The separate public key is bundled at `deploy/ssh/mahaffeys-management.pub`. Only a public key is stored in Git. On the first run, the installer requires `ENABLE MAHAFFEYS MANAGEMENT`, backs up existing authorization, appends the forced-command key, and installs the restricted dispatcher. Cancellation or a failed provisioning check prevents the Docker step. Later runs skip installation only when that exact restricted entry and expected private state/root-owned installation are present. Unexpected authorization, disabled policy, or an active management operation stops the helper for administrator review. Existing installed modules are not automatically upgraded.
+
+After provisioning, the helper validates Compose configuration, builds/starts services, and displays container status. **The plain Docker Compose command above still does not install host SSH keys.** Docker builds and app containers are intentionally not given access to host `authorized_keys`.
+
+This helper retains the existing manual deployment behavior; it does not perform guarded MCP acceptance tests, pinned-image deployment, queued-document backups, automatic rollback, or readiness verification. Review downtime and preserve pending CUPS documents before running it. Provisioning the key does not bypass the protected-socket acceptance gates for later MCP deployments. The PC must still hold the corresponding private key in OpenSSH format, loaded into its agent, and the Dyad plugin must be enabled with the separate management identity.
+
 ### CUPS TCP connectivity and persistent configuration
 
 The `cups-config` volume holds the active `/etc/cups` configuration and printer queues. The `cups-data` volume retains the mounted CUPS cache. **Rebuilding the image does not replace configuration already saved in `cups-config`.** The packaged `deploy/docker/cupsd.conf` already has `Port 631`, but an older volume may contain only `Listen /var/run/cups/cups.sock`. In that case CUPS can run locally while the app cannot reach `cups:631`.
