@@ -100,6 +100,20 @@ describe('restricted deployment manifest', () => {
     after.services.postgres.environment = { UNAPPROVED: 'change' };
     expect(() => validateManifest(before, after, roots)).toThrow(/out of scope/);
   });
+  it('reports differing fields without exposing configuration values or environment keys', () => {
+    const before: any = baseline();
+    const after = candidate();
+    after.services.postgres.environment = { PRIVATE_PASSWORD: 'do-not-disclose' };
+    after.networks = { private: { driver_opts: { secret: 'never-show-this' } } };
+    let message = '';
+    try { validateManifest(before, after); } catch (error) { message = (error as Error).message; }
+    expect(message).toContain('services.postgres.environment');
+    expect(message).toContain('networks');
+    expect(message).toContain('Checkout-relative build comparison: not supplied');
+    for (const secret of ['PRIVATE_PASSWORD', 'do-not-disclose', 'never-show-this']) expect(message).not.toContain(secret);
+    const roots = { baseline: join(tmpdir(), 'live'), candidate: join(tmpdir(), 'test') };
+    expect(() => validateManifest(before, after, roots)).toThrow(/Checkout-relative build comparison: enabled/);
+  });
   it('removes dependency paths so Compose create cannot create/recreate a database or other service', () => {
     const full = candidate();
     full.services.mahaffeys.depends_on = { postgres: { condition: 'service_healthy' }, cups: { condition: 'service_started' } };

@@ -89,7 +89,24 @@ export function validateManifest(baseline, candidate, roots) {
     delete after.volumes['cups-transport'];
   }
   if (before.volumes?.['cups-transport']) delete before.volumes['cups-transport'];
-  if (digest(before) !== digest(after)) throw new Error('Only app/CUPS configuration may change. Database, proxy and other services are out of scope.');
+  if (digest(before) !== digest(after)) {
+    // Report field names only: never configuration values or environment keys.
+    const fields = [];
+    for (const key of new Set([...Object.keys(before), ...Object.keys(after)])) {
+      if (digest({ value: before[key] }) === digest({ value: after[key] })) continue;
+      if (key !== 'services') { fields.push(key); continue; }
+      for (const name of new Set([...Object.keys(before.services), ...Object.keys(after.services)])) {
+        const current = before.services[name] || {};
+        const proposed = after.services[name] || {};
+        if (!before.services[name] || !after.services[name]) { fields.push(`services.${name}`); continue; }
+        for (const field of new Set([...Object.keys(current), ...Object.keys(proposed)])) {
+          if (digest({ value: current[field] }) !== digest({ value: proposed[field] })) fields.push(`services.${name}.${field}`);
+        }
+      }
+    }
+    const names = fields.slice(0, 12).map(name => name.replace(/[^a-zA-Z0-9_.-]/g, '_').slice(0, 96));
+    throw new Error(`Only app/CUPS configuration may change. Database, proxy and other services are out of scope. Differing fields: ${names.join(', ')}. Checkout-relative build comparison: ${roots ? 'enabled' : 'not supplied'}.`);
+  }
   if (candidate.services.mahaffeys.environment?.NITRO_CUPS_SERVER !== '/run/mahaffeys-cups/cups.sock') throw new Error('Verified deployment requires the protected CUPS socket address.');
   for (const name of SERVICES) {
     if (!candidate.services[name].volumes?.some(mount => mount.target === '/run/mahaffeys-cups' && mount.source === 'cups-transport')) throw new Error('Protected socket volume must be present in both services.');
