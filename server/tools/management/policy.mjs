@@ -17,6 +17,17 @@ export function canonical(value) {
 export function digest(value) {
   return createHash('sha256').update(JSON.stringify(canonical(value))).digest('hex');
 }
+export function deploymentOnlyManifest(full) {
+  const runtime = structuredClone(full);
+  runtime.services = Object.fromEntries(SERVICES.map(service => [service, runtime.services[service]]));
+  // Compose create has no --no-deps: remove dependencies so other services cannot be created/replaced.
+  for (const service of SERVICES) {
+    delete runtime.services[service].depends_on;
+    delete runtime.services[service].links;
+    delete runtime.services[service].external_links;
+  }
+  return runtime;
+}
 export async function rootOwned(path) {
   const stat = await lstat(path);
   if (stat.isSymbolicLink() || stat.uid !== 0 || (stat.mode & 0o022)) throw new Error(`Administrator must install a root-owned, non-writable ${path}.`);

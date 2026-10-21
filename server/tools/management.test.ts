@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
-import { parseCommand, validateManifest, digest } from './management/policy.mjs';
+import { parseCommand, validateManifest, deploymentOnlyManifest, digest } from './management/policy.mjs';
 import { redact } from './management/operations.mjs';
 import { managementRequestSchema, managementToken } from './managementProtocol';
 import { managementRequest, managementTools } from './managementTools';
@@ -78,7 +78,18 @@ describe('restricted deployment manifest', () => {
     expect(() => validateManifest(baseline(), candidate())).not.toThrow();
     expect(digest({ b: 1, a: 2 })).toBe(digest({ a: 2, b: 1 }));
   });
-  it.each(['privileged', 'cap_add', 'pid', 'devices', 'security_opt', 'ports', 'healthcheck', 'volumes_from', 'configs', 'secrets'])('rejects changes to %s', field => {
+  it('removes dependency paths so Compose create cannot create/recreate a database or other service', () => {
+    const full = candidate();
+    full.services.mahaffeys.depends_on = { postgres: { condition: 'service_healthy' }, cups: { condition: 'service_started' } };
+    full.services.mahaffeys.links = ['postgres'];
+    const runtime = deploymentOnlyManifest(full);
+    expect(Object.keys(runtime.services).sort()).toEqual(['cups', 'mahaffeys']);
+    expect(runtime.services.mahaffeys.depends_on).toBeUndefined();
+    expect(runtime.services.mahaffeys.links).toBeUndefined();
+    expect(full.services.mahaffeys.depends_on.postgres).toBeDefined();
+    expect(runtime.services.cups.volumes).toEqual(full.services.cups.volumes);
+  });
+  it.each(['privileged', 'cap_add', 'pid', 'devices', 'security_opt', 'ports', 'healthcheck', 'volumes_from', 'configs', 'secrets', 'command', 'entrypoint'])('rejects changes to %s', field => {
     const value = candidate();
     value.services.mahaffeys[field] = 'unsafe';
     expect(() => validateManifest(baseline(), value)).toThrow();

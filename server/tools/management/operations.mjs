@@ -4,7 +4,7 @@ import { createReadStream } from 'node:fs';
 import { promisify } from 'node:util';
 import { mkdir, readFile, writeFile, open, stat, statfs, copyFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { digest, validateManifest, SERVICES } from './policy.mjs';
+import { digest, validateManifest, deploymentOnlyManifest, SERVICES } from './policy.mjs';
 
 const execute = promisify(execFile);
 const cleanEnv = () => ({ PATH: '/usr/bin:/bin', HOME: process.env.HOME, LC_ALL: 'C', DOCKER_CONFIG: process.env.HOME ? `${process.env.HOME}/.docker` : undefined });
@@ -183,6 +183,11 @@ export async function prepare(policy, job, directory, progress) {
   const baselineHash = digest(baseline);
   const candidate = await manifest(policy, join(source, 'compose.yaml'));
   validateManifest(baseline, candidate);
+  for (const service of SERVICES) {
+    const build = candidate.services[service].build;
+    const expected = service === 'cups' ? 'deploy/docker/cups.Dockerfile' : 'Dockerfile';
+    if (!build || build.context !== source || (build.dockerfile || 'Dockerfile') !== expected || Object.keys(build).some(key => !['context', 'dockerfile'].includes(key))) throw new Error('Managed builds must use the committed default Dockerfiles/context without custom build arguments, targets, secrets or mounts.');
+  }
   const containers = await current(policy);
   const config = join(directory, 'verified-cups-config.tar');
   await archive(containers.cups.id, '/etc/cups', config);
@@ -219,6 +224,10 @@ export async function deploy(policy, job, directory, progress, rollback = false)
   const recovery = rollback ? await load(join(policy.stateDirectory, job.recovery, 'report.json')) : undefined;
   if (!latest.cups && (!recovery || recovery.status !== 'failed' || recovery.spoolRestored)) throw new Error('Current CUPS spool cannot be captured safely; administrator recovery is required.');
   const file = join(parent, rollback ? 'previous.json' : 'candidate.json');
+  const runtime = deploymentOnlyManifest(await load(file));
+  const runtimeFile = join(directory, 'runtime.json');
+  await save(runtimeFile, runtime);
+  await compose(policy, runtimeFile, ['config', '--quiet']);
   const backups = join(directory, 'backup');
   await mkdir(backups, { mode: 0o700 });
   await save(join(directory, 'before.json'), latest);
@@ -236,7 +245,7 @@ export async function deploy(policy, job, directory, progress, rollback = false)
       ? join(policy.stateDirectory, job.recovery, 'backup/spool.tar') : join(backups, 'spool.tar');
     progress('Recreating only app/CUPS from pinned, already-built images; preserving named volumes.');
     replaced = true;
-    await compose(policy, file, ['create', '--no-build', '--pull', 'never', '--force-recreate', ...SERVICES], 120_000);
+    await compose(policy, runtimeFile, ['create', '--no-build', '--pull', 'never', '--force-recreate', ...SERVICES], 120_000);
     const after = await current(policy);
     await archive(after.cups.id, '/var/spool/cups', spool, true);
     job.spoolRestored = true;
