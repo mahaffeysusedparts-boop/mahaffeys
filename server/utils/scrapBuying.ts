@@ -6,14 +6,12 @@ import { query, withTransaction } from './db';
 import { lockFinancialState, putState, stateValue } from './financialState';
 import { serverScale } from './scale';
 import { normalizeWeight, validateScaleReading, validatedBreakdown } from '../../src/utils/weighingContract';
-import { yardDate } from '../../src/utils/yardDates';
 import { intakeRequirementReview } from '../../src/utils/intakeRequirements';
 import { DEFAULT_INTAKE_REQUIREMENTS, normalizeIntakeRequirements, type IntakeRequirements } from '../../src/types/intakeRequirements';
-import { DEFAULT_PAYMENT_SAFEGUARDS, normalizePaymentSafeguards, type PaymentSafeguards } from '../../src/types/paymentSafeguards';
 import type { Ticket, MetalGrade, ScaleConfig, CashDrawerLog } from '../../src/types/scrap';
 import { evaluateBuyingPaymentRules } from '../../src/utils/buyingPaymentRules';
 import { canRecordBuyingPayment } from '../../src/utils/buyingAuthorization';
-import type { PaymentEligibility, BuyingPolicy, LegacyBuyingReview } from '../../src/types/buyingPayments';
+import type { PaymentEligibility, BuyingPolicy } from '../../src/types/buyingPayments';
 import type { PoolClient } from 'pg';
 
 const fail = (message: string, code = 409): never => { throw createError({ statusCode: code, statusMessage: message }); };
@@ -240,22 +238,8 @@ async function finalizePurchase(client: PoolClient, ticket: Ticket, command: z.i
           buying:{...ticket.buying,stage:'FINALIZED',finalizedAt:new Date().toISOString(),intakeRequirementReview:{revision,requirePhotos,requirePhone,requireAddress,requireSellerId,requireVehiclePlate,requireExplicitReview,reviewed:command.reviewed === true,optionalMissing:evidenceReview.optionalMissing},sellerIdentity:seller.identity} };
 }
 
-export async function paymentEligibility(client: PoolClient, ticket: Ticket): Promise<PaymentEligibility> {
-  const safeguards = normalizePaymentSafeguards(await stateValue<PaymentSafeguards>(client,'mahaffeys_payment_safeguards',DEFAULT_PAYMENT_SAFEGUARDS));
-  const policy = safeguards.enabled ? await currentBuyingPolicy(client) : null;
-  const day = yardDate(new Date());
-  const currentMetals = await stateValue<MetalGrade[]>(client,'mahaffeys_metals',[]);
-  const identity = ticket.buying?.sellerIdentity;
-  const daily = identity ? await client.query(`SELECT COALESCE(SUM(p.amount),0) AS total, COUNT(*) AS count FROM scrap_buying_payments p JOIN scrap_buying_tickets t ON t.ticket_id=p.ticket_id
-    WHERE p.method='Cash' AND t.document->'buying'->'sellerIdentity'=$1::jsonb AND (p.paid_at AT TIME ZONE 'America/New_York')::date=$2::date`,[JSON.stringify(identity),day]) : undefined;
-  const legacyReviews = (await client.query('SELECT DISTINCT ON(ticket_id) ticket_id,document FROM scrap_buying_legacy_reviews ORDER BY ticket_id,revision DESC')).rows;
-  const history = await stateValue<Ticket[]>(client,'mahaffeys_tickets',[]);
-  const unresolved = history.some(row => !row.buying && row.ticketType==='SCRAP_METAL' && ['COMPLETED','VOIDED'].includes(row.status) && row.finalPayout>0 && ((!!ticket.customerId && row.customerId===ticket.customerId) || (!!identity && row.customerIdNumber?.trim().toUpperCase()===identity.idNumber)) && !legacyReviews.some(review=>review.ticket_id===row.id));
-  const legacyCash = legacyReviews.map(row=>row.document as LegacyBuyingReview).filter(review=>!!identity && review.disbursed && review.method==='Cash' && review.paidAt && yardDate(review.paidAt)===day && equal(review.sellerIdentity,identity));
-  const drawer = await stateValue<CashDrawerLog[]>(client,'mahaffeys_cash_drawer',[]);
-  const drawerBalance = [...drawer].sort((a,b)=>b.timestamp.localeCompare(a.timestamp))[0]?.balanceAfter ?? 0;
-  const eligibility = evaluateBuyingPaymentRules(ticket,policy,currentMetals,day,{cashCents:daily ? Math.round(Number(daily.rows[0].total)*100)+legacyCash.reduce((sum,row)=>sum+Math.round(row.amount*100),0) : null,cashCount:daily ? Number(daily.rows[0].count)+legacyCash.length : null,unresolved,drawerBalance},safeguards.enabled);
-  return {...eligibility,safeguardReview:safeguards};
+export async function paymentEligibility(_client: PoolClient, ticket: Ticket): Promise<PaymentEligibility> {
+  return evaluateBuyingPaymentRules(ticket);
 }
 
 export async function previewPaymentEligibility(id: string, revision: number, user: PublicUser): Promise<PaymentEligibility> {
@@ -287,13 +271,11 @@ async function pay(client: PoolClient, ticket: Ticket, command: z.infer<typeof b
   if (ticket.buying?.stage === 'PAID') return ticket;
   if (ticket.buying?.stage !== 'FINALIZED' || !command.disbursed || !command.method) fail('Finalize the purchase and confirm actual cash handover or check issuance before recording payment');
   const eligibility = await paymentEligibility(client,ticket);
-  if (!eligibility.allowedMethods.includes(command.method)) fail(eligibility.reasons.filter(reason => !reason.method || reason.method === command.method).map(reason => reason.message).join(' '));
-  if (eligibility.permitRequired && !command.permitReference?.trim()) fail('Required valid seller permit reference is missing');
-  if (eligibility.documentationRequired && !command.documentationReference?.trim()) fail('Record the retained seller documentation reference (signed ownership statement, ID/photo and permit copy)');
+  if (!eligibility.allowedMethods.includes(command.method)) fail(eligibility.reasons.map(reason => reason.message).join(' ') || `This category and amount require ${eligibility.allowedMethods[0]}. Refresh the payment method before paying.`);
   if (command.method === 'Check' && !command.reference?.trim()) fail('Enter the actual issued check number');
   const id = randomUUID(); const now = new Date().toISOString();
   const payment = { id,amount:ticket.finalPayout,method:command.method,checkReference:command.method === 'Check' ? command.reference : undefined,
-    paidAt:now,paidBy:user.fullName,paidById:user.id,policyVersion:eligibility.policyVersion,safeguardReview:eligibility.safeguardReview,permitReference:command.permitReference,documentationReference:command.documentationReference };
+    paidAt:now,paidBy:user.fullName,paidById:user.id,policyVersion:eligibility.policyVersion,paymentRuleVersion:eligibility.paymentRuleVersion };
   if (payment.checkReference) {
     payment.checkReference = payment.checkReference.trim();
     const duplicate = await client.query('SELECT ticket_id FROM scrap_buying_payments WHERE UPPER(BTRIM(check_reference))=UPPER($1) AND ticket_id<>$2',[payment.checkReference,ticket.id]);
@@ -305,7 +287,7 @@ async function pay(client: PoolClient, ticket: Ticket, command: z.infer<typeof b
   if (command.method === 'Cash') {
     const drawer = await stateValue<CashDrawerLog[]>(client,'mahaffeys_cash_drawer',[]);
     const balance = [...drawer].sort((a,b) => b.timestamp.localeCompare(a.timestamp))[0]?.balanceAfter ?? 0;
-    if (!Number.isFinite(balance) || balance < ticket.finalPayout) fail('Insufficient or ambiguous recorded drawer balance; reconcile before payment');
+    if (!Number.isFinite(balance)) fail('Recorded drawer balance is invalid; correct the drawer record before payment');
     drawerEntry = { id:`payment-${id}`,ticketId:ticket.id,timestamp:now,type:'PAYOUT_DISBURSEMENT',amount:-ticket.finalPayout,
       operatorName:user.fullName,balanceAfter:Math.round((balance-ticket.finalPayout)*100)/100,notes:`Canonical payment ${id}` };
     await putState(client,'mahaffeys_cash_drawer',[...drawer,drawerEntry],user.id);

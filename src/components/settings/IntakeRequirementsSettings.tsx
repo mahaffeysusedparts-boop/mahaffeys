@@ -44,7 +44,7 @@ export function IntakeRequirementsSettings() {
   return <Card id="intake-requirements" className="rounded-2xl border-emerald-800 bg-slate-900 text-white">
     <CardHeader className="border-b border-emerald-900 pb-4">
       <CardTitle className="flex items-center gap-2 text-lg"><Camera className="h-5 w-5 text-emerald-300" />Scrap intake requirements</CardTitle>
-      <p className="text-sm text-slate-200">Administrators can make these yard requirements optional for all approved intake operators. Finalize opens the printable unpaid voucher immediately.</p>
+      <p className="text-sm text-slate-200">Administrators can make these yard requirements optional for all approved intake operators. Complete &amp; Record Payment opens the printable PAID receipt.</p>
     </CardHeader>
     <CardContent className="space-y-4 pt-4">
       {requirements.isPending && <p role="status" className="text-emerald-200">Loading current requirements…</p>}
@@ -53,10 +53,10 @@ export function IntakeRequirementsSettings() {
         <div><Label htmlFor={key} className="font-semibold text-white">{label}</Label><p className="mt-1 text-xs leading-relaxed text-slate-200">{description}</p><p className={`mt-2 text-xs font-bold ${current[key] ? 'text-emerald-200' : 'text-amber-200'}`}>{current[key] ? 'Required' : 'Optional — missing information is recorded, not fabricated'}</p></div>
         <Switch id={key} checked={current[key]} disabled={!isAdmin || save.isPending} onCheckedChange={(checked) => setDraft({ ...current, [key]: checked })} className="shrink-0 data-[state=checked]:bg-emerald-600 data-[state=unchecked]:bg-slate-600" />
       </div>)}
-      <p className="flex gap-2 rounded-xl border border-amber-800 bg-amber-950 p-3 text-xs leading-relaxed text-amber-100"><ShieldCheck className="h-4 w-4 shrink-0" />These are independent yard preferences, not legal exemptions. Completed valid weights and applicable material/payment obligations remain enforced. Missing identity cannot establish same-seller cash history; identity-dependent cash rules may require Check. Every check requires its actual issued number. Car intake requirements are unchanged.</p>
+      <p className="flex gap-2 rounded-xl border border-amber-800 bg-amber-950 p-3 text-xs leading-relaxed text-amber-100"><ShieldCheck className="h-4 w-4 shrink-0" />These are independent yard preferences, not legal exemptions. Valid confirmed weights remain required. Cash or Check is determined by material category and amount, not seller cash history. Every check requires its actual issued number. Car intake requirements are unchanged.</p>
       {isAdmin ? <>
         <Label htmlFor="intake-requirements-reason">Reason for changing requirements</Label>
-        <Textarea id="intake-requirements-reason" value={reason} onChange={(event) => setReason(event.target.value)} maxLength={500} disabled={save.isPending} placeholder="Record why these yard requirements are being changed…" className="rounded-xl border-slate-600 bg-slate-950 text-white" />
+        <Textarea id="intake-requirements-reason" value={reason} onChange={(event) => setReason(event.target.value)} maxLength={500} disabled={save.isPending} placeholder={"Record why these yard requirements are being changed…"} className="rounded-xl border-slate-600 bg-slate-950 text-white" />
         {stale && <p role="alert" className="text-sm text-amber-200">Another administrator changed these settings. Reload before saving your choices.</p>}
         {save.isError && <p role="alert" className="text-sm text-amber-200">{save.error.message}</p>}
         <div className="flex flex-wrap gap-3">

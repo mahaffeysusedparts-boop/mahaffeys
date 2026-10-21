@@ -54,9 +54,11 @@ CREATE TABLE IF NOT EXISTS scrap_buying_payments (
 );
 ALTER TABLE scrap_buying_payments ALTER COLUMN policy_version DROP NOT NULL;
 DO $$ BEGIN
- IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='scrap_buying_payment_override_evidence' AND conrelid='scrap_buying_payments'::regclass) THEN
+ IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='scrap_buying_payment_override_evidence' AND conrelid='scrap_buying_payments'::regclass AND pg_get_constraintdef(oid) LIKE '%paymentRuleVersion%') THEN
+  ALTER TABLE scrap_buying_payments DROP CONSTRAINT IF EXISTS scrap_buying_payment_override_evidence;
   ALTER TABLE scrap_buying_payments ADD CONSTRAINT scrap_buying_payment_override_evidence CHECK (
    policy_version IS NOT NULL OR COALESCE(document->'safeguardReview'->>'enabled'='false',FALSE)
+   OR COALESCE(document->>'paymentRuleVersion'='category-thresholds-v1',FALSE)
   );
  END IF;
 END $$;

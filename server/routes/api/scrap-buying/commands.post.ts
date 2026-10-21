@@ -7,6 +7,7 @@ export default defineHandler(async (event) => {
   assertBodySize(event, 8 * 1024 * 1024);
   const parsed = buyingCommandSchema.safeParse(await readBody(event));
   if (!parsed.success) throw createError({statusCode:400,statusMessage:parsed.error.issues[0]?.message ?? 'Invalid buying command'});
+  if (parsed.data.action === 'FINALIZE') throw createError({statusCode:400,statusMessage:'Pay Later is no longer available. Complete the purchase and record actual payment together.'});
   try { return await executeBuyingCommand(parsed.data,user); }
   catch (error) {
     if ((error as { statusCode?: number }).statusCode) throw error;

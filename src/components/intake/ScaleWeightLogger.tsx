@@ -793,29 +793,27 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
     }
   };
 
-  const handleComplete = async (recordPayment: boolean) => {
+  const handleComplete = async () => {
     if (!activeTicket || !canEdit() || busyRef.current || !paymentAllowed) return;
     if (!requirements.data || requirements.isError || (requirements.data.requireExplicitReview && !reviewConfirmed) || singleCapture || activeTicket.scaleGrossInWeight != null || lines.length === 0) {
       toast.error('Complete every weighing cycle and satisfy the selected intake safeguards first'); return;
     }
-    if (recordPayment && (eligibility.isError || !buyingPaymentReady(eligibility.data,paymentInput))) {
-      toast.error('Resolve the payment checks, or choose Complete Intake · Pay Later'); return;
+    if (eligibility.isError || !buyingPaymentReady(eligibility.data,paymentInput)) {
+      toast.error('Load the payment method and enter the issued check number if required'); return;
     }
     if (notes.trim() !== (activeTicket.notes ?? '').trim() && !await persist({...activeTicket,notes:notes.trim()})) return;
     busyRef.current = true; setSaveState('PENDING'); setSaveError('');
     try {
       const current = storageService.getTickets().find((ticket) => ticket.id === activeTicket.id) ?? activeTicket;
       const reviewed = requirements.data.requireExplicitReview && reviewConfirmed;
-      const completed = recordPayment
-        ? await scrapBuyingService.completeAndPay(current,paymentInput.method,paymentInput.reference,paymentInput.permitReference,paymentInput.documentationReference,reviewed)
-        : await scrapBuyingService.finalize(current,reviewed);
+      const completed = await scrapBuyingService.completeAndPay(current,paymentInput.method,paymentInput.reference,paymentInput.permitReference,paymentInput.documentationReference,reviewed);
       setSaveState('SAVED'); refreshQueue();
-      toast.success(recordPayment ? `Ticket #${completed.id} completed — actual ${completed.payoutMethod.toLowerCase()} payment recorded.` : `Intake #${completed.id} completed — unpaid voucher ready. Record payment later in Buying payments.`);
+      toast.success(`Ticket #${completed.id} PAID — actual ${completed.payoutMethod.toLowerCase()} payment recorded.`);
       setActiveTicket(null); onActiveTicketChange(null); setNotes(''); onTicketCreated(completed);
       void serverQueue.refetch();
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Completion was not confirmed';
-      setSaveState('ERROR'); setSaveError(`${message} If the response is uncertain, refresh the queue before retrying.${recordPayment ? ' Never hand over funds twice.' : ' No payment was requested.'}`); toast.error(message);
+      setSaveState('ERROR'); setSaveError(`${message} If the response is uncertain, refresh the queue before retrying. Never hand over funds twice.`); toast.error(message);
       void eligibility.refetch();
     } finally { busyRef.current = false; }
   };
@@ -1612,10 +1610,10 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
               )}
             </div>
 
-            {/* Intake completion is separate from recording actual payment. */}
+            {/* Completion and actual payment are recorded atomically. */}
             <div className="space-y-4 rounded-2xl border border-slate-700 bg-slate-900 p-4 text-white">
               <h2 className="text-base font-bold">Final purchase review</h2>
-              <p className="rounded-xl border border-amber-500/40 bg-amber-950 p-3 text-xs text-amber-100">Review seller, weights, grades and deductions. Complete the intake now and pay later, or record actual cash handover / check issuance when payment checks are ready. No routine manager approval is required.</p>
+              <p className="rounded-xl border border-amber-500/40 bg-amber-950 p-3 text-xs text-amber-100">Review seller, weights, grades and deductions, then hand over cash or issue the check before completing. No routine manager approval is required.</p>
               <div className="space-y-2 rounded-xl bg-slate-950 p-4 font-mono text-sm">
                 <div className="flex justify-between"><span>Reviewed lines</span><strong>{lines.length}</strong></div>
                 <div className="flex justify-between"><span>Payable pounds</span><strong>{fmtLbs(totalBillableWeight)} lb</strong></div>
@@ -1632,10 +1630,9 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
               <IntakeCompletionGuidance ticket={activeTicket} requirements={requirements.data} eligibility={eligibility.data} eligibilityError={eligibility.error?.message} reviewed={reviewConfirmed}/>
               <BuyingPaymentFields eligibility={eligibility.data} error={eligibility.error?.message} loading={eligibility.isLoading} disabled={saveState==='PENDING' || remoteConflict} value={paymentInput} onChange={value=>{setPaymentInput(value);setReviewConfirmed(false);}}/>
               {requirements.data?.requireExplicitReview && <label className="flex items-start gap-2 rounded-xl border border-slate-700 p-3 text-xs leading-relaxed"><input type="checkbox" disabled={saveState==='PENDING' || remoteConflict} checked={reviewConfirmed} onChange={(event) => setReviewConfirmed(event.target.checked)} className="mt-0.5 accent-emerald-500" />I reviewed the seller information, confirmed weights, material grades and deductions for this purchase.</label>}
-              <p className="rounded-xl border border-emerald-700 bg-emerald-950 p-3 text-xs text-emerald-100">Complete &amp; Record Payment confirms actual cash handover or check issuance. Complete Intake · Pay Later records no payment and requires no check number. Neither action fabricates a review acknowledgement.</p>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <Button onClick={() => handleComplete(false)} disabled={!paymentAllowed || (requirements.data?.requireExplicitReview !== false && !reviewConfirmed) || !requirements.data || requirements.isError || !lines.length || !!singleCapture || activeTicket.scaleGrossInWeight != null || remoteConflict || saveState === 'PENDING'} className="h-auto min-h-12 whitespace-normal rounded-xl bg-sky-700 px-3 py-3 font-bold text-white hover:bg-sky-600">Complete Intake · Pay Later</Button>
-                <Button onClick={() => handleComplete(true)} disabled={!paymentAllowed || eligibility.isError || !buyingPaymentReady(eligibility.data,paymentInput) || (requirements.data?.requireExplicitReview !== false && !reviewConfirmed) || !requirements.data || requirements.isError || !lines.length || !!singleCapture || activeTicket.scaleGrossInWeight != null || remoteConflict || saveState === 'PENDING'} className="h-auto min-h-12 whitespace-normal rounded-xl bg-emerald-600 px-3 py-3 font-bold text-white hover:bg-emerald-500">Complete &amp; Record Payment</Button>
+              <p className="rounded-xl border border-emerald-700 bg-emerald-950 p-3 text-xs text-emerald-100">By completing, you confirm the cash was handed over or the check was issued. The purchase and payment are saved together, and both receipt copies say PAID.</p>
+              <div className="grid gap-3">
+                <Button onClick={handleComplete} disabled={!paymentAllowed || eligibility.isError || !buyingPaymentReady(eligibility.data,paymentInput) || (requirements.data?.requireExplicitReview !== false && !reviewConfirmed) || !requirements.data || requirements.isError || !lines.length || !!singleCapture || activeTicket.scaleGrossInWeight != null || remoteConflict || saveState === 'PENDING'} className="h-auto min-h-12 whitespace-normal rounded-xl bg-emerald-600 px-3 py-3 font-bold text-white hover:bg-emerald-500">Complete &amp; Record Payment</Button>
               </div>
             </div>
           </div>

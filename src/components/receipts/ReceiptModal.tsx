@@ -70,10 +70,10 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ ticket, open, onOpen
           <p className="text-[11px] text-slate-700">Phone: {settings.phone} | Lic #: {settings.licenseNumber}</p>
           <div className="pt-1.5 flex items-center justify-center gap-2">
             <span className="inline-block px-2 py-0.5 bg-slate-800 text-white font-bold text-[10px] uppercase tracking-widest rounded">
-              {ticket.buying ? ticket.buying.stage === 'PAID' ? 'PAYMENT RECEIPT — DUPLICATE COPY' : ticket.buying.stage === 'VOIDED' ? 'VOIDED — NOT PAYABLE' : 'UNPAID VOUCHER — COPY, NOT A PAYMENT' : ticket.ticketType === 'CAR_SALVAGE' ? 'AUTO SALVAGE INTAKE VOUCHER' : 'LEGACY SCRAP VOUCHER — PAYMENT STATUS NOT RECONCILED'}
+              {ticket.buying ? ticket.buying.stage === 'PAID' ? 'PAID — PAYMENT RECEIPT' : ticket.buying.stage === 'VOIDED' ? 'VOIDED — NOT PAYABLE' : 'UNPAID VOUCHER — COPY, NOT A PAYMENT' : ticket.ticketType === 'CAR_SALVAGE' ? 'AUTO SALVAGE INTAKE VOUCHER' : 'LEGACY SCRAP VOUCHER — PAYMENT STATUS NOT RECONCILED'}
             </span>
             <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-950 border border-emerald-400 font-bold text-[10px] uppercase rounded">
-              <ShieldCheck className="w-3 h-3 text-emerald-700 inline" /> {ticket.buying ? ticket.buying.stage === 'PAID' ? 'ACTUAL PAYMENT RECORDED' : 'PAYMENT NOT RECORDED' : 'LEGACY COMPLIANCE RECORD'}
+              <ShieldCheck className="w-3 h-3 text-emerald-700 inline" /> {ticket.buying ? ticket.buying.stage === 'PAID' ? 'PAID IN FULL' : 'PAYMENT NOT RECORDED' : 'LEGACY COMPLIANCE RECORD'}
             </span>
           </div>
         </div>
@@ -97,7 +97,6 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ ticket, open, onOpen
             {ticket.customerAddress && <p><span className="font-bold">ADDRESS:</span> {ticket.customerAddress}</p>}
             <p><span className="font-bold">ID #:</span> {ticket.customerIdNumber || ticket.buying?.sellerIdentity?.idNumber || 'NOT SUPPLIED'}</p>
             <p><span className="font-bold">VEHICLE PLATE:</span> {ticket.vehicleLicensePlate || 'NOT SUPPLIED'}</p>
-            {!!ticket.buying?.intakeRequirementReview?.optionalMissing.length && <p><span className="font-bold">OPTIONAL NOT PROVIDED:</span> {ticket.buying.intakeRequirementReview.optionalMissing.join(', ')}</p>}
           </div>
         </div>
 
@@ -242,11 +241,11 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ ticket, open, onOpen
           </div>
         </div>
 
-        {/* Statutory Payout & Legal Disclosures */}
+        {/* Payment disclosure */}
         <div className="text-[8px] text-slate-600 border-t border-slate-300 pt-2 space-y-0.5 leading-tight">
           <p className="font-bold uppercase">{settings.receiptHeader}</p>
           <p>
-            Cash payouts are strictly limited under State Statutory Scrap Metal Theft Prevention Laws ($25.00 for Non-Ferrous and $100.00 for Ferrous). Amounts exceeding statutory cash limits are paid via Check.
+            {ticket.buying?.payment?.paymentRuleVersion ? 'Yard payment rules: cash through $25.00 for ferrous / mixed loads and through $100.00 for non-ferrous-only loads; check above those amounts. PAID records cash handover or check issuance, not check clearance or legal-compliance certification.' : 'Payment status reflects recorded payment evidence. This copy does not certify legal compliance or check clearance.'}
           </p>
         </div>
 
@@ -307,7 +306,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ ticket, open, onOpen
             <div className="flex items-center gap-2">
               <Printer className="w-5 h-5 text-emerald-400" />
               <DialogTitle className="text-lg font-bold text-white font-mono">
-                Dual Intake Ticket & Legal Payout Voucher (8.5×11 Letter, 2 Pages)
+                {ticket.buying?.stage === 'PAID' ? 'PAID Receipt — Customer & Yard Copies' : 'Intake Ticket — Customer & Yard Copies'}
               </DialogTitle>
             </div>
             <Button

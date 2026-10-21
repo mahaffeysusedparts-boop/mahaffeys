@@ -136,7 +136,7 @@ export default function TicketsPage() {
     const matchesVoidFilter = !hideVoided || t.status !== 'VOIDED';
 
     return matchesSearch && matchesType && matchesVoidFilter;
-  });
+  }).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
   const totalPayoutSum = filteredTickets.reduce((acc, t) => (t.status === 'COMPLETED' ? acc + t.finalPayout : acc), 0);
 
