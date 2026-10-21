@@ -81,11 +81,22 @@ async function health(id) {
   }
   throw new Error('Managed service did not become healthy. Printing success has not been inferred.');
 }
-async function test(policy, directory, images, liveConfig, progress) {
+async function test(policy, directory, images, candidate, liveConfig, progress) {
   const ids = [];
   const label = directory.split('/').pop();
   const runtime = join(directory, 'test-socket');
   await mkdir(runtime, { mode: 0o700 });
+  const envFiles = {};
+  for (const service of SERVICES) {
+    const lines = [];
+    for (const [key, value] of Object.entries(candidate.services[service].environment || {})) {
+      if (value === null) continue;
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key) || /[\r\n\0]/.test(String(value))) throw new Error('Multiline/invalid environment values require administrator review before this isolated test.');
+      lines.push(`${key}=${value}`);
+    }
+    envFiles[service] = join(directory, `test-${service}.env`);
+    await writeFile(envFiles[service], `${lines.join('\n')}\n`, { mode: 0o600 });
+  }
   const create = async args => {
     const id = (await docker(['create', '--network', 'none', '--label', `mahaffeys.management.job=${label}`, ...args])).stdout.trim();
     if (!/^[a-f0-9]{64}$/.test(id)) throw new Error('Invalid disposable container ID.');
@@ -104,30 +115,49 @@ async function test(policy, directory, images, liveConfig, progress) {
     throw new Error('Candidate protected-socket scheduler did not become available.');
   };
   try {
-    const cups = await create(['--mount', `type=bind,source=${runtime},target=/run/mahaffeys-cups`, images.cups]);
+    const cups = await create(['--env-file', envFiles.cups, '--mount', `type=bind,source=${runtime},target=/run/mahaffeys-cups`, images.cups]);
     await archive(cups, '/etc/cups', liveConfig, true);
     await docker(['start', cups]);
-    const app = await create(['--mount', `type=bind,source=${runtime},target=/run/mahaffeys-cups,readonly`, '--entrypoint', 'node', images.mahaffeys, '-e', 'setInterval(()=>{},1000)']);
+    const createApp = () => create(['--env-file', envFiles.mahaffeys, ...(candidate.services.mahaffeys.user ? ['--user', candidate.services.mahaffeys.user] : []), '--mount', `type=bind,source=${runtime},target=/run/mahaffeys-cups,readonly`, '--entrypoint', 'node', images.mahaffeys, '-e', 'setInterval(()=>{},1000)']);
+    let app = await createApp();
     await docker(['start', app]);
     await ready(app);
-    const checks = 'const fs=require("node:fs"); if(process.getuid()!==1000||process.getgid()!==1000)throw new Error("Expected non-root UID/GID 1000"); const p=fs.statSync("/run/mahaffeys-cups"); if(p.uid!==0||p.gid!==1000||(p.mode&7)!==0||(p.mode&0o020)!==0)throw new Error("Socket parent must be root:1000, inaccessible to other users and not group-writable"); try{fs.accessSync("/run/cups/certs/0",fs.constants.R_OK);throw new Error("Root certificate is readable");}catch(e){if(e.message==="Root certificate is readable")throw e;}';
+    const checks = [
+      'const fs=require("node:fs"),os=require("node:os")',
+      'if(process.getuid()!==1000||process.getgid()!==1000||os.userInfo().username!=="node")throw new Error("Expected non-root node UID/GID 1000")',
+      'const p=fs.lstatSync("/run/mahaffeys-cups")',
+      'if(!p.isDirectory()||p.uid!==0||p.gid!==1000||(p.mode&7)!==0||(p.mode&0o020)!==0)throw new Error("Socket parent must be root:1000, inaccessible to others and not group-writable")',
+      'if(fs.readdirSync("/run/mahaffeys-cups").some(name=>name!=="cups.sock"))throw new Error("Only the socket may be shared; certificates/state must remain private")',
+      'const s=fs.lstatSync("/run/mahaffeys-cups/cups.sock");if(!s.isSocket()||s.uid!==0)throw new Error("Expected a root-owned real Unix socket")',
+      'try{fs.accessSync("/run/cups/certs/0",fs.constants.R_OK);throw new Error("Root certificate is readable")}catch(e){if(!["EACCES","ENOENT","ENOTDIR"].includes(e.code))throw e}',
+    ].join(';');
     await appExec(app, ['node', '-e', checks]);
+    const tcp = async () => {
+      const result = await appExec(cups, ['env', 'LC_ALL=C', 'timeout', '6', 'lpstat', '-h', '127.0.0.1:631', '-r']);
+      if (result.stdout.trim() !== 'scheduler is running') throw new Error('Existing TCP scheduler health check must remain functional.');
+    };
+    await tcp();
     const args = ['env', 'LC_ALL=C', 'CUPS_USER=node', 'timeout', '10', 'lpadmin', '-h', '/run/mahaffeys-cups/cups.sock'];
+    const deny = async () => {
+      let denied = false;
+      try { await appExec(app, ['env', 'LC_ALL=C', 'CUPS_USER=nobody', 'timeout', '10', 'lpadmin', '-h', '/run/mahaffeys-cups/cups.sock', '-x', 'management_proof'], '65534:1000'); }
+      catch (error) { if (/forbidden|unauthorized|password|authorization|authentication/i.test(error.message)) denied = true; }
+      if (!denied) throw new Error('Unauthorized-client denial was not demonstrated.');
+    };
     // Disabled raw queues isolate authorization; no lp/lpr, real printer or print job.
     await appExec(app, [...args, '-p', 'management_proof', '-v', 'socket://127.0.0.1:9', '-m', 'raw']);
-    let denied = false;
-    try { await appExec(app, ['env', 'LC_ALL=C', 'CUPS_USER=nobody', 'timeout', '10', 'lpadmin', '-h', '/run/mahaffeys-cups/cups.sock', '-x', 'management_proof'], '65534:1000'); }
-    catch (error) { if (/forbidden|unauthorized|password|authorization|authentication/i.test(error.message)) denied = true; }
-    if (!denied) throw new Error('Unauthorized-client denial was not demonstrated.');
+    await deny();
     await docker(['restart', cups]);
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    app = await createApp();
+    await docker(['start', app]);
+    await ready(app);
+    await tcp();
     await appExec(app, ['node', '-e', checks]);
+    await deny();
     await appExec(app, [...args, '-x', 'management_proof']);
     await appExec(app, [...args, '-p', 'management_recreated', '-v', 'socket://127.0.0.1:9', '-m', 'raw']);
     await appExec(app, [...args, '-x', 'management_recreated']);
-    const scheduler = (await appExec(app, ['env', 'LC_ALL=C', 'timeout', '6', 'lpstat', '-h', '/run/mahaffeys-cups/cups.sock', '-r'])).stdout.trim();
-    if (scheduler !== 'scheduler is running') throw new Error('Configured socket scheduler is unavailable.');
-    progress('Isolated non-root authorization, denial, certificate privacy, protected parent and restart checks passed. No print job sent.');
+    progress('Isolated non-root authorization, denial, certificate privacy, protected socket, TCP health, CUPS restart and app recreation checks passed. No print job sent.');
   } finally {
     for (const id of ids.reverse()) {
       const info = JSON.parse((await docker(['inspect', id])).stdout)[0];
@@ -169,7 +199,7 @@ export async function prepare(policy, job, directory, progress) {
     baseline.services[service].image = containers[service].image;
     delete baseline.services[service].build;
   }
-  await test(policy, directory, images, config, progress);
+  await test(policy, directory, images, candidate, config, progress);
   await save(join(directory, 'candidate.json'), candidate);
   await save(join(directory, 'previous.json'), baseline);
   await save(join(directory, 'plan.json'), { revision: job.revision, containers, images, configHash, baselineHash });

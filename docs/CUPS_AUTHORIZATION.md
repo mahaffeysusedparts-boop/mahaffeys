@@ -18,7 +18,9 @@ Before promoting a repair, follow [the isolated CUPS acceptance procedure](CUPS_
 
 ## Deployment and recovery
 
-The available SSH connection is read-only: it cannot create test containers, deploy the app, change CUPS configuration, authorize an identity, or print a test page. An administrator must perform and record the isolated verification before approving a production transport change.
+The currently connected diagnostics key is still read-only. The optional [guarded management extension](SERVER_MANAGEMENT_MCP.md) adds separate-key, approval-gated isolated tests and exact-revision app/CUPS deployment with config/cache/spool archives. A server administrator must review/install that root-owned dispatcher and authorize its separate key before the connection can use it. Adding the code does not authorize writes or establish a successful authorization test. Physical test printing is not exposed by the extension.
+
+After provisioning, its preparation job must actually pass non-root administration, unauthorized denial, certificate privacy, protected socket-parent, TCP health, CUPS restart and app recreation checks using the committed images and live CUPS configuration in disposable, network-isolated containers. Failed checks block deployment; the existing experimental `/run/cups` overlay is not promoted automatically. A separate deployment approval is still required.
 
 Follow the backup, queue/device inventory, queued-document/spool preservation and rollback gates in [SELF_HOSTING.md](../SELF_HOSTING.md). In particular, the current CUPS spool is not a named volume: recreating CUPS without preserving it can lose pending documents even when config/cache volumes are retained. Preserve every existing volume, configuration, queue and pending job; never delete volumes to fix authorization.
 

@@ -42,7 +42,8 @@ export function validateManifest(baseline, candidate) {
     const proposed = after.services?.[service];
     if (!current || !proposed) throw new Error('Both app and CUPS services must exist.');
     if (service === 'mahaffeys' && !['node', '1000', '1000:1000'].includes(String(proposed.user || 'node'))) throw new Error('The app must remain non-root.');
-    for (const field of ['privileged', 'cap_add', 'cap_drop', 'devices', 'device_cgroup_rules', 'group_add', 'pid', 'ipc', 'userns_mode', 'network_mode', 'ports', 'networks', 'security_opt', 'healthcheck', 'volumes_from', 'configs', 'secrets', 'sysctls', 'cgroup']) {
+    if (service === 'cups' && digest(current.user ?? null) !== digest(proposed.user ?? null)) throw new Error('CUPS runtime identity must remain unchanged.');
+    for (const field of ['privileged', 'cap_add', 'cap_drop', 'devices', 'device_cgroup_rules', 'group_add', 'pid', 'ipc', 'userns_mode', 'network_mode', 'ports', 'networks', 'security_opt', 'healthcheck', 'volumes_from', 'configs', 'secrets', 'sysctls', 'cgroup', 'command', 'entrypoint']) {
       if (digest(current[field] ?? null) !== digest(proposed[field] ?? null)) throw new Error(`Unapproved ${service} privilege/network change: ${field}.`);
     }
     const oldMounts = current.volumes || [];
