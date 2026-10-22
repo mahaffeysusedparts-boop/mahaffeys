@@ -559,6 +559,7 @@ export default function DashboardPage() {
 
             <CardContent className="p-4 space-y-2">
               {[
+                { title: "Bin Inspection", path: "/bin-inspection", icon: ClipboardList, color: "text-teal-300" },
                 { title: "Operations Command Center", path: "/operations", icon: Activity, color: "text-emerald-400" },
                 { title: "Car Salvage & Scrap Intake", path: "/intake", icon: Scale, color: "text-emerald-400" },
                 { title: "Public Vehicle Inventory", path: "/inventory", icon: Car, color: "text-amber-400" },

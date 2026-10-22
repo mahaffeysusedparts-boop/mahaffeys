@@ -1,3 +1,5 @@
+import { DEFAULT_BIN_CATALOG } from '../../src/types/binDeductions';
+
 export const buyingPriceSchema = `
 CREATE TABLE IF NOT EXISTS buying_price_migrations (version INTEGER PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
 CREATE TABLE IF NOT EXISTS scrap_buying_tickets (
@@ -18,6 +20,16 @@ CREATE TABLE IF NOT EXISTS scrap_buying_cycles (
 CREATE TABLE IF NOT EXISTS scrap_buying_passes (
  id UUID PRIMARY KEY, cycle_id UUID NOT NULL REFERENCES scrap_buying_cycles(id),
  purpose TEXT NOT NULL CHECK(purpose IN ('LOADED','TARE')), document JSONB NOT NULL, UNIQUE(cycle_id,purpose)
+);
+CREATE TABLE IF NOT EXISTS bin_deduction_catalog (
+ revision INTEGER PRIMARY KEY CHECK(revision>0), document JSONB NOT NULL,
+ actor_id TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+INSERT INTO bin_deduction_catalog(revision,document,actor_id,created_at) VALUES(1,'${JSON.stringify(DEFAULT_BIN_CATALOG).replace(/'/g, "''")}'::jsonb,'yard-rule-defaults','1970-01-01T00:00:00Z') ON CONFLICT DO NOTHING;
+CREATE TABLE IF NOT EXISTS bin_inspection_reviews (
+ cycle_id UUID NOT NULL REFERENCES scrap_buying_cycles(id), revision INTEGER NOT NULL CHECK(revision>0),
+ document JSONB NOT NULL, actor_id TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+ PRIMARY KEY(cycle_id,revision)
 );
 CREATE TABLE IF NOT EXISTS scrap_buying_capture_context (
  capture_id UUID PRIMARY KEY REFERENCES scrap_buying_captures(id), cycle_id UUID NOT NULL REFERENCES scrap_buying_cycles(id),
@@ -96,6 +108,7 @@ INSERT INTO buying_price_migrations(version) VALUES (1),(2),(3) ON CONFLICT DO N
 
 export const canonicalBackupTables = [
  'customers', 'scrap_buying_policies', 'scrap_buying_tickets', 'scrap_buying_captures', 'scrap_buying_cycles', 'scrap_buying_passes',
+ 'bin_deduction_catalog', 'bin_inspection_reviews',
  'scrap_buying_capture_context', 'scrap_buying_lines', 'scrap_buying_line_sources', 'scrap_buying_events', 'scrap_buying_legacy_reviews', 'scrap_buying_payments',
  'price_sheet_documents', 'price_sheet_drafts', 'price_sheet_draft_revisions', 'price_sheet_versions', 'price_sheet_active', 'price_sheet_publication_events',
 ] as const;

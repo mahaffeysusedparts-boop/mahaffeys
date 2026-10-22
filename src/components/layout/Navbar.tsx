@@ -99,6 +99,7 @@ export const Navbar: React.FC = () => {
     { label: 'Dashboard', path: '/', icon: LayoutDashboard },
     { label: 'Operations', path: '/operations', icon: RadioTower },
     { label: 'Scrap Metal Scale', path: '/intake', icon: Scale },
+    { label: 'Bin Inspection', path: '/bin-inspection', icon: ClipboardList },
     { label: 'Junk Yard Cars', path: '/pull-a-part', icon: Car },
     { label: 'Public Inventory', path: '/inventory', icon: Wrench },
     { label: 'Compliance & NMVTIS', path: '/compliance', icon: ShieldCheck },

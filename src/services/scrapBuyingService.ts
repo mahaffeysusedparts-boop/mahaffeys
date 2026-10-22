@@ -36,7 +36,7 @@ async function recordPayment(action: 'PAY'|'FINALIZE_AND_PAY', ticket: Ticket, m
 export const scrapBuyingService = {
   create: (ticket: Ticket) => command({action:'CREATE',id:ticket.id,revision:0,ticket}),
   adopt: (id: string) => command({action:'ADOPT',id,revision:0}),
-  save: (ticket: Ticket) => command({action:'SAVE',id:ticket.id,revision:ticket.buying?.revision ?? 0,ticket}),
+  save: (ticket: Ticket, binAcknowledgment?: import('@/types/binDeductions').BinReviewAcknowledgment) => command({action:'SAVE',id:ticket.id,revision:ticket.buying?.revision ?? 0,ticket,...(binAcknowledgment ? {binAcknowledgment} : {})}),
   void: (ticket: Ticket,reason: string) => command({action:'VOID',id:ticket.id,revision:ticket.buying?.revision ?? 0,reason}),
   eligibility: (ticket: Ticket) => apiRequest<PaymentEligibility>(`/api/scrap-buying/eligibility?id=${encodeURIComponent(ticket.id)}&revision=${ticket.buying?.revision ?? 0}`),
   completeAndPay: (ticket: Ticket,method: 'Cash'|'Check',reference: string,permitReference: string,documentationReference: string,reviewed = false) => recordPayment('FINALIZE_AND_PAY',ticket,method,reference,permitReference,documentationReference,reviewed),

@@ -1,5 +1,6 @@
 import type { MetalGrade, ScrapTicketLine } from '@/types/scrap';
-import { validatedBreakdown } from './weighingContract';
+import type { BinDeductionEntry } from '@/types/binDeductions';
+import { validatedBreakdown, validatedItemBreakdown } from './weighingContract';
 
 /**
  * Shared weight math used by both the vehicle IN/OUT workflow and the
@@ -45,6 +46,10 @@ export function computeWeightBreakdown(
   metal: MetalGrade,
 ): WeightBreakdown {
   return validatedBreakdown(grossWeight, tareWeight, deductionPercent, metal.ratePerLb);
+}
+
+export function computeItemWeightBreakdown(grossWeight: number, tareWeight: number, items: readonly BinDeductionEntry[], metal: MetalGrade): WeightBreakdown {
+  return validatedItemBreakdown(grossWeight, tareWeight, items, metal.ratePerLb);
 }
 
 /** Build a ScrapTicketLine from a weight breakdown. */

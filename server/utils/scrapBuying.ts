@@ -5,7 +5,8 @@ import { requireUser, type PublicUser } from './auth';
 import { query, withTransaction } from './db';
 import { lockFinancialState, putState, stateValue } from './financialState';
 import { serverScale } from './scale';
-import { normalizeWeight, validateScaleReading, validatedBreakdown } from '../../src/utils/weighingContract';
+import { normalizeWeight, validateScaleReading, validatedBreakdown, validatedItemBreakdown } from '../../src/utils/weighingContract';
+import { consumeBinReview } from './binInspections';
 import { intakeRequirementReview } from '../../src/utils/intakeRequirements';
 import { DEFAULT_INTAKE_REQUIREMENTS, normalizeIntakeRequirements, type IntakeRequirements } from '../../src/types/intakeRequirements';
 import type { Ticket, MetalGrade, ScaleConfig, CashDrawerLog } from '../../src/types/scrap';
@@ -32,6 +33,7 @@ export const buyingCommandSchema = z.object({
   reference: z.string().trim().max(120).optional(), permitReference: z.string().trim().max(200).optional(),
   documentationReference: z.string().trim().max(500).optional(),
   reason: z.string().trim().max(500).optional(), reviewed: z.boolean().optional(), disbursed: z.boolean().optional(),
+  binAcknowledgment: z.object({ cycleId: z.string().uuid(), reviewRevision: z.number().int().nonnegative(), missingReviewAcknowledged: z.literal(true).optional() }).strict().optional(),
 });
 export const policySchema = z.object({ sourceUrl: z.string().url().refine((url) => url.startsWith('https://'), 'HTTPS policy source required'),
   effectiveFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), effectiveThrough: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -56,7 +58,7 @@ async function projectTicket(client: PoolClient, ticket: Ticket, userId: string)
   await putState(client, 'mahaffeys_tickets', [...tickets.filter((row) => row.id !== ticket.id), ticket], userId);
 }
 
-async function validateSave(client: PoolClient, previous: Ticket, submitted: Ticket, user: PublicUser): Promise<Ticket> {
+async function validateSave(client: PoolClient, previous: Ticket, submitted: Ticket, user: PublicUser, binAcknowledgment?: z.infer<typeof buyingCommandSchema>['binAcknowledgment']): Promise<Ticket> {
   const buying = {...previous.buying!};
   if (!Array.isArray(submitted.weightTransactions ?? []) || !Array.isArray(submitted.scrapLines ?? []) || !Array.isArray(submitted.weighingCorrections ?? [])) fail('Ticket histories must be arrays',400);
   if (submitted.id !== previous.id || submitted.ticketType !== 'SCRAP_METAL') fail('Ticket identity cannot change');
@@ -173,9 +175,15 @@ async function validateSave(client: PoolClient, previous: Ticket, submitted: Tic
     } else fail('Legacy/unspecified or split weighing cannot create a canonical payable line');
     const resolved = await client.query('SELECT c.id,c.document FROM scrap_buying_captures c JOIN scrap_buying_capture_context x ON x.capture_id=c.id WHERE c.id=ANY($1::uuid[]) AND c.ticket_id=$2 AND x.cycle_id=$3', [sources,previous.id,previous.buying?.activeCycleId]);
     if (resolved.rows.length !== sources.length || resolved.rows.some((row) => row.document.source === 'SCALE' && !row.document.stable)) fail('Every source must belong to this canonical cycle and be stable or reviewed manual');
-    const breakdown = validatedBreakdown(gross,tare,line.deductionPercent,metal.ratePerLb);
+    let evidence: Awaited<ReturnType<typeof consumeBinReview>> | undefined;
+    if (line.weighingMode === 'VEHICLE_IN_OUT') {
+      if (line.deductionPercent !== 0) fail('Truck item deductions cannot combine with contamination percentages',400);
+      evidence = await consumeBinReview(client,previous.buying?.activeCycleId,binAcknowledgment,user);
+      line.deductionReason = undefined;
+    } else if (line.binReview || line.missingBinReview) fail('Platform lines cannot consume bin reviews',400);
+    const breakdown = evidence ? validatedItemBreakdown(gross,tare,evidence.binReview?.items ?? [],metal.ratePerLb) : validatedBreakdown(gross,tare,line.deductionPercent,metal.ratePerLb);
     for (const [key,value] of Object.entries(breakdown)) if (line[key as keyof typeof line] !== value) fail('Payable line calculations conflict with server result');
-    Object.assign(line,breakdown,{metalName:metal.name,metalCategory:metal.category});
+    Object.assign(line,breakdown,{metalName:metal.name,metalCategory:metal.category},evidence);
     await client.query('INSERT INTO scrap_buying_lines(id,ticket_id,document,source_cycle_id) VALUES($1,$2,$3::jsonb,$4)', [line.id,previous.id,JSON.stringify(line),previous.buying?.activeCycleId]);
     for (const id of sources) await client.query('INSERT INTO scrap_buying_line_sources(capture_id,line_id) VALUES($1,$2)', [id,line.id]);
     await client.query("UPDATE scrap_buying_cycles SET status='REVIEWED',document=document||$2::jsonb WHERE id=$1",[previous.buying?.activeCycleId,JSON.stringify({netLbs:breakdown.netWeight,lineId:line.id,reviewedAt:new Date().toISOString()})]);
@@ -329,7 +337,7 @@ export async function executeBuyingCommand(command: z.infer<typeof buyingCommand
       next = { ...previous };
       if (command.action === 'SAVE') {
         if (previous.buying.stage !== 'DRAFT' || !command.ticket) fail('Only draft buying tickets can be edited');
-        next = await validateSave(client,previous,command.ticket as unknown as Ticket,user);
+        next = await validateSave(client,previous,command.ticket as unknown as Ticket,user,command.binAcknowledgment);
       } else if (command.action === 'FINALIZE' || command.action === 'FINALIZE_AND_PAY') {
         next = await finalizePurchase(client,previous,command,user);
         if (command.action === 'FINALIZE_AND_PAY') next = await pay(client,next,command,user);

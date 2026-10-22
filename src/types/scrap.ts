@@ -286,6 +286,8 @@ export interface ScrapTicketLine {
   sourceCaptureIds?: string[];
   tareTreatment?: import('./scrapBuying').TareTreatment;
   deductionReason?: string;
+  binReview?: import('./binDeductions').BinReview;
+  missingBinReview?: import('./binDeductions').MissingBinReview;
   loadNumber?: number;
   capturedAt?: string;
   metalGradeId: string;

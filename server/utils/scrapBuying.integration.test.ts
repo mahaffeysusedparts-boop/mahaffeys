@@ -1,7 +1,7 @@
 import { afterAll,beforeAll,describe,it,expect,vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
-import { validatedBreakdown } from '../../src/utils/weighingContract';
+import { validatedBreakdown, validatedItemBreakdown } from '../../src/utils/weighingContract';
 import type { PublicUser } from './auth';
 import type { Ticket } from '../../src/types/scrap';
 
@@ -37,6 +37,37 @@ describe.skipIf(!safe)('real PostgreSQL buying invariants (isolated TEST_DATABAS
     if(db)await(await db.getDatabase()).end();
     if(connection){await connection.query(`DROP SCHEMA "${namespace}" CASCADE`);await connection.end();}
     vi.unstubAllEnvs();
+  });
+  it('consumes authoritative truck review, rejects stale acknowledgment and never carries deductions into the next cycle',async()=>{
+    let draft=await buying.executeBuyingCommand({action:'CREATE',id:'bin-canonical-test',revision:0,idempotencyKey:randomUUID(),ticket:{customerName:'BIN TEST'}} as Parameters<typeof buying.executeBuyingCommand>[0],user);
+    const save=async(next:Ticket,binAcknowledgment?:Record<string,unknown>)=>buying.executeBuyingCommand({action:'SAVE',id:draft.id,revision:draft.buying!.revision,idempotencyKey:randomUUID(),ticket:next,binAcknowledgment} as Parameters<typeof buying.executeBuyingCommand>[0],user);
+    const capture=async(type:'SCALE_IN'|'SCALE_OUT',lbs:number)=>{
+      const id=randomUUID();const at=new Date().toISOString();
+      const reading={id,scaleId:null,originalWeight:lbs,originalUnit:'LBS' as const,normalizedLbs:lbs,actorId:user.id,capturedAt:at,stable:false,source:'MANUAL' as const};
+      draft=await save({...draft,selectedWeighingType:'VEHICLE_IN_OUT',...(type==='SCALE_IN'?{scaleGrossInWeight:lbs,scaleGrossInAt:at}:{scaleTareOutWeight:lbs,scaleTareOutAt:at}),weightTransactions:[...(draft.weightTransactions??[]),{id,type,weightLbs:lbs,recordedAt:at,capture:reading}]});
+    };
+    await capture('SCALE_IN',2000);const firstCycle=draft.buying!.activeCycleId!;
+    await capture('SCALE_OUT',1000); // Missing review does not gate OUT.
+    const revision=draft.buying!.revision;
+    const review={cycleId:firstCycle,revision:1,catalogRevision:1,items:[{itemId:'tire',name:'Tire',quantity:2,poundsPerUnit:150}],totalLbs:300,employeeId:user.id,employeeName:user.fullName,submittedAt:new Date().toISOString()};
+    await db.query('INSERT INTO bin_inspection_reviews(cycle_id,revision,document,actor_id) VALUES($1,1,$2::jsonb,$3)',[firstCycle,JSON.stringify(review),user.id]);
+    expect((await db.query('SELECT revision FROM scrap_buying_tickets WHERE ticket_id=$1',[draft.id])).rows[0].revision).toBe(revision);
+    const line={id:randomUUID(),metalGradeId:grade.id,metalName:grade.name,metalCategory:grade.category,...validatedItemBreakdown(2000,1000,review.items,grade.ratePerLb),weighingMode:'VEHICLE_IN_OUT' as const,sourceCaptureIds:draft.weightTransactions!.map(row=>row.id),loadNumber:1};
+    const next={...draft,scaleGrossInWeight:undefined,scaleGrossInAt:undefined,scaleTareOutWeight:undefined,scaleTareOutAt:undefined,scrapLines:[line]};
+    await expect(save(next,{cycleId:firstCycle,reviewRevision:0,missingReviewAcknowledged:true})).rejects.toThrow('Bin review changed');
+    await expect(save({...next,scrapLines:[{...line,deductionPercent:10,deductionReason:'forged'}]},{cycleId:firstCycle,reviewRevision:1})).rejects.toThrow('cannot combine');
+    await expect(save({...next,scrapLines:[{...line,deductionLbs:1}]},{cycleId:firstCycle,reviewRevision:1})).rejects.toThrow('calculations conflict');
+    draft=await save(next,{cycleId:firstCycle,reviewRevision:1});
+    expect(draft.scrapLines![0]).toMatchObject({binReview:review,netWeight:1000,billableWeight:700,deductionPercent:0});
+    expect((await db.query('SELECT result FROM scrap_buying_events WHERE ticket_id=$1 ORDER BY revision DESC LIMIT 1',[draft.id])).rows[0].result.scrapLines[0].binReview).toEqual(review);
+    await capture('SCALE_IN',3000);await capture('SCALE_OUT',2000);const secondCycle=draft.buying!.activeCycleId!;
+    expect(secondCycle).not.toBe(firstCycle);
+    const second={...line,id:randomUUID(),loadNumber:2,...validatedItemBreakdown(3000,2000,[],grade.ratePerLb),sourceCaptureIds:draft.weightTransactions!.slice(-2).map(row=>row.id)};
+    const secondNext={...draft,scaleGrossInWeight:undefined,scaleGrossInAt:undefined,scaleTareOutWeight:undefined,scaleTareOutAt:undefined,scrapLines:[...draft.scrapLines!,second]};
+    await expect(save(secondNext,{cycleId:secondCycle,reviewRevision:0})).rejects.toThrow('Explicit');
+    draft=await save(secondNext,{cycleId:secondCycle,reviewRevision:0,missingReviewAcknowledged:true});
+    expect(draft.scrapLines![1]).toMatchObject({deductionLbs:0,billableWeight:1000,missingBinReview:{cycleId:secondCycle,actorId:user.id}});
+    expect(draft.scrapLines![1].binReview).toBeUndefined();
   });
   it('idempotent create and concurrent stale draft updates',async()=>{
     const request=command('CREATE',{ticket:{customerId:'test-seller',customerName:'TEST SELLER',customerPhone:'5550001234',customerIdNumber:'TEST-ID',vehicleLicensePlate:'TEST-PLATE',complianceCaptures:{idPhotoUrl:'/TEST/id',personPhotoUrl:'/TEST/person',vehiclePhotoUrl:'/TEST/vehicle',licensePlatePhotoUrl:'/TEST/plate',loadPhotoUrl:'/TEST/load'}}});

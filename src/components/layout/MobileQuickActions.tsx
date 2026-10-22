@@ -2,7 +2,10 @@
 
 import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { Car, Map, Plus, Scale, X } from "lucide-react";
+import { Car, Map, Plus, Scale, X, ClipboardCheck } from "lucide-react";
+import { useAuth } from '@/context/AuthContext';
+import { hasPageAccess, PATH_TO_PAGE_KEY } from '@/utils/pageAccess';
+import { storageService } from '@/services/storageService';
 
 /**
  * Mobile floating action button — a speed-dial with the three highest-frequency
@@ -12,9 +15,11 @@ import { Car, Map, Plus, Scale, X } from "lucide-react";
 export function MobileQuickActions() {
   const [open, setOpen] = useState(false);
   const location = useLocation();
+  const { user } = useAuth();
   if (location.pathname === '/parts-prices') return null;
 
   const actions = [
+    { label: 'Bin Inspection', description: 'Review truck deductions', to: '/bin-inspection', icon: ClipboardCheck, classes: 'bg-teal-700 text-white hover:bg-teal-600' },
     {
       label: "New Intake",
       description: "Weigh in a seller",
@@ -46,7 +51,7 @@ export function MobileQuickActions() {
           open ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-3 opacity-0"
         }`}
       >
-        {actions.map((action) => {
+        {actions.filter(action => action.to === '/inventory' || (user?.status === 'approved' && hasPageAccess(user.role, PATH_TO_PAGE_KEY[action.to], storageService.getSettings().rolePageAccess))).map((action) => {
           const Icon = action.icon;
           return (
             <Link

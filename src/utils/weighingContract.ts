@@ -62,6 +62,29 @@ export function validatedBreakdown(gross: number, tare: number, deductionPercent
   };
 }
 
+export function itemDeductionTotal(items: readonly { quantity: number; poundsPerUnit: number }[]) {
+  let total = BigInt(0);
+  for (const item of items) {
+    if (!Number.isInteger(item.quantity) || item.quantity <= 0 || item.quantity > 10000 || item.poundsPerUnit <= 0) throw new Error('Invalid item deduction');
+    total += fixed(item.poundsPerUnit, 'Item pounds') * BigInt(item.quantity);
+  }
+  return pounds(total);
+}
+
+export function validatedItemBreakdown(gross: number, tare: number, items: readonly { quantity: number; poundsPerUnit: number }[], ratePerLb: number) {
+  const base = validatedBreakdown(gross, tare, 0, ratePerLb);
+  const net = fixed(base.netWeight, 'Net');
+  const total = fixed(itemDeductionTotal(items), 'Item deductions');
+  if (total > net) throw new Error('Item deductions exceed measured net; correct the bin review');
+  const tenths = roundDivide(total * TEN, ONE);
+  const deducted = tenths * (ONE / TEN);
+  if (deducted > net) throw new Error('Rounded item deductions exceed measured net; correct the bin review');
+  const payable = roundDivide((net - deducted) * TEN, ONE);
+  const cents = roundDivide(payable * fixed(ratePerLb, 'Rate') * HUNDRED, TEN * ONE);
+  if (cents > BigInt(Number.MAX_SAFE_INTEGER)) throw new Error('Line amount exceeds supported financial precision');
+  return { ...base, deductionLbs: Number(tenths) / 10, billableWeight: Number(payable) / 10, lineTotal: Number(cents) / 100 };
+}
+
 export function platformWeights(readingLbs: number, tareLbs: number, readingBasis: 'GROSS' | 'NET', treatment: 'NONE' | 'SCALE_TARE' | 'MANUAL') {
   const reading = fixed(readingLbs, 'Reading');
   const tare = fixed(tareLbs, 'Tare');

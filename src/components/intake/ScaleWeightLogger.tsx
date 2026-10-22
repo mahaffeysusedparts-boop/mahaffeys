@@ -10,8 +10,11 @@ import { BuyingPaymentFields, useBuyingPaymentEligibility, initialBuyingPayment,
 import { IntakeCompletionGuidance } from './IntakeCompletionGuidance';
 import { canRecordBuyingPayment } from '@/utils/buyingAuthorization';
 import { calculateComplianceScore } from '@/utils/complianceUtils';
-import { computeWeightBreakdown, buildScrapTicketLine } from '@/utils/weightCalculations';
+import { computeWeightBreakdown, computeItemWeightBreakdown, buildScrapTicketLine } from '@/utils/weightCalculations';
 import { normalizeWeight, validateScaleReading } from '@/utils/weighingContract';
+import { useBinInspection } from '@/hooks/useBinInspection';
+import { BinInspectionSummary } from './BinInspectionSummary';
+import type { BinReviewAcknowledgment } from '@/types/binDeductions';
 import type { WeightCapture, WeighingType } from '@/types/scrapBuying';
 import { WeighingTypeSelector } from './WeighingTypeSelector';
 import { Button } from '@/components/ui/button';
@@ -135,6 +138,11 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
   const serverQueue = useQuery({queryKey:['scrap-buying-queue'],queryFn:() => scrapBuyingService.queue(),refetchInterval:5000});
 
   const [notes, setNotes] = useState('');
+  const binQuery = useBinInspection(activeTicket?.buying?.activeCycleId);
+  const binReview = binQuery.isError ? null : binQuery.data?.cycles[0]?.review;
+  const [missingBinAcknowledged, setMissingBinAcknowledged] = useState(false);
+  const binConfirmBusy = useRef(false);
+  useEffect(() => { setMissingBinAcknowledged(false); }, [activeTicket?.buying?.activeCycleId]);
 
   const singleCapture = activeTicket?.pendingPlatformCapture ?? null;
   const selectedWeighingType: WeighingType | null = singleCapture ? 'PLATFORM'
@@ -320,11 +328,11 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [serverQueue.data]);
 
-  const persist = async (ticket: Ticket): Promise<Ticket | null> => {
+  const persist = async (ticket: Ticket, binAcknowledgment?: BinReviewAcknowledgment): Promise<Ticket | null> => {
     if (busyRef.current) return null;
     busyRef.current = true; setSaveState('PENDING'); setSaveError('');
     try {
-      const saved = await scrapBuyingService.save(ticket);
+      const saved = await scrapBuyingService.save(ticket, binAcknowledgment);
       setActiveTicket(saved); refreshQueue(); setSaveState('SAVED'); setReviewConfirmed(false);
       return saved;
     } catch (error) {
@@ -383,7 +391,7 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
 
   const previewBreakdown = (gross: number, tare: number) => {
     if (!selectedMetal) return null;
-    try { return computeWeightBreakdown(gross, tare, deductionPercent, selectedMetal); }
+    try { return weighingMode === 'VEHICLE_IN_OUT' ? computeItemWeightBreakdown(gross, tare, binReview?.items ?? [], selectedMetal) : computeWeightBreakdown(gross, tare, deductionPercent, selectedMetal); }
     catch { return null; }
   };
   const selectedSingleBreakdown = singleCapture ? previewBreakdown(singleCapture.capturedLbs, singleCapture.tareLbs) : null;
@@ -433,6 +441,8 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
 
   const commitOutWeight = async (lbs: number, capture = makeCapture(lbs, false)) => {
     if (!activeTicket || weighingMode !== 'VEHICLE_IN_OUT' || weighState !== 'AWAITING_OUT' || !validateCapture(lbs)) return;
+    const latestBin = await binQuery.refetch();
+    if (latestBin.isError || !latestBin.data?.cycles[0]?.review) toast.warning('Bin review is not confirmed. OUT is allowed; review deductions before confirming the load.');
     const grossIn = activeTicket.scaleGrossInWeight ?? 0;
     const net = grossIn - lbs;
     if (net <= 0) {
@@ -550,36 +560,33 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
   const deductionReady = deductionPercent === 0 || deductionReason.trim().length > 0;
 
   const handleCommitLoad = async () => {
-    if (!activeTicket || !canEdit() || weighState !== 'PENDING_GRADE') return;
-    if (!selectedMetal || !pendingBreakdown || !deductionReady) {
-      toast.error('Review valid weights, grade and a reason for any deduction');
-      return;
-    }
-    const latestRate = storageService.getMetals().find((metal) => metal.id === selectedMetalId)?.ratePerLb;
-    if (latestRate !== selectedMetal.ratePerLb) {
-      toast.error('Buying rate changed. Reload this workstation and review the current rate before confirming.');
-      return;
-    }
-    const lines = activeTicket.scrapLines || [];
-    const newLine = buildScrapTicketLine(pendingBreakdown, selectedMetal, nextLoadNumber, 'VEHICLE_IN_OUT');
-    newLine.sourceCaptureIds = (activeTicket.weightTransactions ?? []).filter((tx) =>
-      (tx.type === 'SCALE_IN' && tx.recordedAt === activeTicket.scaleGrossInAt) ||
-      (tx.type === 'SCALE_OUT' && tx.recordedAt === activeTicket.scaleTareOutAt)).map((tx) => tx.id);
-    if (lines.some((line) => line.sourceCaptureIds?.some((id) => newLine.sourceCaptureIds?.includes(id)))) {
-      toast.error('An IN/OUT capture has already been used in a payable line');
-      return;
-    }
-    newLine.deductionReason = deductionPercent > 0 ? deductionReason.trim() : undefined;
-    const next: Ticket = {
-      ...activeTicket,
-      scrapLines: [...lines, newLine],
-      scaleGrossInWeight: undefined, scaleGrossInAt: undefined,
-      scaleTareOutWeight: undefined, scaleTareOutAt: undefined,
-    };
-    if (!await persist(next)) return;
-    setDeductionPercent(0);
-    setDeductionReason('');
-    toast.success(`Load ${newLine.loadNumber} added — add another load or review the ticket`);
+    if (!activeTicket || !canEdit() || weighState !== 'PENDING_GRADE' || !selectedMetal || binConfirmBusy.current) return;
+    binConfirmBusy.current = true;
+    try {
+      const latest = await binQuery.refetch();
+      const review = latest.isError ? null : latest.data?.cycles[0]?.review;
+      if ((review?.revision ?? 0) !== (binReview?.revision ?? 0)) {
+        toast.warning('Bin review changed. Review the updated deduction card before confirming again.'); return;
+      }
+      if (!review && !missingBinAcknowledged) { toast.error('Explicitly acknowledge the missing bin review before confirming.'); return; }
+      const latestRate = storageService.getMetals().find(metal => metal.id === selectedMetalId)?.ratePerLb;
+      if (latestRate !== selectedMetal.ratePerLb) { toast.error('Buying rate changed. Reload and review the current rate.'); return; }
+      const breakdown = computeItemWeightBreakdown(activeTicket.scaleGrossInWeight ?? 0, activeTicket.scaleTareOutWeight ?? 0, review?.items ?? [], selectedMetal);
+      const lines = activeTicket.scrapLines || [];
+      const newLine = buildScrapTicketLine(breakdown, selectedMetal, nextLoadNumber, 'VEHICLE_IN_OUT');
+      newLine.sourceCaptureIds = (activeTicket.weightTransactions ?? []).filter(tx =>
+        (tx.type === 'SCALE_IN' && tx.recordedAt === activeTicket.scaleGrossInAt) ||
+        (tx.type === 'SCALE_OUT' && tx.recordedAt === activeTicket.scaleTareOutAt)).map(tx => tx.id);
+      if (lines.some(line => line.sourceCaptureIds?.some(id => newLine.sourceCaptureIds?.includes(id)))) throw new Error('An IN/OUT capture has already been used');
+      const cycleId = activeTicket.buying?.activeCycleId;
+      if (!cycleId) throw new Error('No canonical cycle; cancel and reweigh this legacy load');
+      const next: Ticket = { ...activeTicket, scrapLines: [...lines, newLine], scaleGrossInWeight: undefined, scaleGrossInAt: undefined, scaleTareOutWeight: undefined, scaleTareOutAt: undefined };
+      const saved = await persist(next, { cycleId, reviewRevision: review?.revision ?? 0, ...(!review ? { missingReviewAcknowledged: true as const } : {}) });
+      if (!saved) { await binQuery.refetch(); return; }
+      setDeductionPercent(0); setDeductionReason('');
+      toast.success(`Load ${newLine.loadNumber} added — add another load or review the ticket`);
+    } catch (error) { toast.error(error instanceof Error ? error.message : 'Could not confirm load'); }
+    finally { binConfirmBusy.current = false; }
   };
 
   // ---- Single-weight (small-load) capture --------------------------------------
@@ -1407,6 +1414,7 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
                     </div>
                   )}
 
+                  {weighingMode === 'VEHICLE_IN_OUT' && activeTicket.buying?.activeCycleId && <BinInspectionSummary review={binReview} unconfirmed={binQuery.isError || binQuery.isPending} acknowledge={missingBinAcknowledged} onAcknowledge={setMissingBinAcknowledged} />}
                   {weighState === 'PENDING_GRADE' && (
                     <div className="space-y-4">
                       <div className="grid grid-cols-3 gap-2 font-mono">
@@ -1429,19 +1437,8 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
 
                       {gradeSelector}
 
-                      <div>
-                        <Label className="text-[11px] text-slate-400">Contamination %</Label>
-                        <Input
-                          type="number"
-                          min={0}
-                          max={100}
-                          value={deductionPercent}
-                          onChange={(e) => setDeductionPercent(Math.min(100, Math.max(0, parseFloat(e.target.value) || 0)))}
-                          className="mt-1 h-11 border-slate-800 bg-slate-950 font-mono text-base text-red-400"
-                        />
-                      </div>
-                      {deductionReasonField}
-                      {!pendingBreakdown && <p role="alert" className="text-sm text-amber-200">Invalid weights or rate. Correct this weighing before confirming.</p>}
+                      <p className="text-sm text-teal-200">IN − OUT = measured net; measured net − item deductions = payable pounds. Truck contamination percentages are not applied.</p>
+                      {!pendingBreakdown && <p role="alert" className="text-sm text-amber-200">Invalid weights, rate, or item deductions exceed measured net. Correct the bin review or weighing before confirming.</p>}
 
                       <div className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-950 px-4 py-2.5 font-mono text-xs">
                         <span className="text-slate-400">
@@ -1454,7 +1451,7 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
                       <div className="flex gap-2">
                         <Button
                           onClick={handleCommitLoad}
-                          disabled={!pendingBreakdown || !deductionReady}
+                          disabled={!pendingBreakdown || (!binReview && !missingBinAcknowledged)}
                           className="h-12 flex-1 gap-2 bg-emerald-600 text-sm font-extrabold text-white shadow-md hover:bg-emerald-500"
                         >
                           <PackagePlus className="h-5 w-5" /> Add Load · Keep Ticket Open
@@ -1518,7 +1515,10 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
                             </TableCell>
                             <TableCell className="text-right text-slate-300">{fmtLbs(line.netWeight)} lb</TableCell>
                             <TableCell className="text-right text-red-400">
-                              {line.deductionPercent > 0 ? `−${fmtLbs(line.deductionLbs)} lb (${line.deductionPercent}%)` : '—'}
+                              {line.binReview ? `−${fmtLbs(line.deductionLbs)} lb items` : line.deductionPercent > 0 ? `−${fmtLbs(line.deductionLbs)} lb (${line.deductionPercent}%)` : '—'}
+                              {line.binReview?.items.map(item => <span key={item.itemId} className="block text-[10px] text-slate-200">{item.name}: {item.quantity} × {item.poundsPerUnit} lb</span>)}
+                              {line.binReview && <span className="block text-[10px] text-slate-200">{line.binReview.employeeName} · v{line.binReview.revision}</span>}
+                              {line.missingBinReview && <span className="block text-[10px] text-amber-200">No review acknowledged by {line.missingBinReview.actorName}</span>}
                               {line.deductionReason && <span className="block text-[10px] text-slate-300">{line.deductionReason}</span>}
                             </TableCell>
                             <TableCell className="text-right font-bold text-emerald-300">{fmtLbs(line.billableWeight)} lb</TableCell>

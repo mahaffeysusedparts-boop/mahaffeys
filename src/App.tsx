@@ -14,6 +14,7 @@ import "./print.css";
 
 const DashboardPage = lazy(() => import("./pages/DashboardPage"));
 const IntakePage = lazy(() => import("./pages/IntakePage"));
+const BinInspectionPage = lazy(() => import("./pages/BinInspectionPage"));
 const PublicInventoryPage = lazy(() => import("./pages/PublicInventoryPage"));
 const PublicVehicleDetailPage = lazy(() => import("./pages/PublicVehicleDetailPage"));
 const PublicVehicleInventoryPage = lazy(() => import("./pages/PublicVehicleInventoryPage"));
@@ -82,6 +83,7 @@ const App = () => (
               <Route path="/" element={guarded(<DashboardPage />, "dashboard")} />
               <Route path="/dashboard" element={guarded(<DashboardPage />, "dashboard")} />
               <Route path="/intake" element={guarded(<IntakePage />, "intake")} />
+              <Route path="/bin-inspection" element={guarded(<BinInspectionPage />, "bin-inspection")} />
               <Route path="/pull-a-part" element={guarded(<PullAPartPage />, "pull-a-part")} />
               <Route path="/compliance" element={guarded(<CompliancePage />, "compliance")} />
               <Route path="/cameras" element={guarded(<CamerasPage />, "cameras")} />

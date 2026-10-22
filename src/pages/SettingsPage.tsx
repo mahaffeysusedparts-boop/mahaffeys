@@ -20,6 +20,7 @@ import { scaleAccent } from '@/components/scale/scaleAccent';
 import { NetworkPrinterManager } from '@/components/settings/NetworkPrinterManager';
 import { IntakeRequirementsSettings } from '@/components/settings/IntakeRequirementsSettings';
 import { PaymentSafeguardsSettings } from '@/components/settings/PaymentSafeguardsSettings';
+import { BinDeductionSettings } from '@/components/settings/BinDeductionSettings';
 import {
   PAGE_KEYS,
   PAGE_LABELS,
@@ -367,6 +368,7 @@ export default function SettingsPage() {
       <main className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
         <IntakeRequirementsSettings />
         {authService.getCurrentUser()?.role === 'admin' && <PaymentSafeguardsSettings />}
+        {authService.getCurrentUser()?.role === 'admin' && <BinDeductionSettings />}
         
         {/* Hidden File Input for Importing Backup */}
         <input

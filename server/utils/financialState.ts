@@ -23,6 +23,7 @@ export const legacyFinancialFields = ['ticketType','createdAt','customerId','cus
 // All generic sync/chunk/import paths share the same lock as buying commands.
 // Protected records omitted by an evicted/stale cache are retained, not deleted.
 export async function protectFinancialState(client: PoolClient, key: string, incoming: unknown, actorRole: string, actorName: string) {
+  if (key.startsWith('mahaffeys_bin_') || key.startsWith('bin_inspection') || key.startsWith('bin_deduction')) throw createError({statusCode:403,statusMessage:'Bin records must use dedicated versioned endpoints'});
   if (key === 'mahaffeys_payment_safeguards' || key.startsWith('mahaffeys_payment_safeguards_revision_')) throw createError({statusCode:403,statusMessage:'Payment safeguards must use the revisioned administrator safeguards endpoint'});
   if (key === 'mahaffeys_shipments') {
     await lockFinancialState(client);

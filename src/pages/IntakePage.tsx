@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { IntakeType, Ticket } from '@/types/scrap';
 import { storageService } from '@/services/storageService';
 import { Navbar } from '@/components/layout/Navbar';
@@ -119,7 +120,7 @@ export default function IntakePage() {
 
         {/* View 1: Selector Hub */}
         {activeMode === null && (
-          <IntakeModeSelector onSelectMode={selectMode} />
+          <><Link to="/bin-inspection" className="mb-5 block rounded-2xl border border-teal-600 bg-teal-900 p-5 text-teal-50"><span className="text-xl font-extrabold">Bin Inspection →</span><p className="mt-1 text-sm">Select an active truck load and submit item deductions from the yard.</p></Link><IntakeModeSelector onSelectMode={selectMode} /></>
         )}
 
         {/* View 2: Car Salvage Intake Form */}

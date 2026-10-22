@@ -3,6 +3,7 @@ import { Ticket, YardSettings } from '@/types/scrap';
 import { storageService } from '@/services/storageService';
 import { CheckPrintModal } from '@/components/receipts/CheckPrintModal';
 import { NetworkPrintButton } from '@/components/settings/NetworkPrintButton';
+import { BinReviewEvidence } from '@/components/intake/BinInspectionSummary';
 import {
   Dialog,
   DialogContent,
@@ -157,6 +158,8 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ ticket, open, onOpen
                           </span>
                         )}
                       </span>
+                      {line.binReview && <div className="mt-2 text-[9px] font-normal text-slate-800"><BinReviewEvidence review={line.binReview} /><p>Measured net {line.netWeight.toLocaleString()} lb − items {line.deductionLbs.toLocaleString()} lb = payable {line.billableWeight.toLocaleString()} lb</p></div>}
+                      {line.missingBinReview && <p className="mt-2 text-[9px] font-normal text-slate-800">No bin review; no item deduction. Explicitly acknowledged by {line.missingBinReview.actorName} at {new Date(line.missingBinReview.acknowledgedAt).toLocaleString()}.</p>}
                     </td>
                     <td className="py-1 text-right">{line.grossWeight.toLocaleString()} lb</td>
                     <td className="py-1 text-right">{line.tareWeight.toLocaleString()} lb</td>

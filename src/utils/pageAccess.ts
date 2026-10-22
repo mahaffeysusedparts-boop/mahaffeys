@@ -9,7 +9,7 @@ import { UserRole } from '@/types/scrap';
  */
 
 export const PAGE_KEYS = [
-  'dashboard', 'operations', 'operations-review', 'intake', 'scale-log', 'tickets', 'cash-drawer', 'customers', 'cameras',
+  'dashboard', 'operations', 'operations-review', 'intake', 'bin-inspection', 'scale-log', 'tickets', 'cash-drawer', 'customers', 'cameras',
   'yard-map', 'pull-a-part', 'containers', 'public-inventory', 'compliance', 'pricing', 'shipments',
   'reports', 'team', 'system-status', 'users', 'server-admin', 'settings', 'fleet',
 ] as const;
@@ -21,6 +21,7 @@ export const PAGE_LABELS: Record<PageKey, string> = {
   operations: 'Operations',
   'operations-review': 'Operations Review',
   intake: 'Intake (Scale)',
+  'bin-inspection': 'Bin Inspection',
   'scale-log': 'Scale Log',
   tickets: 'Tickets',
   'cash-drawer': 'Cash Drawer',
@@ -46,8 +47,8 @@ export const PAGE_LABELS: Record<PageKey, string> = {
 export const ROLE_PAGE_ACCESS: Record<UserRole, PageKey[]> = {
   admin: [...PAGE_KEYS],
   yard_manager: [...PAGE_KEYS],
-  scale_operator: ['dashboard', 'intake', 'scale-log', 'tickets', 'cash-drawer', 'customers', 'cameras'],
-    yard_employee: ['dashboard', 'yard-map', 'pull-a-part', 'containers', 'public-inventory', 'fleet'],
+  scale_operator: ['dashboard', 'intake', 'bin-inspection', 'scale-log', 'tickets', 'cash-drawer', 'customers', 'cameras'],
+    yard_employee: ['dashboard', 'bin-inspection', 'yard-map', 'pull-a-part', 'containers', 'public-inventory', 'fleet'],
 };
 
 /** Route path → page key (used by the Navbar to hide links a role cannot open). */
@@ -56,6 +57,7 @@ export const PATH_TO_PAGE_KEY: Record<string, PageKey> = {
   '/dashboard': 'dashboard',
   '/operations': 'operations',
   '/intake': 'intake',
+  '/bin-inspection': 'bin-inspection',
   '/scale-log': 'scale-log',
   '/tickets': 'tickets',
   '/cash-drawer': 'cash-drawer',
