@@ -131,6 +131,10 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
       toast.error('Enter the seller name before saving this intake');
       return;
     }
+    if (captures.idPhotoUrl && !customerIdNumber.trim()) {
+      toast.error('Enter the seller ID number so their ID photo can be saved to their profile');
+      return;
+    }
 
     const activeLoads = storageService.getTickets().filter(
       (t) => t.ticketType === 'SCRAP_METAL' && t.status === 'PENDING'
@@ -306,6 +310,7 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
                         type="button"
                         variant="outline"
                         role="combobox"
+                        aria-label="Find Registered Customer"
                         aria-expanded={customerSearchOpen}
                         className="mt-1 h-11 w-full justify-between rounded-xl border-slate-800 bg-slate-950 px-3 text-xs font-normal text-white hover:bg-slate-900"
                       >

@@ -46,3 +46,29 @@ export async function preparePrintDocument(root: HTMLElement): Promise<string> {
   }));
   return copy.outerHTML;
 }
+
+export async function printBrowserDocument(root: HTMLElement): Promise<void> {
+  const html = await preparePrintDocument(root);
+  const prepared = new DOMParser().parseFromString(html, 'text/html');
+  const sources = Array.from(prepared.querySelectorAll('img'));
+  const images = Array.from(root.querySelectorAll('img'));
+  const attributes = images.map(image => ({
+    src: image.getAttribute('src'), srcset: image.getAttribute('srcset'), sizes: image.getAttribute('sizes'),
+  }));
+  try {
+    await Promise.all(images.map(async (image, index) => {
+      image.removeAttribute('srcset');
+      image.removeAttribute('sizes');
+      image.src = sources[index].src;
+      await image.decode();
+    }));
+    window.print();
+  } finally {
+    images.forEach((image, index) => {
+      for (const [name, value] of Object.entries(attributes[index])) {
+        if (value === null) image.removeAttribute(name);
+        else image.setAttribute(name, value);
+      }
+    });
+  }
+}

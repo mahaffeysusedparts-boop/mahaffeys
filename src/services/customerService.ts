@@ -41,6 +41,8 @@ export const customerService = {
     return apiRequest<CustomerListResponse>(`/api/customers?${params.toString()}`);
   },
 
+  get: (id: string) => apiRequest<Customer>(`/api/customers/${encodeURIComponent(id)}`),
+
   create: (customer: CustomerInput) => apiRequest<Customer>('/api/customers', {
     method: 'POST',
     body: JSON.stringify(customer),

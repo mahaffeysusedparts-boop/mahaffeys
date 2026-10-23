@@ -6,13 +6,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useNetworkPrinters } from "@/hooks/useNetworkPrinters";
 import { networkPrinterService, type PrinterKind } from "@/services/networkPrinterService";
 import { printRoutingService } from "@/services/printRoutingService";
-import { preparePrintDocument } from "@/utils/preparePrintDocument";
+import { preparePrintDocument, printBrowserDocument } from "@/utils/preparePrintDocument";
 
 interface NetworkPrintButtonProps {
   kind: PrinterKind;
   rootSelector: string;
   documentName: string;
   className?: string;
+  disabled?: boolean;
 }
 
 function collectStyles() {
@@ -27,7 +28,7 @@ function collectStyles() {
   return styles.join("\n");
 }
 
-export function NetworkPrintButton({ kind, rootSelector, documentName, className }: NetworkPrintButtonProps) {
+export function NetworkPrintButton({ kind, rootSelector, documentName, className, disabled = false }: NetworkPrintButtonProps) {
   const { printers, loading } = useNetworkPrinters();
   const available = useMemo(() => printers.filter((printer) => printer.kind === kind), [printers, kind]);
   const defaults = printRoutingService.getDefaults();
@@ -63,9 +64,11 @@ export function NetworkPrintButton({ kind, rootSelector, documentName, className
       toast.success(`Sent to ${result.printer}`, { description: "The job was accepted by the shared printer." });
     } catch (error) {
       const message = error instanceof Error ? error.message : "The server could not print this document";
-      toast.warning("Network printing failed — opening device print dialog", {
+      toast.warning("Network printing failed — use device print dialog", {
         description: message,
-        action: { label: "Print on this device", onClick: () => window.print() },
+        action: { label: "Print on this device", onClick: () => {
+          void printBrowserDocument(root).catch(error => toast.error(error instanceof Error ? error.message : 'Could not prepare photos for printing'));
+        } },
         actionButtonStyle: { backgroundColor: "#0ea5e9", color: "#0f172a" },
       });
     } finally {
@@ -83,7 +86,7 @@ export function NetworkPrintButton({ kind, rootSelector, documentName, className
           {available.map((printer) => <SelectItem key={printer.id} value={printer.id}>{printer.name} · {printer.host}</SelectItem>)}
         </SelectContent>
       </Select>
-      <Button type="button" onClick={() => void submit()} disabled={sending || loading || available.length === 0} className={className || "rounded-xl bg-sky-500 font-bold text-slate-950 hover:bg-sky-400"}>
+      <Button type="button" onClick={() => void submit()} disabled={disabled || sending || loading || available.length === 0} className={className || "rounded-xl bg-sky-500 font-bold text-slate-950 hover:bg-sky-400"}>
         {sending ? <LoaderCircle className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
         {sending ? "Sending…" : "Print direct"}
       </Button>

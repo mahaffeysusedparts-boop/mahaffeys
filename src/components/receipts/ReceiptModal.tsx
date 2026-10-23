@@ -1,6 +1,9 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Ticket, YardSettings } from '@/types/scrap';
 import { storageService } from '@/services/storageService';
+import { customerService } from '@/services/customerService';
+import { printBrowserDocument } from '@/utils/preparePrintDocument';
+import { toast } from 'sonner';
 import { CheckPrintModal } from '@/components/receipts/CheckPrintModal';
 import { NetworkPrintButton } from '@/components/settings/NetworkPrintButton';
 import { BinReviewEvidence } from '@/components/intake/BinInspectionSummary';
@@ -21,16 +24,63 @@ interface ReceiptModalProps {
 
 export const ReceiptModal: React.FC<ReceiptModalProps> = ({ ticket, open, onOpenChange }) => {
   const [checkOpen, setCheckOpen] = useState(false);
+  const [preparingPrint, setPreparingPrint] = useState(false);
+  const [profilePhoto, setProfilePhoto] = useState<{ key: string; url?: string; error?: string } | null>(null);
+  const [photoRetry, setPhotoRetry] = useState(0);
+  const customerId = ticket?.customerId;
+  const idNumber = ticket?.customerIdNumber || ticket?.buying?.sellerIdentity?.idNumber;
+  const ticketPhoto = ticket?.complianceCaptures?.idPhotoUrl || ticket?.carRecord?.complianceCaptures?.idPhotoUrl;
+  const photoKey = `${ticket?.id}:${customerId || ''}:${idNumber || ''}`;
+  const needsProfilePhoto = !ticketPhoto && Boolean(customerId || idNumber);
+  const photoPending = open && needsProfilePhoto && profilePhoto?.key !== photoKey;
+  const photoError = needsProfilePhoto && profilePhoto?.key === photoKey ? profilePhoto.error : undefined;
+
+  useEffect(() => {
+    if (!open || !needsProfilePhoto) {
+      setProfilePhoto(null);
+      return;
+    }
+    let active = true;
+    setProfilePhoto(null);
+    const load = async () => {
+      try {
+        let url: string | undefined;
+        if (customerId) {
+          url = (await customerService.get(customerId)).idPhotoUrl;
+        } else if (idNumber) {
+          const result = await customerService.list({ search: idNumber, pageSize: 100 });
+          const matches = result.customers.filter(customer => customer.idNumber.trim().toUpperCase() === idNumber.trim().toUpperCase());
+          // Never infer an ID photo from a name or an ambiguous registry match.
+          if (matches.length === 1 && result.totalPages <= 1) url = matches[0].idPhotoUrl;
+        }
+        if (active) setProfilePhoto({ key: photoKey, url });
+      } catch {
+        if (active) setProfilePhoto({ key: photoKey, error: 'Could not load the seller ID photo. Retry before printing.' });
+      }
+    };
+    void load();
+    return () => { active = false; };
+  }, [open, needsProfilePhoto, customerId, idNumber, photoKey, photoRetry]);
 
   if (!ticket) return null;
 
   const settings: YardSettings = storageService.getSettings();
-  const caps = ticket.complianceCaptures || ticket.carRecord?.complianceCaptures;
+  const caps = { ...ticket.carRecord?.complianceCaptures, ...ticket.complianceCaptures,
+    idPhotoUrl: ticketPhoto || (profilePhoto?.key === photoKey ? profilePhoto.url : undefined) };
   const paymentMethod = ticket.buying?.payment?.method ?? ticket.payoutMethod;
   const checkNumber = ticket.buying?.payment?.checkReference ?? ticket.checkNumber;
 
-  const handlePrint = () => {
-    window.print();
+  const handlePrint = async () => {
+    const root = document.querySelector('.printable-receipt-container');
+    if (!(root instanceof HTMLElement) || photoPending || photoError) return;
+    setPreparingPrint(true);
+    try {
+      await printBrowserDocument(root);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Could not prepare receipt photos for printing');
+    } finally {
+      setPreparingPrint(false);
+    }
   };
 
   const renderReceiptCard = (isYardCopy: boolean) => {
@@ -214,7 +264,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ ticket, open, onOpen
                 <div key={idx} className="bg-white p-0.5 border border-slate-300 rounded">
                   <div className="aspect-square bg-slate-200 rounded overflow-hidden flex items-center justify-center">
                     {item.url ? (
-                      <img src={item.url} alt={item.label} className="w-full h-full object-cover" />
+                      <img src={item.url} alt={item.label} className={`w-full h-full ${item.label === 'ID SCAN' ? 'object-contain bg-white' : 'object-cover'}`} />
                     ) : (
                       <span className="text-[7px] text-slate-500">N/A</span>
                     )}
@@ -313,13 +363,14 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ ticket, open, onOpen
               </DialogTitle>
             </div>
             <Button
-              onClick={handlePrint}
+              onClick={() => void handlePrint()}
+              disabled={preparingPrint || photoPending || Boolean(photoError)}
               size="sm"
               className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold"
             >
-              <Printer className="w-4 h-4 mr-1.5" /> Print Both Copies
+              <Printer className="w-4 h-4 mr-1.5" /> {preparingPrint ? 'Preparing Photos…' : 'Print Both Copies'}
             </Button>
-            <NetworkPrintButton kind="standard" rootSelector=".printable-receipt-container .space-y-6" documentName={`receipt-${ticket.id}`} />
+            <NetworkPrintButton kind="standard" rootSelector=".printable-receipt-container .space-y-6" documentName={`receipt-${ticket.id}`} disabled={preparingPrint || photoPending || Boolean(photoError)} />
             {ticket.payoutMethod === 'Check' && (
               <Button
                 onClick={() => {
@@ -334,6 +385,8 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ ticket, open, onOpen
               </Button>
             )}
           </div>
+          {photoPending && <p className="text-sm text-sky-200">Loading the seller's saved ID photo…</p>}
+          {photoError && <div className="flex items-center gap-2 text-sm text-rose-200"><span>{photoError}</span><Button size="sm" variant="outline" onClick={() => setPhotoRetry(value => value + 1)} className="rounded-lg border-rose-400 text-rose-100">Retry ID photo</Button></div>}
         </DialogHeader>
 
         {/* Printable Area - Renders Copy 1 (Customer Copy) and Copy 2 (Yard Copy) */}

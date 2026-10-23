@@ -85,6 +85,13 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
   const complianceStats = { score: getComplianceScore() };
 
   useEffect(() => {
+    if (!isOpen) return;
+    const next = { ...(initialCaptures || {}) };
+    delete next.signatureUrl;
+    setCaptures(next);
+  }, [isOpen, initialCaptures]);
+
+  useEffect(() => {
     if (isOpen) {
       const activeCams = storageService.getIpCameras().filter((c) => c.isActive);
       setIpCameras(activeCams);
@@ -325,6 +332,7 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
         <input
           type="file"
           ref={fileInputRef}
+          data-testid="compliance-photo-upload"
           onChange={handleFileUpload}
           accept="image/*"
           className="hidden"

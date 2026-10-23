@@ -54,7 +54,7 @@ export default defineHandler(async (event) => {
       vehicle_license_plate = NULLIF($8, ''),
       vehicle_state = NULLIF($9, ''),
       notes = NULLIF($10, ''),
-      id_photo_url = NULLIF($11, ''),
+      id_photo_url = CASE WHEN $15::boolean THEN NULLIF($11, '') ELSE id_photo_url END,
       captured_plates = CASE
         WHEN $8 = '' OR captured_plates ? $8 THEN captured_plates
         ELSE captured_plates || jsonb_build_array($8::text)
@@ -80,6 +80,7 @@ export default defineHandler(async (event) => {
     isCommercial,
     isCommercial ? companyName : "",
     isCommercial ? businessAddress : "",
+    body.idPhotoUrl !== undefined,
   ]);
 
   if (!result.rows[0]) throw createError({ statusCode: 404, statusMessage: "Customer not found" });

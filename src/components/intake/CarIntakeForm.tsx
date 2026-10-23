@@ -208,12 +208,12 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
   const handleSellerSelect = (customer: Customer) => {
     setSelectedCustomer(customer);
     setSellerName(customer.fullName);
-    setSellerIdNumber((prev) => prev || customer.idNumber);
-    setSellerPhone((prev) => prev || customer.phone || '');
-    setSellerAddress((prev) => prev || customer.address || '');
-    setLicensePlate((prev) => prev || customer.vehicleLicensePlate || '');
+    setSellerIdNumber(customer.idNumber);
+    setSellerPhone(customer.phone || '');
+    setSellerAddress(customer.address || '');
+    setLicensePlate(customer.vehicleLicensePlate || '');
+    setSellerIdPhotoUrl(customer.idPhotoUrl || '');
     if (customer.idPhotoUrl) {
-      setSellerIdPhotoUrl(customer.idPhotoUrl);
       toast.success('Seller found — ID photo pulled from their customer record');
     } else {
       toast.info(`Seller found — ${customer.fullName}'s details pre-filled`, {
@@ -354,6 +354,10 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
       toast.error('Enter who the vehicle came from (seller name)');
       return;
     }
+    if (sellerIdPhotoUrl && !sellerIdNumber.trim()) {
+      toast.error('Enter the seller ID number so their ID photo can be saved to their profile');
+      return;
+    }
     if (purchasePrice < 0 || isNaN(purchasePrice)) {
       toast.error('Please enter a valid Purchase Price ($)');
       return;
@@ -450,36 +454,27 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
 
     setIsSaving(true);
     try {
-      // Keep the seller's registry record in sync: new sellers are created with
-      // their ID photo, and returning sellers get any newly captured photo saved.
-      try {
-        const customerInput: CustomerInput = {
-          fullName: finalCustomerName,
-          phone: sellerPhone.trim(),
-          idType: selectedCustomer?.idType ?? 'Driver License',
-          idNumber: sellerIdNumber.trim(),
-          idState: selectedCustomer?.idState ?? 'GA',
-          address: sellerAddress.trim(),
-          vehicleLicensePlate: licensePlate.trim().toUpperCase() || undefined,
-          vehicleState: selectedCustomer?.vehicleState,
-          notes: selectedCustomer?.notes,
-          idPhotoUrl: sellerIdPhotoUrl || undefined,
-          isCommercial: selectedCustomer?.isCommercial ?? false,
-          companyName: selectedCustomer?.companyName,
-          businessAddress: selectedCustomer?.businessAddress,
-        };
-
-        if (selectedCustomer) {
-          await customerService.update(selectedCustomer.id, customerInput);
-        } else if (sellerIdNumber.trim()) {
-          const created = await customerService.create(customerInput);
-          setSelectedCustomer(created);
-        }
-      } catch (error) {
-        // The ticket still saves; only the registry sync failed.
-        toast.warning('Seller registry could not be updated', {
-          description: error instanceof Error ? error.message : 'The ID photo will not be on file for next time.',
-        });
+      const customerInput: CustomerInput = {
+        fullName: finalCustomerName,
+        phone: sellerPhone.trim(),
+        idType: selectedCustomer?.idType ?? 'Driver License',
+        idNumber: sellerIdNumber.trim(),
+        idState: selectedCustomer?.idState ?? 'GA',
+        address: sellerAddress.trim(),
+        vehicleLicensePlate: licensePlate.trim().toUpperCase() || undefined,
+        vehicleState: selectedCustomer?.vehicleState,
+        notes: selectedCustomer?.notes,
+        idPhotoUrl: sellerIdPhotoUrl || undefined,
+        isCommercial: selectedCustomer?.isCommercial ?? false,
+        companyName: selectedCustomer?.companyName,
+        businessAddress: selectedCustomer?.businessAddress,
+      };
+      if (selectedCustomer || sellerIdNumber.trim()) {
+        const savedCustomer = selectedCustomer
+          ? await customerService.update(selectedCustomer.id, customerInput)
+          : await customerService.create(customerInput);
+        setSelectedCustomer(savedCustomer);
+        newTicket.customerId = savedCustomer.id;
       }
 
       storageService.saveTicket(newTicket);
@@ -923,6 +918,7 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
                       type="button"
                       variant="outline"
                       role="combobox"
+                      aria-label="Find Returning Seller"
                       aria-expanded={sellerSearchOpen}
                       className="mt-1 h-10 w-full justify-between rounded-lg border-slate-800 bg-slate-950 px-3 text-xs font-normal text-white hover:bg-slate-900"
                     >
