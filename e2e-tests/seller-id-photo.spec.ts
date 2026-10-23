@@ -4,6 +4,8 @@ import { evaluateBuyingPaymentRules } from '../src/utils/buyingPaymentRules';
 // Synthetic sellers, uploads and print-independent intake APIs never touch yard data.
 for (const savedPhoto of [true, false]) {
   test(savedPhoto ? 'Returning seller ID survives opening and saving the photo studio' : 'A captured ID is saved to the seller profile and reused on the next intake', async ({ page }) => {
+    // The first run also loads the intake, photo studio, and scale modules from a cold Vite server.
+    test.setTimeout(60_000);
     const user = { id: 'photo-operator', fullName: 'Photo Operator', username: 'photo-operator', role: 'scale_operator', status: 'approved' };
     let customer = { id: 'photo-seller', fullName: 'ID Photo Seller', phone: '5551234567', idType: 'Driver License', idNumber: 'PHOTO-123', idState: 'SC', address: '123 Test Road', isCommercial: false, idPhotoUrl: savedPhoto ? '/api/uploads/seller-id' : undefined };
     let savedTicket: any = null;
@@ -62,6 +64,7 @@ for (const savedPhoto of [true, false]) {
     expect(savedTicket.customerId).toBe(customer.id);
     expect(updatedPhoto).toBe('/api/uploads/seller-id');
     await page.getByRole('button', { name: 'New Intake (Part 1)', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Scrap Intake — Part 1', exact: true })).toBeVisible();
     await page.getByRole('combobox', { name: 'Find Registered Customer', exact: true }).click();
     await page.getByRole('option', { name: /ID Photo Seller/ }).click();
     await expect(page.getByRole('img', { name: 'ID / License', exact: true })).toHaveAttribute('src', '/api/uploads/seller-id');
