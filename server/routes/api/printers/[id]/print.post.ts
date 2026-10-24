@@ -8,7 +8,7 @@ export default defineHandler(async (event) => {
   const user = await requireUser(event);
   const id = event.context.params?.id;
   if (!id) throw createError({ statusCode: 400, statusMessage: "Printer id is required" });
-  const body = await readBody<{ html: string; documentName?: string }>(event, { limit: 20 * 1024 * 1024 });
+  const body = await readBody<{ html: string; documentName?: string }>(event, { limit: 24 * 1024 * 1024 });
   if (typeof body?.html !== "string" || body.html.length === 0) {
     throw createError({ statusCode: 400, statusMessage: "A printable HTML document is required" });
   }

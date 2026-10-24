@@ -34,7 +34,7 @@ describe('network print request body', () => {
   it('parses large print documents within the supported print payload limit', async () => {
     await handle({ context: { params: { id: 'printer-id' } } });
 
-    expect(readBody).toHaveBeenCalledWith(expect.anything(), { limit: 20 * 1024 * 1024 });
+    expect(readBody).toHaveBeenCalledWith(expect.anything(), { limit: 24 * 1024 * 1024 });
     expect(submitPrintJob).toHaveBeenCalledWith('printer-id', largeHtml);
   });
 

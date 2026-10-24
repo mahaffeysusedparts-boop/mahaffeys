@@ -135,7 +135,7 @@ function cleanHtml(html: string) {
 }
 
 export async function submitPrintJob(printerId: string, html: string) {
-  if (html.length > 4_000_000) throw createError({ statusCode: 413, statusMessage: "Print document is too large" });
+  if (html.length > 15_000_000) throw createError({ statusCode: 413, statusMessage: "Print document is too large" });
   const result = await query<PrinterRow>("SELECT id, name, queue FROM network_printers WHERE id = $1", [printerId]);
   const printer = result.rows[0];
   if (!printer) throw createError({ statusCode: 404, statusMessage: "Choose a configured network printer" });

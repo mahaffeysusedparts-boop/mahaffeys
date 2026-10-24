@@ -51,7 +51,7 @@ export function NetworkPrintButton({ kind, rootSelector, documentName, className
     let html: string;
     try {
       html = `<style>${collectStyles()}</style><main>${await preparePrintDocument(root)}</main>`;
-      if (html.length > 4_000_000) throw new Error("The document with photos is too large for direct printing. The print job was not sent.");
+      if (html.length > 15_000_000) throw new Error("The document with photos is too large for direct printing. The print job was not sent.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not prepare photos. The print job was not sent.");
       setSending(false);
