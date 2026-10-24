@@ -36,7 +36,6 @@ export default defineHandler(async (event) => {
   const businessAddress = text(body.businessAddress, 300);
 
   if (!fullName) throw createError({ statusCode: 400, statusMessage: "Full name is required" });
-  if (!idNumber) throw createError({ statusCode: 400, statusMessage: "ID number is required" });
   if (!isCustomerIdType(body.idType)) throw createError({ statusCode: 400, statusMessage: "Select a valid ID type" });
   if (isCommercial && !companyName) {
     throw createError({ statusCode: 400, statusMessage: "Company name is required for commercial accounts" });

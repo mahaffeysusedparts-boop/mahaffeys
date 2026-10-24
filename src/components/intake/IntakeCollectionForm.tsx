@@ -131,11 +131,6 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
       toast.error('Enter the seller name before saving this intake');
       return;
     }
-    if (captures.idPhotoUrl && !customerIdNumber.trim()) {
-      toast.error('Enter the seller ID number so their ID photo can be saved to their profile');
-      return;
-    }
-
     const activeLoads = storageService.getTickets().filter(
       (t) => t.ticketType === 'SCRAP_METAL' && t.status === 'PENDING'
     );
@@ -176,7 +171,7 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
           ? `${updatedCustomer.companyName} — ${updatedCustomer.fullName}`
           : updatedCustomer.fullName);
         toast.success('Customer profile updated');
-      } else if (customerIdNumber.trim()) {
+      } else {
         const newCustomer = await customerService.create(customerInput);
         customerId = newCustomer.id;
         setSelectedCustomerId(newCustomer.id);
@@ -411,7 +406,7 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
               <div className="space-y-1">
                 <Label htmlFor="seller-id-state" className="text-xs text-slate-300">Actual ID issuing state / jurisdiction</Label>
                 <Input id="seller-id-state" value={customerIdState} onChange={(event) => setCustomerIdState(event.target.value.toUpperCase())} maxLength={40} className="h-11 max-w-xs rounded-xl border-slate-700 bg-slate-950 text-white" />
-                <p className="text-xs text-slate-300">South Carolina is the local-entry default. Confirm against the actual ID; returning sellers keep their saved jurisdiction. ID details and intake photos are independent requirements. Without an ID, optional seller details stay on this ticket; no dummy customer is created.</p>
+                <p className="text-xs text-slate-300">South Carolina is the local-entry default. Confirm against the actual ID; returning sellers keep their saved jurisdiction. A customer profile is saved with this intake even when the ID number is not yet available.</p>
               </div>
 
               <div>

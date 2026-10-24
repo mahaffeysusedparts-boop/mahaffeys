@@ -469,13 +469,11 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
         companyName: selectedCustomer?.companyName,
         businessAddress: selectedCustomer?.businessAddress,
       };
-      if (selectedCustomer || sellerIdNumber.trim()) {
-        const savedCustomer = selectedCustomer
-          ? await customerService.update(selectedCustomer.id, customerInput)
-          : await customerService.create(customerInput);
-        setSelectedCustomer(savedCustomer);
-        newTicket.customerId = savedCustomer.id;
-      }
+      const savedCustomer = selectedCustomer
+        ? await customerService.update(selectedCustomer.id, customerInput)
+        : await customerService.create(customerInput);
+      setSelectedCustomer(savedCustomer);
+      newTicket.customerId = savedCustomer.id;
 
       storageService.saveTicket(newTicket);
       setStickerVehicle({

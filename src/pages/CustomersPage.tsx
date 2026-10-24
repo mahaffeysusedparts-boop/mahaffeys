@@ -13,6 +13,7 @@ import { Switch } from '@/components/ui/switch';
 import { Building2, Car, ChevronLeft, ChevronRight, CreditCard, Edit3, Loader2, RefreshCw, Search, UserPlus, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import { useLinkedSearch } from '@/hooks/useLinkedSearch';
+import type { CustomerDuplicateGroup } from '@/services/customerService';
 
 const PAGE_SIZE = 25;
 const emptyForm: CustomerInput = {
@@ -41,6 +42,17 @@ export default function CustomersPage() {
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [form, setForm] = useState<CustomerInput>(emptyForm);
   const [saving, setSaving] = useState(false);
+  const [duplicateGroups, setDuplicateGroups] = useState<CustomerDuplicateGroup[]>([]);
+  const [selectedMergeIds, setSelectedMergeIds] = useState<string[]>([]);
+  const [merging, setMerging] = useState(false);
+
+  const loadDuplicates = useCallback(async () => {
+    try {
+      setDuplicateGroups(await customerService.duplicates());
+    } catch (loadError) {
+      toast.error(loadError instanceof Error ? loadError.message : 'Unable to check possible duplicate profiles');
+    }
+  }, []);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -69,6 +81,10 @@ export default function CustomersPage() {
   useEffect(() => {
     void loadCustomers();
   }, [loadCustomers]);
+
+  useEffect(() => {
+    void loadDuplicates();
+  }, [loadDuplicates]);
 
   const openAdd = () => {
     setEditingCustomer(null);
@@ -101,8 +117,8 @@ export default function CustomersPage() {
   };
 
   const saveCustomer = async () => {
-    if (!form.fullName.trim() || !form.idNumber.trim()) {
-      toast.error('Full name and ID number are required for state compliance');
+    if (!form.fullName.trim()) {
+      toast.error('Full name is required');
       return;
     }
     if (form.isCommercial && !form.companyName?.trim()) {
@@ -121,11 +137,32 @@ export default function CustomersPage() {
       }
       setModalOpen(false);
       setEditingCustomer(null);
-      await loadCustomers();
+      await Promise.all([loadCustomers(), loadDuplicates()]);
     } catch (saveError) {
       toast.error(saveError instanceof Error ? saveError.message : 'Unable to save customer');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const toggleMergeCustomer = (customerId: string) => {
+    setSelectedMergeIds(current => current.includes(customerId)
+      ? current.filter(id => id !== customerId)
+      : [...current, customerId]);
+  };
+
+  const mergeSelected = async () => {
+    if (selectedMergeIds.length < 2) return;
+    setMerging(true);
+    try {
+      const merged = await customerService.merge(selectedMergeIds);
+      toast.success(`Merged duplicate profiles into ${merged.fullName}`);
+      setSelectedMergeIds([]);
+      await Promise.all([loadCustomers(), loadDuplicates()]);
+    } catch (mergeError) {
+      toast.error(mergeError instanceof Error ? mergeError.message : 'Unable to merge selected profiles');
+    } finally {
+      setMerging(false);
     }
   };
 
@@ -160,6 +197,35 @@ export default function CustomersPage() {
             <span className="text-xs font-semibold text-slate-400">{total.toLocaleString()} customer{total === 1 ? '' : 's'}</span>
           </CardContent>
         </Card>
+
+        {duplicateGroups.length > 0 && (
+          <Card className="rounded-2xl border-amber-700 bg-amber-950/40 text-white shadow-lg" data-testid="customer-duplicates-panel">
+            <CardContent className="space-y-4 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div><h2 className="font-bold text-amber-200">Possible duplicate profiles</h2><p className="mt-1 text-xs text-amber-100/80">Matches use ID number, phone, or similar name. Review before merging.</p></div>
+                <Button disabled={selectedMergeIds.length < 2 || merging} onClick={() => void mergeSelected()} className="rounded-xl bg-amber-500 font-bold text-slate-950 hover:bg-amber-400" data-testid="merge-customers-button">
+                  {merging ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Merge selected ({selectedMergeIds.length})
+                </Button>
+              </div>
+              <div className="space-y-3">
+                {duplicateGroups.map(group => (
+                  <div key={group.customers.map(customer => customer.id).join(':')} className="rounded-xl border border-amber-800 bg-slate-950/70 p-3">
+                    <div className="mb-2 flex flex-wrap gap-2">{group.reasons.map(reason => <Badge key={reason} className="border border-amber-500/30 bg-amber-950 text-[10px] text-amber-200">{reason}</Badge>)}</div>
+                    <div className="space-y-2">
+                      {group.customers.map(customer => (
+                        <label key={customer.id} className="flex cursor-pointer items-center gap-3 rounded-lg border border-slate-800 p-3 hover:bg-slate-900">
+                          <input type="checkbox" checked={selectedMergeIds.includes(customer.id)} onChange={() => toggleMergeCustomer(customer.id)} className="h-4 w-4 accent-amber-500" />
+                          <span className="min-w-0 flex-1"><span className="block font-bold">{customer.fullName} {customer.idNumber && <span className="font-mono text-amber-300">· {customer.idNumber}</span>}</span><span className="text-xs text-slate-400">{customer.phone || 'No phone'} · {customer.address || 'No address'}</span></span>
+                          {customer.id === group.suggestedKeepId && <Badge className="bg-emerald-900 text-emerald-200">Suggested primary</Badge>}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         <Card className="overflow-hidden rounded-2xl border-slate-800 bg-slate-900 text-white shadow-xl">
           <CardContent className="p-0">
@@ -261,7 +327,7 @@ export default function CustomersPage() {
             <div><Label className="text-slate-300">{form.isCommercial ? 'Authorized Contact Name *' : 'Full Name *'}</Label><Input value={form.fullName} onChange={(event) => updateForm('fullName', event.target.value)} placeholder="e.g. Marcus Vance" className="mt-1 border-slate-800 bg-slate-950 text-white" /></div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div><Label className="text-slate-300">ID Type</Label><select value={form.idType} onChange={(event) => updateForm('idType', event.target.value as Customer['idType'])} className="mt-1 h-10 w-full rounded-lg border border-slate-800 bg-slate-950 px-3 text-xs text-white"><option>Driver License</option><option>State ID</option><option>Passport</option><option>Military ID</option></select></div>
-              <div><Label className="text-slate-300">ID Number *</Label><Input value={form.idNumber} onChange={(event) => updateForm('idNumber', event.target.value)} className="mt-1 border-slate-800 bg-slate-950 text-white" /></div>
+              <div><Label className="text-slate-300">ID Number (optional)</Label><Input value={form.idNumber} onChange={(event) => updateForm('idNumber', event.target.value)} className="mt-1 border-slate-800 bg-slate-950 text-white" /></div>
             </div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div><Label className="text-slate-300">Phone Number</Label><Input value={form.phone} onChange={(event) => updateForm('phone', event.target.value)} placeholder="(555) 000-0000" className="mt-1 border-slate-800 bg-slate-950 text-white" /></div>

@@ -15,6 +15,12 @@ export interface CustomerListResponse {
   totalPages: number;
 }
 
+export interface CustomerDuplicateGroup {
+  customers: Customer[];
+  reasons: string[];
+  suggestedKeepId: string;
+}
+
 export interface CustomerInput {
   fullName: string;
   phone: string;
@@ -42,6 +48,13 @@ export const customerService = {
   },
 
   get: (id: string) => apiRequest<Customer>(`/api/customers/${encodeURIComponent(id)}`),
+
+  duplicates: () => apiRequest<CustomerDuplicateGroup[]>('/api/customers/duplicates'),
+
+  merge: (customerIds: string[]) => apiRequest<Customer>('/api/customers/merge', {
+    method: 'POST',
+    body: JSON.stringify({ customerIds }),
+  }),
 
   create: (customer: CustomerInput) => apiRequest<Customer>('/api/customers', {
     method: 'POST',

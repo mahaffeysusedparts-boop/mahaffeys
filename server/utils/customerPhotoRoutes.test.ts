@@ -13,9 +13,11 @@ vi.mock('./audit', () => ({ auditFor: vi.fn(), recordAudit: vi.fn() }));
 
 import updateRoute from '../routes/api/customers/[id].patch';
 import getRoute from '../routes/api/customers/[id].get';
+import createRoute from '../routes/api/customers/index.post';
 
 const update = updateRoute as unknown as (event: object) => Promise<unknown>;
 const get = getRoute as unknown as (event: object) => Promise<{ idPhotoUrl?: string }>;
+const create = createRoute as unknown as (event: object) => Promise<unknown>;
 const input = { fullName: 'ID Seller', idNumber: 'ID-123', idType: 'Driver License', idState: 'SC' };
 
 beforeEach(() => {
@@ -37,6 +39,13 @@ describe('seller profile ID photo persistence', () => {
     await update({});
     expect(query.mock.calls[0][1][10]).toBe(idPhotoUrl);
     expect(query.mock.calls[0][1][14]).toBe(true);
+  });
+
+  it('creates a new seller profile without an ID number', async () => {
+    readBody.mockResolvedValue({ ...input, idNumber: '' });
+    await create({});
+    expect(query.mock.calls[0][0]).toContain('INSERT INTO customers');
+    expect(query.mock.calls[0][1][4]).toBe('');
   });
 
   it('retrieves the exact profile only for an authenticated operator', async () => {
