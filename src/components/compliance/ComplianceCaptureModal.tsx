@@ -130,9 +130,11 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
     setSelectedIpCam(null);
   };
 
-  // Capture snapshot directly from an IP Camera stream
+  // Camera captures use the main server, never a workstation-to-camera connection.
   const handleCaptureFromIpCamera = async (cam: IpCamera, targetKey: keyof ComplianceCaptures) => {
-    const snapUrl = cam.snapshotUrl || cam.streamUrl;
+    const snapUrl = cam.provider === 'ALARM_COM'
+      ? cam.snapshotUrl || cam.streamUrl
+      : `/api/cameras/${encodeURIComponent(cam.id)}/snapshot`;
 
     // Alarm.com cameras are served by the same-origin bridge proxy, so fetch()
     // carries the app session cookie and bridge errors surface as real errors

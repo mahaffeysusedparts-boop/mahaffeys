@@ -22,6 +22,7 @@ export interface StoredIpCamera extends RtspCapableCamera {
   id: string;
   ipAddress: string;
   port?: number;
+  snapshotUrl?: string;
   cameraType: string;
   assignment: string;
   isActive: boolean;

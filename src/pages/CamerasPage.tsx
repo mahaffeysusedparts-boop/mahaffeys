@@ -56,41 +56,60 @@ function captureAgeLabel(lastLoadedAt: number | null, now: number) {
   return `captured ${Math.round(seconds / 60)}m ago`;
 }
 
-/**
- * Self-healing live <img> for server-restreamed RTSP and direct MJPEG cameras.
- * Retries automatically when a stream drops, and periodically reconnects
- * restreamed RTSP views so a dropped camera never leaves a frozen frame.
- */
+/** Live views always use the main server; camera source URLs are configuration only. */
 function LocalStreamImg({ cam, refreshMs, objectFit = "object-cover" }: { cam: IpCamera; refreshMs?: number; objectFit?: string }) {
   const [nonce, setNonce] = useState(0);
   const [failed, setFailed] = useState(false);
+  const source = `/api/cameras/${encodeURIComponent(cam.id)}/${cam.cameraType === "SNAPSHOT" ? "snapshot" : "stream"}`;
 
   useEffect(() => {
     setNonce(0);
     setFailed(false);
-  }, [cam.streamUrl]);
+  }, [source, cam.isActive]);
+
+  useEffect(() => {
+    if (!failed || !cam.isActive) return;
+    const timer = window.setTimeout(() => setNonce((previous) => previous + 1), 5000);
+    return () => window.clearTimeout(timer);
+  }, [failed, nonce, source, cam.isActive]);
 
   useEffect(() => {
     if (!refreshMs || !cam.isActive) return;
     const timer = window.setInterval(() => {
-      if (document.visibilityState === "visible") setNonce(Date.now());
+      if (document.visibilityState === "visible") setNonce((previous) => previous + 1);
     }, refreshMs);
     return () => window.clearInterval(timer);
-  }, [refreshMs, cam.isActive, cam.streamUrl]);
+  }, [refreshMs, cam.isActive, source]);
 
-  const handleError = () => {
-    setFailed(true);
-    window.setTimeout(() => setNonce(Date.now()), 5000);
-  };
+  if (!cam.isActive) {
+    return <span className="text-xs text-slate-400 font-mono">CAMERA STREAM PAUSED</span>;
+  }
+
+  if (cam.cameraType === "HLS" && !cam.rtspUrl && !cam.streamUrl.startsWith("rtsp://")) {
+    return (
+      <div className="p-4 text-center text-xs text-amber-300">
+        Select RTSP and configure this camera's RTSP source for server-managed live viewing.
+      </div>
+    );
+  }
+
+  let imageUrl = source;
+  try {
+    const url = new URL(source, window.location.href);
+    if (nonce) url.searchParams.set("t", String(nonce));
+    imageUrl = url.href;
+  } catch {
+    // Let the image error handler report malformed camera URLs, rather than crash the page.
+  }
 
   return (
     <>
       <img
-        key={`${cam.streamUrl}-${nonce}`}
-        src={`${cam.streamUrl}${nonce ? `?t=${nonce}` : ""}`}
+        key={`${source}-${nonce}`}
+        src={imageUrl}
         alt={cam.name}
         onLoad={() => setFailed(false)}
-        onError={handleError}
+        onError={() => setFailed(true)}
         className={`w-full h-full ${objectFit}`}
       />
       {failed && (
@@ -607,7 +626,7 @@ export default function CamerasPage() {
               <Camera className="w-10 h-10 mx-auto text-slate-600" />
               <p className="text-sm font-semibold text-white">No Cameras Added Yet</p>
               <p className="text-xs text-slate-500 max-w-md mx-auto">
-                Tap <strong>"Add IP Camera"</strong> to enter camera IP addresses (e.g. 192.168.1.150) for scale desk license plate OCR — 3xLogic RTSP cams stream straight from the camera with no NVR needed — or connect
+                Tap <strong>"Add IP Camera"</strong> to configure a camera reachable from the main server. The server receives the feed and delivers live views to workstations—devices never connect directly to the camera. For HLS cameras, select RTSP and configure the RTSP source for live viewing, or connect
                 your <strong>Alarm.com</strong> cloud cameras from Server Admin → Alarm.com.
               </p>
               <Button onClick={handleOpenAdd} className="bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs gap-1.5">
@@ -652,24 +671,10 @@ export default function CamerasPage() {
                       {isAdc ? (
                         <AdcSnapshotView cam={cam} refreshMs={ADC_TILE_REFRESH_MS} />
                       ) : cam.isActive ? (
-                        cam.cameraType === "SNAPSHOT" ? (
-                          <img
-                            src={`${cam.snapshotUrl || cam.streamUrl}?t=${Date.now()}`}
-                            alt={cam.name}
-                            className="w-full h-full object-cover"
-                            onError={(e) => {
-                              (e.target as HTMLImageElement).src =
-                                "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='640' height='360' viewBox='0 0 640 360'><rect width='640' height='360' fill='%230f172a'/><text x='320' y='180' fill='%2338bdf8' font-family='monospace' font-size='16' font-weight='bold' text-anchor='middle'>IP STREAM READY (" +
-                                cam.ipAddress +
-                                ")</text></svg>";
-                            }}
-                          />
-                        ) : (
-                          <LocalStreamImg
-                            cam={cam}
-                            refreshMs={cam.cameraType === "RTSP_STREAM" ? 90_000 : undefined}
-                          />
-                        )
+                        <LocalStreamImg
+                          cam={cam}
+                          refreshMs={cam.cameraType === "SNAPSHOT" ? 10_000 : cam.cameraType === "RTSP_STREAM" ? 90_000 : undefined}
+                        />
                       ) : (
                         <div className="text-center p-6 space-y-1">
                           <WifiOff className="w-8 h-8 text-slate-600 mx-auto" />
@@ -1078,7 +1083,7 @@ export default function CamerasPage() {
               ) : (
                 <LocalStreamImg
                   cam={selectedCamForFullscreen}
-                  refreshMs={selectedCamForFullscreen.cameraType === "RTSP_STREAM" ? 90_000 : undefined}
+                  refreshMs={selectedCamForFullscreen.cameraType === "SNAPSHOT" ? 10_000 : selectedCamForFullscreen.cameraType === "RTSP_STREAM" ? 90_000 : undefined}
                   objectFit="object-contain"
                 />
               )}
