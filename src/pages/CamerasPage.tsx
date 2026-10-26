@@ -363,7 +363,7 @@ export default function CamerasPage() {
       cameraType: camType,
       assignment: camAssignment,
       username: camUsername.trim() || undefined,
-      password: camPassword.trim() || undefined,
+      password: camPassword || undefined,
       isActive: true,
       notes: camNotes.trim() || undefined,
       createdAt: editingCam ? editingCam.createdAt : new Date().toISOString(),
@@ -390,7 +390,7 @@ export default function CamerasPage() {
         host: camIp.trim(),
         port: camPort || 80,
         username: camUsername.trim() || undefined,
-        password: camPassword.trim() || undefined,
+        password: camPassword || undefined,
       });
       setCamType("RTSP_STREAM");
       setCamUseCustomRtsp(true);
@@ -420,7 +420,7 @@ export default function CamerasPage() {
     try {
       await apiRequest<{ ok: boolean }>("/api/cameras/probe", {
         method: "POST",
-        body: JSON.stringify({ rtspUrl: url, username: camUsername.trim() || undefined, password: camPassword.trim() || undefined }),
+        body: JSON.stringify({ rtspUrl: url, username: camUsername.trim() || undefined, password: camPassword || undefined }),
       });
       toast.success(`RTSP connection OK — grabbed a test frame from ${camIp.trim()}`);
     } catch (error) {
@@ -766,7 +766,7 @@ export default function CamerasPage() {
 
       {/* Add / Edit IP Camera Modal (local LAN cameras only) */}
       <Dialog open={addModalOpen} onOpenChange={setAddModalOpen}>
-        <DialogContent className="bg-slate-950 text-slate-100 border-slate-800 sm:max-w-[500px]">
+        <DialogContent className="bg-slate-950 text-slate-100 border-slate-800 sm:max-w-[500px] max-h-[90dvh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-base font-bold text-white flex items-center gap-2">
               <Camera className="w-5 h-5 text-sky-400" /> {editingCam ? "Edit IP Camera Config" : "Add IP Camera Feed"}
@@ -974,6 +974,36 @@ export default function CamerasPage() {
                 </div>
               </>
             )}
+
+            <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-3 space-y-3">
+              <p className="text-xs font-bold text-slate-200">Camera Authentication</p>
+              <div>
+                <Label htmlFor="camera-username" className="text-slate-300">Camera Username</Label>
+                <Input
+                  id="camera-username"
+                  value={camUsername}
+                  onChange={(e) => setCamUsername(e.target.value)}
+                  autoComplete="off"
+                  placeholder="Camera login username"
+                  className="bg-slate-900 border-slate-800 text-white text-xs mt-1"
+                />
+              </div>
+              <div>
+                <Label htmlFor="camera-password" className="text-slate-300">Camera Password</Label>
+                <Input
+                  id="camera-password"
+                  type="password"
+                  value={camPassword}
+                  onChange={(e) => setCamPassword(e.target.value)}
+                  autoComplete="new-password"
+                  placeholder="Camera login password"
+                  className="bg-slate-900 border-slate-800 text-white text-xs mt-1"
+                />
+              </div>
+              <p className="text-[10px] text-slate-400">
+                Use the camera's own account with live-view permission, not your app login. Leave credentials out of the URL when using these fields.
+              </p>
+            </div>
 
             <div>
               <Label className="text-slate-300">Notes / Location Description</Label>
