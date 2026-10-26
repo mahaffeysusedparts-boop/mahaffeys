@@ -17,6 +17,8 @@ RUN apt-get update \
         cups-bsd \
         cups-client \
         chromium \
+        ffmpeg \
+    && ffmpeg -version > /dev/null \
     && rm -rf /var/lib/apt/lists/* \
     && chown -R node:node /app \
     && test "$(id -u node)" = 1000 \

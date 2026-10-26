@@ -1,8 +1,11 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import ffmpegStatic from "ffmpeg-static";
+import { createRequire } from "node:module";
 import { query } from "./db";
 
-const FFMPEG_BIN: string = (ffmpegStatic as unknown as string) || "ffmpeg";
+// The production image installs FFmpeg; do not bundle ffmpeg-static's CommonJS loader.
+const FFMPEG_BIN: string = process.env.NODE_ENV === "production"
+  ? "ffmpeg"
+  : createRequire(import.meta.url)("ffmpeg-static") || "ffmpeg";
 
 /** Guard rail: every open browser tile keeps one ffmpeg process alive. */
 const MAX_CONCURRENT_STREAMS = 12;
