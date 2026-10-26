@@ -12,6 +12,17 @@ for (const cameraType of ['MJPEG', 'SNAPSHOT', 'RTSP_STREAM']) {
     };
     const state = { mahaffeys_ip_cameras: [camera] };
     let attempts = 0;
+    let releaseFirst: () => void = () => {};
+    const firstResponse = new Promise<void>(resolve => { releaseFirst = resolve; });
+    const jpeg = Buffer.from(await page.evaluate(() => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 160;
+      canvas.height = 90;
+      const context = canvas.getContext('2d')!;
+      context.fillStyle = 'navy';
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      return canvas.toDataURL('image/jpeg').split(',')[1];
+    }), 'base64');
     const directRequests: string[] = [];
     page.on('request', request => {
       if (new URL(request.url()).hostname === camera.ipAddress) directRequests.push(request.url());
@@ -29,10 +40,20 @@ for (const cameraType of ['MJPEG', 'SNAPSHOT', 'RTSP_STREAM']) {
         expect(url.searchParams.has('channel')).toBe(false);
         expect(url.searchParams.has('token')).toBe(false);
         if (attempts > 1 && attempts <= 3) expect(url.searchParams.has('t')).toBe(true);
+        if (attempts === 1) await firstResponse;
         if (attempts < 3) {
           await route.fulfill({ status: 502, body: 'Camera unavailable' });
+        } else if (cameraType === 'SNAPSHOT') {
+          await route.fulfill({ contentType: 'image/jpeg', body: jpeg });
         } else {
-          await route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360"><rect width="640" height="360" fill="navy"/></svg>' });
+          await route.fulfill({
+            contentType: 'multipart/x-mixed-replace; boundary=mahaffeys-frame',
+            body: Buffer.concat([
+              Buffer.from(`--mahaffeys-frame\r\nContent-Type: image/jpeg\r\nContent-Length: ${jpeg.length}\r\n\r\n`),
+              jpeg,
+              Buffer.from('\r\n--mahaffeys-frame--\r\n'),
+            ]),
+          });
         }
         return;
       }
@@ -46,6 +67,8 @@ for (const cameraType of ['MJPEG', 'SNAPSHOT', 'RTSP_STREAM']) {
       await route.fulfill({ json: response });
     });
     await page.goto('/cameras', { waitUntil: 'domcontentloaded' });
+    await expect(page.getByText('WAITING FOR LIVE FRAME…', { exact: true })).toBeVisible();
+    releaseFirst();
     await expect(page.getByText('STREAM RECONNECTING…', { exact: true })).toBeVisible();
     await expect.poll(() => attempts, { timeout: 20_000 }).toBeGreaterThanOrEqual(3);
     const image = page.getByRole('img', { name: 'Recovery Camera', exact: true });

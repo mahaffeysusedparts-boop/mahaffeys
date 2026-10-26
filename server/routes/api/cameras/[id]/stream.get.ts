@@ -14,9 +14,13 @@ export default defineHandler(async (event) => {
     throw createError({ statusCode: 409, statusMessage: "Configure this camera's RTSP source for server-managed live viewing" });
   }
   try {
-    if (source) return await startRtspMjpegRestream(source);
+    if (source) return await startRtspMjpegRestream(source, { signal: event.req.signal });
     return await proxyHttpCamera(camera, camera.cameraType === "SNAPSHOT", event.req.signal);
-  } catch {
-    throw createError({ statusCode: 502, statusMessage: "Camera live view unavailable; check the camera URL, credentials and server network access" });
+  } catch (error) {
+    const reason = source && error instanceof Error && /^(Camera|Server|FFmpeg|Too many) /.test(error.message)
+      ? error.message
+      : "Camera live view unavailable; check the camera URL, credentials and server network access";
+    if (!event.req.signal.aborted) console.warn("[camera-live]", JSON.stringify({ cameraId: camera.id, reason }));
+    throw createError({ statusCode: 502, statusMessage: reason });
   }
 });

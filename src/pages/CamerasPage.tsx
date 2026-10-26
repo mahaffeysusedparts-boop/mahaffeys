@@ -60,12 +60,23 @@ function captureAgeLabel(lastLoadedAt: number | null, now: number) {
 function LocalStreamImg({ cam, refreshMs, objectFit = "object-cover" }: { cam: IpCamera; refreshMs?: number; objectFit?: string }) {
   const [nonce, setNonce] = useState(0);
   const [failed, setFailed] = useState(false);
+  const [loaded, setLoaded] = useState(false);
   const source = `/api/cameras/${encodeURIComponent(cam.id)}/${cam.cameraType === "SNAPSHOT" ? "snapshot" : "stream"}`;
 
   useEffect(() => {
     setNonce(0);
     setFailed(false);
   }, [source, cam.isActive]);
+
+  useEffect(() => {
+    setLoaded(false);
+  }, [source, nonce, cam.isActive]);
+
+  useEffect(() => {
+    if (loaded || failed || !cam.isActive) return;
+    const timer = window.setTimeout(() => setFailed(true), 20_000);
+    return () => window.clearTimeout(timer);
+  }, [loaded, failed, source, nonce, cam.isActive]);
 
   useEffect(() => {
     if (!failed || !cam.isActive) return;
@@ -108,10 +119,19 @@ function LocalStreamImg({ cam, refreshMs, objectFit = "object-cover" }: { cam: I
         key={`${source}-${nonce}`}
         src={imageUrl}
         alt={cam.name}
-        onLoad={() => setFailed(false)}
+        onLoad={() => {
+          setLoaded(true);
+          setFailed(false);
+        }}
         onError={() => setFailed(true)}
         className={`w-full h-full ${objectFit}`}
       />
+      {!loaded && !failed && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-slate-950/90 p-4 text-center">
+          <RefreshCw className="w-6 h-6 animate-spin text-sky-400" />
+          <span className="text-[11px] font-mono text-sky-300">WAITING FOR LIVE FRAME…</span>
+        </div>
+      )}
       {failed && (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-slate-950/92 p-4 text-center">
           <WifiOff className="w-7 h-7 text-slate-500" />
@@ -691,7 +711,7 @@ export default function CamerasPage() {
                               : "bg-slate-900 text-slate-400 border-slate-700"
                           }`}
                         >
-                          {cam.isActive ? "ONLINE" : "DISABLED"}
+                          {cam.isActive ? "ENABLED" : "DISABLED"}
                         </Badge>
                         {isAdc ? (
                           <Badge variant="outline" className="bg-sky-950/80 text-sky-300 border-sky-500/40 text-[9px] font-mono gap-1">

@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { createRequire } from "node:module";
 import { query } from "./db";
+import { mjpegFrames } from "./mjpegFrames";
 
 // The production image installs FFmpeg; do not bundle ffmpeg-static's CommonJS loader.
 const FFMPEG_BIN: string = process.env.NODE_ENV === "production"
@@ -117,95 +118,112 @@ export async function grabRtspFrame(source: string, timeoutMs: number = FRAME_TI
   });
 }
 
-/**
- * Restreams an RTSP camera to the browser as multipart/x-mixed-replace MJPEG
- * (what an <img> tag renders as live video). The first frame is awaited so a
- * bad path/credential fails fast with ffmpeg's actual error, and the multipart
- * boundary is sniffed from the stream so the Content-Type header always matches.
- * The ffmpeg child is killed when the browser cancels the request.
- */
+/** Restream complete JPEG frames with explicit multipart framing and bounded buffering. */
 export async function startRtspMjpegRestream(
   source: string,
-  options: { fps?: number; width?: number } = {},
+  options: { fps?: number; width?: number; signal?: AbortSignal } = {},
 ): Promise<Response> {
+  if (options.signal?.aborted) throw new Error("Camera view canceled");
   if (activeStreams.size >= MAX_CONCURRENT_STREAMS) {
     throw new Error(`Too many live RTSP views are already open (limit ${MAX_CONCURRENT_STREAMS}) — close a few camera tiles and retry`);
   }
 
   const fps = options.fps ?? 6;
   const width = options.width ?? 800;
-
   const child = spawn(FFMPEG_BIN, [
     "-hide_banner", "-loglevel", "error",
     "-rtsp_transport", "tcp",
-    "-fflags", "nobuffer",
+    "-threads", "1",
     "-i", source,
-    "-an",
+    "-map", "0:v:0", "-an", "-sn", "-dn",
     "-vf", `fps=${fps},scale=${width}:-2`,
-    "-q:v", "7",
-    "-f", "mpjpeg",
-    "-",
+    "-c:v", "mjpeg", "-pix_fmt", "yuvj420p", "-threads:v", "1",
+    "-q:v", "7", "-flush_packets", "1",
+    "-f", "mjpeg", "pipe:1",
   ], { stdio: ["ignore", "pipe", "pipe"] });
 
   activeStreams.add(child);
-  child.on("close", () => activeStreams.delete(child));
-
   let stderr = "";
-  child.stderr?.on("data", (chunk: Buffer) => { stderr = (stderr + chunk.toString("latin1")).slice(-800); });
-
-  let exitError: string | null = null;
-  const exited = new Promise<void>((resolve) => {
-    child.once("close", () => {
-      if (!exitError) exitError = compactFfmpegError(stderr) || "ffmpeg exited before producing video";
-      resolve();
-    });
-    child.once("error", (err) => {
-      if (!exitError) exitError = `ffmpeg failed to start on the server: ${err.message}`;
-      resolve();
-    });
+  child.stderr?.on("data", (chunk: Buffer) => { stderr = (stderr + chunk.toString("latin1")).slice(-1600); });
+  // Classify failures without returning FFmpeg command lines, source URLs or credentials.
+  const failureMessage = () => {
+    if (/401|unauthorized|authorization failed/i.test(stderr)) return "Camera rejected live-view credentials";
+    if (/404|not found/i.test(stderr)) return "Camera RTSP stream path was not found";
+    if (/connection refused|no route|network is unreachable|timed out/i.test(stderr)) return "Server could not reach the camera RTSP feed";
+    if (/encoder|pixel format|filter|resource temporarily unavailable/i.test(stderr)) return "Server could not encode the camera's live frames";
+    return "Camera stopped before delivering a complete live frame";
+  };
+  let rejectFailure: (error: Error) => void = () => {};
+  const failed = new Promise<never>((_resolve, reject) => { rejectFailure = reject; });
+  const stop = () => {
+    options.signal?.removeEventListener("abort", abort);
+    activeStreams.delete(child);
+    child.kill("SIGKILL");
+  };
+  const abort = () => {
+    rejectFailure(new Error("Camera view canceled"));
+    stop();
+  };
+  child.once("close", () => {
+    activeStreams.delete(child);
+    options.signal?.removeEventListener("abort", abort);
   });
-
-  const timedOut = new Promise<void>((resolve) => {
-    setTimeout(() => {
-      if (!exitError) exitError = `Camera did not start streaming within ${Math.round(RESTREAM_START_TIMEOUT_MS / 1000)}s — check the RTSP path, port and credentials`;
-      resolve();
-    }, RESTREAM_START_TIMEOUT_MS);
-  });
+  child.once("error", () => rejectFailure(new Error("FFmpeg could not start on the server")));
+  options.signal?.addEventListener("abort", abort, { once: true });
 
   if (!child.stdout) {
-    child.kill("SIGKILL");
-    throw new Error("ffmpeg produced no output stream");
+    stop();
+    throw new Error("FFmpeg produced no output stream");
   }
-  const frames = child.stdout[Symbol.asyncIterator]();
+  const frames = mjpegFrames(child.stdout);
+  const nextFrame = async () => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const timeout = new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error("Camera did not deliver a complete live frame within 15 seconds")), RESTREAM_START_TIMEOUT_MS);
+      });
+      return await Promise.race([frames.next(), failed, timeout]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  };
 
-  const first = await Promise.race([frames.next(), exited, timedOut]);
-  if (exitError) {
-    child.kill("SIGKILL");
-    throw new Error(exitError);
+  let first: IteratorResult<Buffer>;
+  try {
+    first = await nextFrame();
+    if (first.done) throw new Error(failureMessage());
+  } catch (error) {
+    stop();
+    throw error;
   }
-  const firstChunk = Buffer.from((first as { value: Buffer }).value);
 
-  // Sniff the multipart boundary ffmpeg wrote (e.g. "--ffmpeg\r\n...").
-  const head = firstChunk.toString("latin1").slice(0, 200);
-  const boundary = head.match(/--([!-~]+)\r?\n/)?.[1] ?? "ffmpeg";
-
+  const boundary = "mahaffeys-frame";
+  const multipartFrame = (frame: Buffer) => new Uint8Array(Buffer.concat([
+    Buffer.from(`--${boundary}\r\nContent-Type: image/jpeg\r\nContent-Length: ${frame.length}\r\n\r\n`),
+    frame,
+    Buffer.from("\r\n"),
+  ]));
   const body = new ReadableStream<Uint8Array>({
-    async start(controller) {
+    start(controller) {
+      controller.enqueue(multipartFrame(first.value));
+    },
+    async pull(controller) {
       try {
-        controller.enqueue(new Uint8Array(firstChunk));
-        while (true) {
-          const { done, value } = await frames.next();
-          if (done) break;
-          controller.enqueue(new Uint8Array(value as Buffer));
+        const next = await nextFrame();
+        if (next.done) {
+          controller.close();
+          stop();
+        } else {
+          controller.enqueue(multipartFrame(next.value));
         }
       } catch {
-        /* camera dropped mid-stream — the browser retry loop reconnects */
+        controller.error(new Error("Camera live stream disconnected"));
+        stop();
       }
-      try { controller.close(); } catch { /* already closed by cancel */ }
     },
     cancel() {
-      void frames.return?.();
-      child.kill("SIGKILL");
+      stop();
+      void frames.return(undefined).catch(() => {});
     },
   });
 
@@ -214,6 +232,7 @@ export async function startRtspMjpegRestream(
       "Content-Type": `multipart/x-mixed-replace; boundary=${boundary}`,
       "Cache-Control": "no-store, private",
       "X-Accel-Buffering": "no",
+      "X-Content-Type-Options": "nosniff",
     },
   });
 }
