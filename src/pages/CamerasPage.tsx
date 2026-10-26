@@ -4,6 +4,7 @@ import { storageService } from "@/services/storageService";
 import { apiRequest } from "@/services/apiClient";
 import { alarmComService, type AdcStatus } from "@/services/alarmComService";
 import type { AdcClip } from "@/services/alarmComService";
+import { onvifService } from "@/services/onvifService";
 import { IpCamera, IpCameraType, IpCameraAssignment } from "@/types/scrap";
 import { useAuth } from "@/context/AuthContext";
 import { Navbar } from "@/components/layout/Navbar";
@@ -193,11 +194,12 @@ export default function CamerasPage() {
   const [camPassword, setCamPassword] = useState("");
   const [camNotes, setCamNotes] = useState("");
   // 3xLogic / RTSP preset state
-  const [camBrand, setCamBrand] = useState<"GENERIC" | "3XLOGIC">("GENERIC");
+  const [camBrand, setCamBrand] = useState<"GENERIC" | "3XLOGIC" | "ONVIF">("GENERIC");
   const [camRtspPath, setCamRtspPath] = useState("/rtsp/live/ch00_0");
   const [camUseCustomRtsp, setCamUseCustomRtsp] = useState(false);
   const [camCustomRtspUrl, setCamCustomRtspUrl] = useState("");
   const [probing, setProbing] = useState(false);
+  const [discoveringOnvif, setDiscoveringOnvif] = useState(false);
 
   // Alarm.com camera edit state (assignment / notes only — URLs are bridge-managed)
   const [adcEditing, setAdcEditing] = useState<IpCamera | null>(null);
@@ -354,6 +356,36 @@ export default function CamerasPage() {
     toast.success(`${editingCam ? "Updated" : "Added"} IP Camera: ${camObj.name}`, isRtsp ? {
       description: "RTSP restream armed — the live tile connects through the app server (no NVR needed).",
     } : undefined);
+  };
+
+  // ONVIF auto-discovery: asks the server to negotiate with the camera's
+  // ONVIF service and return the RTSP stream URL, then auto-fills the form.
+  const handleOnvifDiscover = async () => {
+    if (!camIp.trim()) {
+      toast.error("Enter the camera IP address first");
+      return;
+    }
+    setDiscoveringOnvif(true);
+    try {
+      const result = await onvifService.discover({
+        host: camIp.trim(),
+        port: camPort || 80,
+        username: camUsername.trim() || undefined,
+        password: camPassword.trim() || undefined,
+      });
+      setCamType("RTSP_STREAM");
+      setCamUseCustomRtsp(true);
+      setCamCustomRtspUrl(result.rtspUrl);
+      toast.success("ONVIF discovery complete", {
+        description: `Found RTSP stream: ${result.rtspUrl}`,
+      });
+    } catch (error) {
+      toast.error("ONVIF discovery failed", {
+        description: error instanceof Error ? error.message : "The camera did not respond to ONVIF",
+      });
+    } finally {
+      setDiscoveringOnvif(false);
+    }
   };
 
   // Pre-save RTSP test: asks the server to pull one frame from the camera
@@ -810,12 +842,16 @@ export default function CamerasPage() {
               <select
                 value={camBrand}
                 onChange={(e) => {
-                  const brand = e.target.value as "GENERIC" | "3XLOGIC";
+                  const brand = e.target.value as "GENERIC" | "3XLOGIC" | "ONVIF";
                   setCamBrand(brand);
                   if (brand === "3XLOGIC") {
                     setCamType("RTSP_STREAM");
                     setCamPort(554);
                     setCamRtspPath("/rtsp/live/ch00_0");
+                  } else if (brand === "ONVIF") {
+                    setCamType("RTSP_STREAM");
+                    setCamPort(80);
+                    setCamUseCustomRtsp(false);
                   } else if (camType === "RTSP_STREAM") {
                     setCamType("MJPEG");
                   }
@@ -824,6 +860,7 @@ export default function CamerasPage() {
               >
                 <option value="GENERIC">Generic IP Cam (MJPEG / Snapshot / HLS)</option>
                 <option value="3XLOGIC">3xLogic / VISIX (RTSP — no NVR needed)</option>
+                <option value="ONVIF">ONVIF Auto-Discover (RTSP — any ONVIF camera)</option>
               </select>
             </div>
 
@@ -839,6 +876,12 @@ export default function CamerasPage() {
                     <span className="text-slate-300">Custom RTSP URL</span>
                   </label>
                 </div>
+  
+                {camBrand === "ONVIF" && (
+                  <p className="text-[10px] text-indigo-300/80">
+                    ONVIF mode — click "ONVIF Auto-Discover RTSP" below to query the camera's ONVIF service and resolve the correct RTSP path automatically.
+                  </p>
+                )}
 
                 {camUseCustomRtsp ? (
                   <div>
@@ -878,6 +921,18 @@ export default function CamerasPage() {
                     The app server pulls this RTSP feed straight from the camera and restreams it to your workstation — no NVR required. Live view, snapshots and entrance LPR are wired automatically.
                   </p>
                 </div>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void handleOnvifDiscover()}
+                  disabled={discoveringOnvif || !camIp.trim()}
+                  className="h-9 w-full bg-slate-900 border-indigo-500/40 text-indigo-300 hover:bg-slate-800 hover:text-indigo-200 text-xs font-bold gap-1.5"
+                >
+                  <Scan className={`w-4 h-4 ${discoveringOnvif ? "animate-pulse" : ""}`} />
+                  {discoveringOnvif ? "Discovering via ONVIF…" : "ONVIF Auto-Discover RTSP"}
+                </Button>
 
                 <Button
                   type="button"
