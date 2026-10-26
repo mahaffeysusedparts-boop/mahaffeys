@@ -10,28 +10,10 @@ export type UserRole = 'admin' | 'yard_manager' | 'scale_operator' | 'yard_emplo
 
 export type AccountStatus = 'pending' | 'approved' | 'rejected' | 'disabled';
 
-export type IpCameraType = 'MJPEG' | 'SNAPSHOT' | 'HLS' | 'RTSP_STREAM' | 'ONVIF';
+export type IpCameraType = 'MJPEG' | 'SNAPSHOT' | 'HLS' | 'RTSP_STREAM';
 export type IpCameraAssignment = 'SCALE_DESK' | 'SELLER_FACE' | 'LICENSE_PLATE' | 'CARGO_BAY' | 'YARD_OVERVIEW' | 'OTHER';
 
 export type IpCameraProvider = 'LOCAL' | 'ALARM_COM';
-
-export interface OnvifProfile {
-  token: string;
-  name: string;
-  fixedProfile: boolean;
-  videoEncoderConfigurationToken?: string;
-  videoSourceConfigurationToken?: string;
-  audioSourceConfigurationToken?: string;
-}
-
-export interface OnvifMediaCapabilities {
-  video: {
-    resolution: string;
-    frameRate: number;
-    encoding: string;
-  }[];
-  ptz: boolean;
-}
 
 export interface IpCamera {
   id: string;
@@ -52,10 +34,6 @@ export interface IpCamera {
   provider?: IpCameraProvider; // LOCAL (default, manually configured LAN cams) or ALARM_COM (cloud bridge cams)
   adcDeviceId?: string; // alarm.com device id when provider === 'ALARM_COM'
   adcLocation?: string; // alarm.com camera location description (building front, lobby, scale…)
-  // ONVIF-specific fields
-  onvifProfileToken?: string; // ONVIF media profile token for streaming
-  onvifCapabilities?: OnvifMediaCapabilities; // ONVIF device capabilities
-  onvifPtzSupported?: boolean; // PTZ control support
 }
 
 export interface UserAccount {
