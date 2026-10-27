@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { createRequire } from "node:module";
 import { query } from "./db";
 import { mjpegFrames } from "./mjpegFrames";
+import { cameraErrorDetails } from "./cameraErrorDetails";
 
 // The production image installs FFmpeg; do not bundle ffmpeg-static's CommonJS loader.
 const FFMPEG_BIN: string = process.env.NODE_ENV === "production"
@@ -188,11 +189,16 @@ export async function startRtspMjpegRestream(
     }
   };
 
+  const logFailure = (stage: "startup" | "live") => {
+    if (options.signal?.aborted) return;
+    console.warn("[camera-rtsp]", JSON.stringify({ stage, exitCode: child.exitCode, signal: child.signalCode, detail: cameraErrorDetails(stderr, source) }));
+  };
   let first: IteratorResult<Buffer>;
   try {
     first = await nextFrame();
     if (first.done) throw new Error(failureMessage());
   } catch (error) {
+    logFailure("startup");
     stop();
     throw error;
   }
@@ -211,12 +217,14 @@ export async function startRtspMjpegRestream(
       try {
         const next = await nextFrame();
         if (next.done) {
+          logFailure("live");
           controller.close();
           stop();
         } else {
           controller.enqueue(multipartFrame(next.value));
         }
       } catch {
+        logFailure("live");
         controller.error(new Error("Camera live stream disconnected"));
         stop();
       }

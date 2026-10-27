@@ -31,6 +31,56 @@ for (const cameraType of ['MJPEG', 'SNAPSHOT', 'RTSP_STREAM']) {
     await page.addInitScript(values => {
       for (const [key, value] of Object.entries(values)) localStorage.setItem(key, JSON.stringify(value));
     }, state);
+    if (cameraType === 'RTSP_STREAM') {
+      await page.addInitScript(() => {
+        const originalFetch = window.fetch.bind(window);
+        window.fetch = async (input, init) => {
+          const response = await originalFetch(input, init);
+          const address = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+          if (new URL(address, location.href).pathname !== '/api/cameras/recovery-camera/stream' || !response.ok || !response.body) return response;
+          const reader = response.body.getReader();
+          let ended = false;
+          let target: ReadableStreamDefaultController<Uint8Array>;
+          const cleanup = () => {
+            window.removeEventListener('test-rtsp-drop', drop);
+            init?.signal?.removeEventListener('abort', abort);
+          };
+          const drop = () => {
+            if (ended) return;
+            ended = true;
+            cleanup();
+            target.close();
+          };
+          const abort = () => {
+            if (ended) return;
+            ended = true;
+            cleanup();
+            target.error(new DOMException('Aborted', 'AbortError'));
+          };
+          const stream = new ReadableStream<Uint8Array>({
+            async start(controller) {
+              target = controller;
+              window.addEventListener('test-rtsp-drop', drop);
+              init?.signal?.addEventListener('abort', abort, { once: true });
+              try {
+                while (true) {
+                  const next = await reader.read();
+                  if (next.done || ended) break;
+                  controller.enqueue(next.value);
+                }
+                // Hold the synthetic live connection open until the test simulates a camera drop.
+              } catch {
+                abort();
+              } finally {
+                reader.releaseLock();
+              }
+            },
+            cancel() { ended = true; cleanup(); },
+          });
+          return new Response(stream, { status: response.status, headers: response.headers });
+        };
+      });
+    }
     const imagePath = `/api/cameras/recovery-camera/${cameraType === 'SNAPSHOT' ? 'snapshot' : 'stream'}`;
     // Synthetic responses verify browser routing without contacting real cameras or yard data.
     await page.route('**/api/**', async route => {
@@ -73,12 +123,20 @@ for (const cameraType of ['MJPEG', 'SNAPSHOT', 'RTSP_STREAM']) {
     await expect.poll(() => attempts, { timeout: 20_000 }).toBeGreaterThanOrEqual(3);
     const image = page.getByRole('img', { name: 'Recovery Camera', exact: true });
     await expect.poll(() => image.evaluate((element: HTMLImageElement) => element.naturalWidth)).toBeGreaterThan(0);
-    await expect(image).toHaveAttribute('src', new RegExp(imagePath));
+    const displayedSource = cameraType === 'RTSP_STREAM' ? /^blob:/ : new RegExp(imagePath);
+    await expect(image).toHaveAttribute('src', displayedSource);
     await expect(page.getByText('STREAM RECONNECTING…', { exact: true })).toHaveCount(0);
+    if (cameraType === 'RTSP_STREAM') {
+      await page.evaluate(() => window.dispatchEvent(new Event('test-rtsp-drop')));
+      await expect(page.getByText('STREAM RECONNECTING…', { exact: true })).toBeVisible();
+      await expect.poll(() => attempts, { timeout: 15_000 }).toBeGreaterThanOrEqual(4);
+      await expect(page.getByText('STREAM RECONNECTING…', { exact: true })).toHaveCount(0);
+      await expect.poll(() => image.evaluate((element: HTMLImageElement) => element.naturalWidth)).toBeGreaterThan(0);
+    }
     await page.getByTitle('Fullscreen Stream', { exact: true }).click();
     const fullscreen = page.getByRole('dialog');
     const fullscreenImage = fullscreen.getByRole('img', { name: 'Recovery Camera', exact: true });
-    await expect(fullscreenImage).toHaveAttribute('src', new RegExp(imagePath));
+    await expect(fullscreenImage).toHaveAttribute('src', displayedSource);
     await expect.poll(() => fullscreenImage.evaluate((element: HTMLImageElement) => element.naturalWidth)).toBeGreaterThan(0);
     await page.keyboard.press('Escape');
     await expect(fullscreen).not.toBeVisible();

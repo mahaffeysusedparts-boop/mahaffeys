@@ -8,6 +8,7 @@ import { onvifService } from "@/services/onvifService";
 import { IpCamera, IpCameraType, IpCameraAssignment } from "@/types/scrap";
 import { useAuth } from "@/context/AuthContext";
 import { Navbar } from "@/components/layout/Navbar";
+import { RtspLiveView } from "@/components/cameras/RtspLiveView";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -57,7 +58,14 @@ function captureAgeLabel(lastLoadedAt: number | null, now: number) {
 }
 
 /** Live views always use the main server; camera source URLs are configuration only. */
-function LocalStreamImg({ cam, refreshMs, objectFit = "object-cover" }: { cam: IpCamera; refreshMs?: number; objectFit?: string }) {
+function LocalStreamImg(props: { cam: IpCamera; refreshMs?: number; objectFit?: string }) {
+  if (props.cam.cameraType === "RTSP_STREAM" || (props.cam.cameraType === "HLS" && props.cam.rtspUrl)) {
+    return <RtspLiveView cam={props.cam} objectFit={props.objectFit} />;
+  }
+  return <LocalImageView {...props} />;
+}
+
+function LocalImageView({ cam, refreshMs, objectFit = "object-cover" }: { cam: IpCamera; refreshMs?: number; objectFit?: string }) {
   const [nonce, setNonce] = useState(0);
   const [failed, setFailed] = useState(false);
   const [loaded, setLoaded] = useState(false);
