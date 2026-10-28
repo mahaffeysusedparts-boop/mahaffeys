@@ -12,7 +12,6 @@ import {
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { AlertCircle, CheckCircle2, RefreshCw, Server, Scale } from 'lucide-react';
-import { ScaleEvidenceCameraSettings } from './ScaleEvidenceCameraSettings';
 
 interface ScaleConfigModalProps {
   open: boolean;
@@ -30,7 +29,7 @@ export const ScaleConfigModal: React.FC<ScaleConfigModalProps> = ({ open, onOpen
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px] max-h-[94vh] overflow-y-auto bg-slate-900 border-slate-800 text-slate-100 rounded-2xl">
+      <DialogContent className="sm:max-w-[500px] bg-slate-900 border-slate-800 text-slate-100 rounded-2xl">
         <DialogHeader>
           <div className="flex items-center gap-2">
             <Scale className="w-5 h-5 text-emerald-400" />
@@ -82,7 +81,6 @@ export const ScaleConfigModal: React.FC<ScaleConfigModalProps> = ({ open, onOpen
           <p className="text-xs leading-relaxed text-slate-400">
             An administrator can select or automatically detect /dev/ttyS4 through /dev/ttyS7 and /dev/tty16 from the Server Admin page. The selected connection is shared with every workstation.
           </p>
-          {open && <ScaleEvidenceCameraSettings />}
         </div>
 
         <DialogFooter className="gap-2 border-t border-slate-800 pt-3 sm:gap-2">

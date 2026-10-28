@@ -1,6 +1,5 @@
 import type { PoolClient } from 'pg';
 import { createError } from 'nitro/h3';
-import { preserveEvidenceMappings } from './scaleEvidenceConfig';
 
 export async function lockFinancialState(client: PoolClient) {
   await client.query('SELECT pg_advisory_xact_lock(114680)');
@@ -45,14 +44,12 @@ export async function protectFinancialState(client: PoolClient, key: string, inc
     if (!['admin','yard_manager'].includes(actorRole)) throw createError({statusCode:403,statusMessage:'Buying rate/grade changes require a manager or administrator'});
     await lockFinancialState(client);return incoming;
   }
-  if (key==='mahaffeys_settings') {
+  if (key==='mahaffeys_settings' && !['admin','yard_manager'].includes(actorRole)) {
     await lockFinancialState(client);
-    if (!['admin','yard_manager'].includes(actorRole)) {
-      const previous=await stateValue<Record<string,unknown>>(client,key,{});
-      const scaleDefinition=(value:unknown)=>Array.isArray(value)?value.map((scale)=>Object.fromEntries(['id','connectionType','weighingMode','supportedWeighingTypes','capacityLbs','resolutionLbs','splitProfiles'].map((field)=>[field,scale[field]]))):[];
-      if (stableFinancialJSON(scaleDefinition(previous.scales))!==stableFinancialJSON(scaleDefinition((incoming as Record<string,unknown>)?.scales))) throw createError({statusCode:403,statusMessage:'Scale capability/capacity/profile changes require a manager'});
-    }
-    return preserveEvidenceMappings(client,incoming);
+    const previous=await stateValue<Record<string,unknown>>(client,key,{});
+    const scaleDefinition=(value:unknown)=>Array.isArray(value)?value.map((scale)=>Object.fromEntries(['id','connectionType','weighingMode','supportedWeighingTypes','capacityLbs','resolutionLbs','splitProfiles'].map((field)=>[field,scale[field]]))):[];
+    if (stableFinancialJSON(scaleDefinition(previous.scales))!==stableFinancialJSON(scaleDefinition((incoming as Record<string,unknown>)?.scales))) throw createError({statusCode:403,statusMessage:'Scale capability/capacity/profile changes require a manager'});
+    return incoming;
   }
   if (key !== 'mahaffeys_tickets' && key !== 'mahaffeys_cash_drawer') return incoming;
   await lockFinancialState(client);

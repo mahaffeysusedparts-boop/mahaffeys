@@ -103,17 +103,7 @@ export async function grabRtspFrame(source: string, timeoutMs: number = FRAME_TI
       fn();
     };
 
-    let byteSize = 0;
-    child.stdout?.on("data", (chunk: Buffer) => {
-      if (settled) return;
-      byteSize += chunk.length;
-      if (byteSize > 8 * 1024 * 1024) {
-        finish(() => {
-          child.kill("SIGKILL");
-          reject(new Error('Camera snapshot exceeded the size limit'));
-        });
-      } else chunks.push(chunk);
-    });
+    child.stdout?.on("data", (chunk: Buffer) => chunks.push(chunk));
     child.stderr?.on("data", (chunk: Buffer) => { stderr = (stderr + chunk.toString("latin1")).slice(-800); });
     child.on("error", (err) =>
       finish(() => reject(new Error(`ffmpeg failed to start on the server: ${err.message}`))));
