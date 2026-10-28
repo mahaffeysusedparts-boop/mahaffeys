@@ -58,10 +58,14 @@ test('Compliance camera captures request a main-server snapshot, not the camera'
   await expect(image).toHaveAttribute('src', original!);
   expect(snapshots).toBe(3);
   await studio.getByRole('tab', { name: 'Seller Face', exact: true }).click();
+  const frontChooser = page.waitForEvent('filechooser');
   await studio.getByRole('button', { name: 'Front Camera', exact: true }).click();
+  await (await frontChooser).setFiles([]);
   await expect(studio.locator('input[capture]')).toHaveAttribute('capture','user');
   await studio.getByRole('tab', { name: 'ID Photo', exact: true }).click();
+  const rearChooser = page.waitForEvent('filechooser');
   await studio.getByRole('button', { name: 'Device Camera', exact: true }).click();
+  await (await rearChooser).setFiles([]);
   await expect(studio.locator('input[capture]')).toHaveAttribute('capture','environment');
   expect(directRequests).toEqual([]);
 });
