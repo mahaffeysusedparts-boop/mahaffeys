@@ -497,6 +497,7 @@ export interface ScaleConfig {
   supportedWeighingTypes?: import('./scrapBuying').WeighingType[];
   capacityLbs?: number;
   resolutionLbs?: number;
+  evidenceCameras?: import('./scaleEvidence').ScaleEvidenceCameraMappings;
 }
 
 /**
