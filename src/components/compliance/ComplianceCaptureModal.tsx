@@ -38,7 +38,7 @@ interface ComplianceCaptureModalProps {
   isOpen: boolean;
   onClose: () => void;
   initialCaptures?: ComplianceCaptures;
-  onSaveCaptures: (captures: ComplianceCaptures) => void;
+  onSaveCaptures: (captures: ComplianceCaptures) => void | Promise<void>;
   intakeType?: 'CAR_SALVAGE' | 'SCRAP_METAL';
 }
 
@@ -175,24 +175,27 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
     } finally {if (objectUrl) URL.revokeObjectURL(objectUrl);}
   };
 
-  const handleStartLiveCamera = async (targetKey: keyof ComplianceCaptures) => {
+  const handleStartLiveCamera = async (targetKey: keyof ComplianceCaptures, facingMode: 'user' | 'environment' = 'environment') => {
+    stopCameraStream();
+    const requestId = liveRequest.current;
     setCurrentUploadTarget(targetKey);
     setUseLiveCamera(true);
-
     try {
+      if (!navigator.mediaDevices?.getUserMedia) throw new Error('Live camera access unavailable');
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } },
-        audio: false,
+        video: {facingMode:{ideal:facingMode},width:{ideal:1280},height:{ideal:720}},audio:false,
       });
-
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
+      if (requestId !== liveRequest.current || !videoRef.current) {
+        stream.getTracks().forEach(track => track.stop());return;
       }
-    } catch (err) {
-      console.warn("Camera stream fallback to native camera input:", err);
-      toast.info("Opening device camera...");
-      handleTriggerCameraInput(targetKey);
+      streamRef.current = stream;
+      videoRef.current.srcObject = stream;
+      await videoRef.current.play();
+    } catch {
+      if (requestId !== liveRequest.current) return;
+      stopCameraStream();
+      toast.info('Live camera unavailable. Use the native device camera or upload a photo.');
+      handleTriggerCameraInput(targetKey,facingMode);
     }
   };
 
@@ -219,8 +222,9 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
     }
   };
 
-  const handleTriggerCameraInput = (key: keyof ComplianceCaptures) => {
+  const handleTriggerCameraInput = (key: keyof ComplianceCaptures, facingMode: 'user' | 'environment' = 'environment') => {
     setCurrentUploadTarget(key);
+    cameraInputRef.current?.setAttribute('capture',facingMode);
     cameraInputRef.current?.click();
   };
 
@@ -259,6 +263,7 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
   };
 
   const handleSave = async () => {
+    snapshotRequest.current?.abort();
     stopCameraStream();
     setIsSavingUploads(true);
     try {
@@ -270,7 +275,7 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
             : value,
         ]),
       )) as ComplianceCaptures;
-      onSaveCaptures(uploadedCaptures);
+      await onSaveCaptures(uploadedCaptures);
       onClose();
     } catch (error) {
       toast.error("Could not save compliance images", {
@@ -343,6 +348,8 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
             </div>
           </div>
         </DialogHeader>
+
+        {snapshotError && <div role="alert" className="rounded-xl border border-amber-700/50 bg-amber-950/20 p-3 text-xs text-amber-300">{snapshotError}</div>}
 
         {useLiveCamera && (
           <div className="p-4 bg-slate-900 border-2 border-emerald-500/50 rounded-2xl space-y-3">
@@ -581,6 +588,12 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
                       className="w-full h-11 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs gap-1.5"
                     >
                       <Camera className="w-4 h-4" /> Device Camera
+                    </Button>
+                    <Button onClick={() => handleTriggerCameraInput('personPhotoUrl','user')} className="w-full h-11 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs gap-1.5">
+                      <Camera className="w-4 h-4" /> Front Camera
+                    </Button>
+                    <Button onClick={() => handleStartLiveCamera('personPhotoUrl','user')} className="w-full h-10 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs gap-1.5">
+                      <Video className="w-4 h-4" /> Live Front Camera
                     </Button>
 
                     {ipCameras.length > 0 && (
