@@ -497,6 +497,8 @@ export interface ScaleConfig {
   supportedWeighingTypes?: import('./scrapBuying').WeighingType[];
   capacityLbs?: number;
   resolutionLbs?: number;
+  /** Independent of camera assignments used for LPR and other workflows. Missing means unconfigured. */
+  evidenceCameras?: import('./scaleEvidence').ScaleEvidenceCameraMappings;
 }
 
 /**

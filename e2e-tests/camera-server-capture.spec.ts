@@ -30,6 +30,10 @@ test('Compliance camera captures request a main-server snapshot, not the camera'
     else if (path === '/api/scrap-buying/requirements') response = { revision: 1, requirePhotos: false, requirePhone: false, requireAddress: false, requireSellerId: false, requireVehiclePlate: false, requireExplicitReview: false };
     else if (path === '/api/cameras/capture-camera/snapshot') {
       snapshots++;
+      if (snapshots !== 2) {
+        await route.fulfill({ status: 502, json: { statusMessage: 'Synthetic camera disconnected' } });
+        return;
+      }
       await route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="120" height="80"><rect width="120" height="80" fill="blue"/></svg>' });
       return;
     }
@@ -39,8 +43,25 @@ test('Compliance camera captures request a main-server snapshot, not the camera'
   await page.getByText('Start Metal Scrap Ticket', { exact: true }).click();
   await page.getByRole('button', { name: 'Open Photo Compliance Studio', exact: true }).click();
   const studio = page.getByRole('dialog');
-  await studio.getByRole('button', { name: 'Server Capture Camera (192.168.1.150)', exact: true }).click();
-  await expect(studio.getByRole('img', { name: 'ID Scan', exact: true })).toHaveAttribute('src', /^data:image\/jpeg/);
-  expect(snapshots).toBe(1);
+  const cameraButton = studio.getByRole('button', { name: 'Server Capture Camera (192.168.1.150)', exact: true });
+  await cameraButton.click();
+  await expect(studio.getByRole('alert')).toContainText('No photo was added');
+  await expect(studio.getByRole('img', { name: 'ID Scan', exact: true })).toHaveCount(0);
+  await expect(studio.getByRole('button', { name: 'Device Camera', exact: true })).toBeEnabled();
+  await expect(studio.getByRole('button', { name: 'Upload Image File', exact: true })).toBeEnabled();
+  await cameraButton.click();
+  const image = studio.getByRole('img', { name: 'ID Scan', exact: true });
+  await expect(image).toHaveAttribute('src', /^data:image\/jpeg/);
+  const original = await image.getAttribute('src');
+  await cameraButton.click();
+  await expect(studio.getByRole('alert')).toContainText('No photo was added');
+  await expect(image).toHaveAttribute('src', original!);
+  expect(snapshots).toBe(3);
+  await studio.getByRole('tab', { name: 'Seller Face', exact: true }).click();
+  await studio.getByRole('button', { name: 'Front Camera', exact: true }).click();
+  await expect(studio.locator('input[capture]')).toHaveAttribute('capture','user');
+  await studio.getByRole('tab', { name: 'ID Photo', exact: true }).click();
+  await studio.getByRole('button', { name: 'Device Camera', exact: true }).click();
+  await expect(studio.locator('input[capture]')).toHaveAttribute('capture','environment');
   expect(directRequests).toEqual([]);
 });

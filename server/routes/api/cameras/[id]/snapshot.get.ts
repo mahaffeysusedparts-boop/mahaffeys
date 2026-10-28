@@ -1,26 +1,21 @@
-import { defineHandler } from "nitro";
-import { createError, getRouterParam } from "nitro/h3";
-import { requireUser } from "../../../../utils/auth";
-import { grabRtspFrame, loadCameraById, resolveRtspSource } from "../../../../utils/rtspProxy";
-import { proxyHttpCamera } from "../../../../utils/httpCameraProxy";
+import { defineHandler } from 'nitro';
+import { createError, getRouterParam } from 'nitro/h3';
+import { requireUser } from '../../../../utils/auth';
+import { acquireCameraSnapshot } from '../../../../utils/cameraSnapshots';
 
-export default defineHandler(async (event) => {
+export default defineHandler(async event => {
   await requireUser(event);
-  const camera = await loadCameraById(getRouterParam(event, "id")).catch(() => {
-    throw createError({ statusCode: 404, statusMessage: "Camera not found or is paused" });
-  });
-  const source = resolveRtspSource(camera);
+  const id = getRouterParam(event,'id');
+  if (!id) throw createError({ statusCode: 400, statusMessage: 'Camera ID is required' });
   try {
-    if (!source) return await proxyHttpCamera(camera, true, event.req.signal);
-    const frame = await grabRtspFrame(source);
-    return new Response(new Uint8Array(frame), {
-      headers: {
-        "Content-Type": "image/jpeg",
-        "Cache-Control": "no-store, private",
-        "X-Content-Type-Options": "nosniff",
-      },
-    });
+    const snapshot = await acquireCameraSnapshot(id,event.req.signal);
+    return new Response(new Uint8Array(snapshot.bytes), { headers: {
+      'Content-Type': snapshot.contentType,
+      'Cache-Control': 'no-store, private',
+      'X-Content-Type-Options': 'nosniff',
+      'X-Snapshot-Captured-At': snapshot.capturedAt,
+    } });
   } catch {
-    throw createError({ statusCode: 502, statusMessage: "Camera snapshot unavailable; check the snapshot URL, credentials and server network access" });
+    throw createError({ statusCode: 502, statusMessage: 'Camera snapshot unavailable; check the active camera, snapshot URL, credentials and server network access' });
   }
 });

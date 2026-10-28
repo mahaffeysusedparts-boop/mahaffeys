@@ -38,8 +38,9 @@ interface ComplianceCaptureModalProps {
   isOpen: boolean;
   onClose: () => void;
   initialCaptures?: ComplianceCaptures;
-  onSaveCaptures: (captures: ComplianceCaptures) => void;
+  onSaveCaptures: (captures: ComplianceCaptures) => void | Promise<void>;
   intakeType?: 'CAR_SALVAGE' | 'SCRAP_METAL';
+  initialTab?: 'id' | 'person' | 'vehicle' | 'plate' | 'load';
 }
 
 export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
@@ -48,6 +49,7 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
   initialCaptures,
   onSaveCaptures,
   intakeType,
+  initialTab,
 }) => {
   const isCarSalvage = intakeType === 'CAR_SALVAGE';
 
@@ -57,9 +59,13 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
     return paperSignatureCaptures;
   });
 
-  const [activeTab, setActiveTab] = useState<string>(isCarSalvage ? "person" : "id");
+  const [activeTab, setActiveTab] = useState<string>(initialTab ?? (isCarSalvage ? "person" : "id"));
   const [isSavingUploads, setIsSavingUploads] = useState(false);
   const [useLiveCamera, setUseLiveCamera] = useState(false);
+  const [snapshotError, setSnapshotError] = useState('');
+  const snapshotRequest = useRef<AbortController | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const liveRequest = useRef(0);
 
   // IP Cameras List
   const [ipCameras, setIpCameras] = useState<IpCamera[]>([]);
@@ -116,120 +122,99 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
 
   useEffect(() => {
     if (!isOpen) {
+      snapshotRequest.current?.abort();
       stopCameraStream();
+    } else {
+      setActiveTab(initialTab ?? (isCarSalvage ? 'person' : 'id'));
+      setSnapshotError('');
     }
-  }, [isOpen]);
+  }, [isOpen, initialTab, isCarSalvage]);
+
+  useEffect(() => () => {
+    snapshotRequest.current?.abort();
+    liveRequest.current++;
+    streamRef.current?.getTracks().forEach(track => track.stop());
+  }, []);
 
   const stopCameraStream = () => {
-    if (videoRef.current && videoRef.current.srcObject) {
-      const stream = videoRef.current.srcObject as MediaStream;
-      stream.getTracks().forEach((track) => track.stop());
-      videoRef.current.srcObject = null;
-    }
+    liveRequest.current++;
+    streamRef.current?.getTracks().forEach(track => track.stop());
+    streamRef.current = null;
+    if (videoRef.current) videoRef.current.srcObject = null;
     setUseLiveCamera(false);
     setSelectedIpCam(null);
   };
 
   // Camera captures use the main server, never a workstation-to-camera connection.
   const handleCaptureFromIpCamera = async (cam: IpCamera, targetKey: keyof ComplianceCaptures) => {
+    if (isSavingUploads) return;
+    snapshotRequest.current?.abort();
+    const controller = new AbortController();
+    snapshotRequest.current = controller;
+    setSnapshotError('');
     const snapUrl = cam.provider === 'ALARM_COM'
       ? cam.snapshotUrl || cam.streamUrl
       : `/api/cameras/${encodeURIComponent(cam.id)}/snapshot`;
-
-    // Alarm.com cameras are served by the same-origin bridge proxy, so fetch()
-    // carries the app session cookie and bridge errors surface as real errors
-    // instead of silently drawing the placeholder frame.
-    if (cam.provider === 'ALARM_COM') {
-      let objectUrl: string | null = null;
-      try {
-        const response = await fetch(`${snapUrl}?t=${Date.now()}`, { credentials: "include" });
-        if (!response.ok) {
-          const payload = await response.json().catch(() => null) as { statusMessage?: string } | null;
-          throw new Error(payload?.statusMessage || `Camera bridge error (${response.status})`);
-        }
-        const blob = await response.blob();
-        if (!blob.type.startsWith('image/')) throw new Error('The camera bridge returned a non-image response');
-        objectUrl = URL.createObjectURL(blob);
-        await new Promise<void>((resolve, reject) => {
-          const img = new Image();
-          img.onload = () => {
-            const canvas = document.createElement("canvas");
-            canvas.width = img.naturalWidth || 1280;
-            canvas.height = img.naturalHeight || 720;
-            canvas.getContext("2d")?.drawImage(img, 0, 0);
-            setCaptures((prev) => ({ ...prev, [targetKey]: canvas.toDataURL("image/jpeg", 0.85) }));
-            resolve();
-          };
-          img.onerror = () => reject(new Error("Could not decode the snapshot"));
-          img.src = objectUrl as string;
-        });
-        toast.success(`Captured snapshot from Alarm.com camera "${cam.name}"!`);
-      } catch (error) {
-        toast.error("Alarm.com snapshot failed", { description: error instanceof Error ? error.message : "Unknown error" });
-      } finally {
-        if (objectUrl) URL.revokeObjectURL(objectUrl);
+    let objectUrl: string | null = null;
+    try {
+      const response = await fetch(`${snapUrl}${snapUrl.includes('?') ? '&' : '?'}t=${Date.now()}`, {
+        credentials: 'include', cache: 'no-store',
+        signal: AbortSignal.any([controller.signal, AbortSignal.timeout(20000)]),
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null) as { statusMessage?: string } | null;
+        throw new Error(payload?.statusMessage || `Camera snapshot unavailable (${response.status})`);
       }
-      return;
+      const blob = await response.blob();
+      if (!blob.type.startsWith('image/')) throw new Error('Camera returned a non-image response');
+      objectUrl = URL.createObjectURL(blob);
+      const image = new Image();
+      image.src = objectUrl;
+      await image.decode();
+      const canvas = document.createElement('canvas');
+      canvas.width = image.naturalWidth;
+      canvas.height = image.naturalHeight;
+      const context = canvas.getContext('2d');
+      if (!context || !canvas.width || !canvas.height) throw new Error('Could not decode the snapshot');
+      context.drawImage(image,0,0);
+      const dataUrl = await optimizeImageDataUrl(canvas.toDataURL('image/jpeg',0.85));
+      if (controller.signal.aborted) return;
+      setCaptures(previous => ({ ...previous,[targetKey]:dataUrl }));
+      toast.success(`Captured snapshot from ${cam.provider === 'ALARM_COM' ? 'Alarm.com camera' : 'IP Camera'} "${cam.name}"!`);
+    } catch (error) {
+      if (controller.signal.aborted) return;
+      const message = error instanceof Error ? error.message : 'Camera snapshot unavailable';
+      setSnapshotError(`${message}. No photo was added. Use Device Camera or Upload Image instead.`);
+      toast.error('Camera snapshot failed', { description: message });
+    } finally {
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
     }
-
-    // Create an image element to draw onto canvas to convert to base64
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.onload = async () => {
-      const canvas = document.createElement("canvas");
-      canvas.width = img.width || 1280;
-      canvas.height = img.height || 720;
-      const ctx = canvas.getContext("2d");
-      if (ctx) {
-        ctx.drawImage(img, 0, 0);
-        const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
-        setCaptures((prev) => ({
-          ...prev,
-          [targetKey]: dataUrl,
-        }));
-        toast.success(`Captured snapshot from IP Camera "${cam.name}"!`);
-      }
-    };
-    img.onerror = async () => {
-      const canvas = document.createElement("canvas");
-      canvas.width = 640;
-      canvas.height = 480;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return;
-      ctx.fillStyle = "#0f172a";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.fillStyle = "#38bdf8";
-      ctx.font = "bold 16px monospace";
-      ctx.textAlign = "center";
-      ctx.fillText(`IP CAM SNAPSHOT (${cam.name})`, 320, 240);
-      const fallbackImage = canvas.toDataURL("image/jpeg", 0.85);
-      setCaptures((prev) => ({
-        ...prev,
-        [targetKey]: fallbackImage,
-      }));
-      toast.success(`Captured snapshot from IP Camera "${cam.name}"!`);
-    };
-    img.src = `${snapUrl}?t=${Date.now()}`;
   };
 
-  const handleStartLiveCamera = async (targetKey: keyof ComplianceCaptures) => {
+  const handleStartLiveCamera = async (targetKey: keyof ComplianceCaptures, facingMode: 'user' | 'environment' = 'environment') => {
+    stopCameraStream();
+    const requestId = liveRequest.current;
     setCurrentUploadTarget(targetKey);
     setUseLiveCamera(true);
 
     try {
+      if (!navigator.mediaDevices?.getUserMedia) throw new Error('Live camera access requires HTTPS and a supported browser');
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } },
+        video: { facingMode: { ideal: facingMode }, width: { ideal: 1280 }, height: { ideal: 720 } },
         audio: false,
       });
-
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
+      if (requestId !== liveRequest.current || !videoRef.current) {
+        stream.getTracks().forEach(track => track.stop());
+        return;
       }
-    } catch (err) {
-      console.warn("Camera stream fallback to native camera input:", err);
-      toast.info("Opening device camera...");
-      handleTriggerCameraInput(targetKey);
+      streamRef.current = stream;
+      videoRef.current.srcObject = stream;
+      await videoRef.current.play();
+    } catch {
+      if (requestId !== liveRequest.current) return;
+      stopCameraStream();
+      toast.info('Live camera unavailable. Use the native device camera or upload a photo.');
+      handleTriggerCameraInput(targetKey,facingMode);
     }
   };
 
@@ -256,8 +241,9 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
     }
   };
 
-  const handleTriggerCameraInput = (key: keyof ComplianceCaptures) => {
+  const handleTriggerCameraInput = (key: keyof ComplianceCaptures, facingMode: 'user' | 'environment' = 'environment') => {
     setCurrentUploadTarget(key);
+    cameraInputRef.current?.setAttribute('capture',facingMode);
     cameraInputRef.current?.click();
   };
 
@@ -296,6 +282,7 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
   };
 
   const handleSave = async () => {
+    snapshotRequest.current?.abort();
     stopCameraStream();
     setIsSavingUploads(true);
     try {
@@ -307,7 +294,7 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
             : value,
         ]),
       )) as ComplianceCaptures;
-      onSaveCaptures(uploadedCaptures);
+      await onSaveCaptures(uploadedCaptures);
       onClose();
     } catch (error) {
       toast.error("Could not save compliance images", {
@@ -380,6 +367,8 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
             </div>
           </div>
         </DialogHeader>
+
+        {snapshotError && <div role="alert" className="rounded-xl border border-amber-700/50 bg-amber-950/20 p-3 text-xs text-amber-300">{snapshotError}</div>}
 
         {useLiveCamera && (
           <div className="p-4 bg-slate-900 border-2 border-emerald-500/50 rounded-2xl space-y-3">
@@ -618,6 +607,12 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
                       className="w-full h-11 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs gap-1.5"
                     >
                       <Camera className="w-4 h-4" /> Device Camera
+                    </Button>
+                    <Button onClick={() => handleTriggerCameraInput('personPhotoUrl','user')} className="w-full h-11 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs gap-1.5">
+                      <Camera className="w-4 h-4" /> Front Camera
+                    </Button>
+                    <Button onClick={() => handleStartLiveCamera('personPhotoUrl','user')} className="w-full h-10 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs gap-1.5">
+                      <Video className="w-4 h-4" /> Live Front Camera
                     </Button>
 
                     {ipCameras.length > 0 && (
