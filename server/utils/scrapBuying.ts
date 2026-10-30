@@ -3,6 +3,7 @@ import { createError, type H3Event } from 'nitro/h3';
 import { z } from 'zod';
 import { requireUser, type PublicUser } from './auth';
 import { query, withTransaction } from './db';
+import { ensureIntakeOwnership, lockIntakeOwnership } from './intakeOwnership';
 import { lockFinancialState, putState, stateValue } from './financialState';
 import { serverScale } from './scale';
 import { normalizeWeight, validateScaleReading, validatedBreakdown, validatedItemBreakdown } from '../../src/utils/weighingContract';
@@ -27,8 +28,13 @@ const captureSchema = z.object({ id: z.string().uuid(), scaleId: z.string().max(
   originalUnit: z.enum(['LBS','KG']), normalizedLbs: weight, actorId: z.string(), capturedAt: z.string().datetime(),
   stable: z.boolean(), source: z.enum(['SCALE','MANUAL']), replacesCaptureId: z.string().uuid().optional() }).strict();
 export const buyingCommandSchema = z.object({
-  action: z.enum(['CREATE','ADOPT','SAVE','FINALIZE','FINALIZE_AND_PAY','PAY','VOID']), id: z.string().trim().min(1).max(120),
+  action: z.enum(['CREATE','ADOPT','SAVE','UPDATE_SELLER','FINALIZE','FINALIZE_AND_PAY','PAY','VOID']), id: z.string().trim().min(1).max(120),
   revision: z.number().int().nonnegative(), idempotencyKey: z.string().uuid(),
+  clientId: z.string().uuid().optional(),
+  seller: z.object({ phone: z.string().trim().max(80), address: z.string().trim().max(500),
+    idNumber: z.string().trim().max(120), idState: z.string().trim().max(40),
+    idType: z.enum(['Driver License','State ID','Passport','Military ID']), plate: z.string().trim().max(80),
+    captures: z.record(z.string().max(1000000).optional()) }).strict().optional(),
   ticket: z.record(z.unknown()).optional(), method: z.enum(['Cash','Check']).optional(),
   reference: z.string().trim().max(120).optional(), permitReference: z.string().trim().max(200).optional(),
   documentationReference: z.string().trim().max(500).optional(),
@@ -307,11 +313,17 @@ async function pay(client: PoolClient, ticket: Ticket, command: z.infer<typeof b
 
 export async function executeBuyingCommand(command: z.infer<typeof buyingCommandSchema>, user: PublicUser) {
   if (!canRecordBuyingPayment(user)) fail('Buying action is not permitted for this account',403);
+  await ensureIntakeOwnership();
   const hash = createHash('sha256').update(canonical(command)).digest('hex');
   return withTransaction(async (client) => {
     await lockFinancialState(client);
     const retry = await client.query('SELECT request_hash,result FROM scrap_buying_events WHERE actor_id=$1 AND idempotency_key=$2',[user.id,command.idempotencyKey]);
     if (retry.rows[0]) { if (retry.rows[0].request_hash !== hash) fail('Idempotency key was reused for another request'); return retry.rows[0].result as Ticket; }
+    await lockIntakeOwnership(client, command.id);
+    if (!['CREATE', 'ADOPT'].includes(command.action)) {
+      const owner = (await client.query('SELECT user_id,client_id,operator_name FROM intake_ownership WHERE ticket_id=$1 AND expires_at>NOW()', [command.id])).rows[0];
+      if (owner && (owner.user_id !== user.id || owner.client_id !== command.clientId)) fail(`${owner.operator_name} is handling this intake on another workstation. Claim it from the scale queue before editing.`);
+    }
     const result = await client.query('SELECT document FROM scrap_buying_tickets WHERE ticket_id=$1 FOR UPDATE',[command.id]);
     const previous: Ticket | undefined = result.rows[0]?.document;
     let next: Ticket;
@@ -338,6 +350,24 @@ export async function executeBuyingCommand(command: z.infer<typeof buyingCommand
       if (command.action === 'SAVE') {
         if (previous.buying.stage !== 'DRAFT' || !command.ticket) fail('Only draft buying tickets can be edited');
         next = await validateSave(client,previous,command.ticket as unknown as Ticket,user,command.binAcknowledgment);
+      } else if (command.action === 'UPDATE_SELLER') {
+        if (previous.buying.stage !== 'DRAFT' || !command.seller) fail('Only draft seller information can be corrected');
+        const seller = command.seller;
+        if (seller.idNumber && !seller.idState) fail('Confirm the ID issuing jurisdiction',400);
+        let customerId = previous.customerId;
+        if (customerId) {
+          const updated = await client.query(`UPDATE customers SET phone=$2,address=$3,id_number=$4,id_state=$5,id_type=$6,
+            vehicle_license_plate=$7,id_photo_url=COALESCE($8,id_photo_url),updated_at=NOW() WHERE id=$1 RETURNING id`,
+          [customerId,seller.phone,seller.address,seller.idNumber,seller.idState.toUpperCase(),seller.idType,seller.plate.toUpperCase(),seller.captures.idPhotoUrl ?? null]);
+          if (!updated.rows[0]) fail('Seller profile no longer exists',404);
+        } else {
+          customerId = `cust-${randomUUID()}`;
+          await client.query(`INSERT INTO customers(id,full_name,phone,address,id_number,id_state,id_type,vehicle_license_plate,id_photo_url)
+            VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+          [customerId,previous.customerName,seller.phone,seller.address,seller.idNumber,seller.idState.toUpperCase(),seller.idType,seller.plate.toUpperCase(),seller.captures.idPhotoUrl ?? null]);
+        }
+        next = { ...previous, customerId, customerPhone:seller.phone, customerAddress:seller.address,
+          customerIdNumber:seller.idNumber, vehicleLicensePlate:seller.plate.toUpperCase(), complianceCaptures:seller.captures };
       } else if (command.action === 'FINALIZE' || command.action === 'FINALIZE_AND_PAY') {
         next = await finalizePurchase(client,previous,command,user);
         if (command.action === 'FINALIZE_AND_PAY') next = await pay(client,next,command,user);

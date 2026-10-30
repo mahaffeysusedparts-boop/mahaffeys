@@ -1,4 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { useIntakeDraft } from '@/hooks/useIntakeDraft';
+import { DraftRecoveryBanner } from './DraftRecoveryBanner';
+import { RepeatCustomerReview } from './RepeatCustomerReview';
+import { IntakeFieldGuidance, IntakeFieldError, goToIntakeField, type IntakeIssue } from './IntakeFieldGuidance';
 import { ComplianceCaptures, Customer, Ticket } from '@/types/scrap';
 import { storageService } from '@/services/storageService';
 import { customerService, type CustomerInput } from '@/services/customerService';
@@ -37,6 +41,7 @@ import { toast } from 'sonner';
 interface IntakeCollectionFormProps {
   onBack: () => void;
   onSaved: (ticketId: string) => void;
+  onOpenQueue: () => void;
 }
 
 const MAX_ACTIVE_LOADS = 10;
@@ -49,9 +54,12 @@ const emptyCaptures: ComplianceCaptures = {
   loadPhotoUrl: undefined,
 };
 
-export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBack, onSaved }) => {
+export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBack, onSaved, onOpenQueue }) => {
   const requirements = useIntakeRequirements();
+  const [activeLoadCount, setActiveLoadCount] = useState(() => storageService.getTickets().filter(ticket => ticket.ticketType === 'SCRAP_METAL' && ticket.status === 'PENDING').length);
+  useEffect(() => storageService.subscribe('mahaffeys_tickets', () => setActiveLoadCount(storageService.getTickets().filter(ticket => ticket.ticketType === 'SCRAP_METAL' && ticket.status === 'PENDING').length)), []);
   const [ticketNumber, setTicketNumber] = useState<string>(() => storageService.generateScrapReceiptNumber());
+  const initialReceiptRef = useRef(ticketNumber);
   const [customerSearchOpen, setCustomerSearchOpen] = useState(false);
   const [customerSearch, setCustomerSearch] = useState('');
   const [customerResults, setCustomerResults] = useState<Customer[]>([]);
@@ -72,8 +80,36 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
 
   const [captures, setCaptures] = useState<ComplianceCaptures>(emptyCaptures);
   const [captureOpen, setCaptureOpen] = useState(false);
+  const [reviewCustomer, setReviewCustomer] = useState<Customer | null>(null);
+  const [saveAttempted, setSaveAttempted] = useState(false);
+  const draft = useIntakeDraft('scrap-collection', {
+    ticketNumber: { value: ticketNumber, restore: setTicketNumber },
+    selectedCustomerId: { value: selectedCustomerId, restore: setSelectedCustomerId },
+    selectedCustomer: { value: selectedCustomer, restore: setSelectedCustomer },
+    selectedCustomerLabel: { value: selectedCustomerLabel, restore: setSelectedCustomerLabel },
+    customerName: { value: customerName, restore: setCustomerName },
+    customerPhone: { value: customerPhone, restore: setCustomerPhone },
+    customerAddress: { value: customerAddress, restore: setCustomerAddress },
+    customerIdNumber: { value: customerIdNumber, restore: setCustomerIdNumber },
+    customerIdState: { value: customerIdState, restore: setCustomerIdState },
+    vehicleLicensePlate: { value: vehicleLicensePlate, restore: setVehicleLicensePlate },
+    notes: { value: notes, restore: setNotes },
+    captures: { value: captures, restore: setCaptures },
+  }, !!(customerName || customerPhone || customerAddress || customerIdNumber || vehicleLicensePlate || notes || Object.values(captures).some(Boolean)) || customerIdState !== 'SC' || ticketNumber !== initialReceiptRef.current);
 
   const compliance = calculateComplianceScore(captures, 'SCRAP_METAL');
+  const issues: IntakeIssue[] = [
+    ...(activeLoadCount >= MAX_ACTIVE_LOADS ? [{ target: 'collection-capacity', message: 'The intake queue is full. Complete or void an open intake first.' }] : []),
+    ...(!customerName.trim() && saveAttempted ? [{ target: 'collection-seller-name', message: 'Enter the seller name.' }] : []),
+    ...(!customerPhone.trim() && requirements.data?.requirePhone ? [{ target: 'collection-phone', message: 'Enter the seller phone.', beforeCompletion: true }] : []),
+    ...(!customerIdNumber.trim() && requirements.data?.requireSellerId ? [{ target: 'collection-id', message: 'Enter the seller ID number.', beforeCompletion: true }] : []),
+    ...(!customerIdState.trim() && requirements.data?.requireSellerId ? [{ target: 'seller-id-state', message: 'Confirm the ID issuing jurisdiction.', beforeCompletion: true }] : []),
+    ...(!customerAddress.trim() && requirements.data?.requireAddress ? [{ target: 'seller-address', message: 'Enter the seller address.', beforeCompletion: true }] : []),
+    ...(!vehicleLicensePlate.trim() && requirements.data?.requireVehiclePlate ? [{ target: 'collection-plate', message: 'Enter today’s vehicle plate.', beforeCompletion: true }] : []),
+    ...(compliance.score < 100 && requirements.data?.requirePhotos ? [{ target: 'collection-photos', message: 'Capture the missing intake photos.', beforeCompletion: true }] : []),
+    ...(saveAttempted && storageService.getTickets().some(t => t.id === ticketNumber.trim()) ? [{ target: 'collection-receipt', message: 'Receipt number is already used. Generate a new number.' }] : []),
+  ];
+  const fieldError = (target: string) => issues.find(issue => issue.target === target)?.message;
 
   useEffect(() => {
     if (!customerSearchOpen) return;
@@ -105,7 +141,7 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
     toast.info(`Generated receipt #${next}`);
   };
 
-  const handleCustomerSelect = (customer: Customer) => {
+  const handleCustomerSelect = (customer: Customer, plate: string, materials: string[]) => {
     setSelectedCustomerId(customer.id);
     setSelectedCustomer(customer);
     setSelectedCustomerLabel(customer.isCommercial && customer.companyName
@@ -116,7 +152,8 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
     setCustomerAddress(customer.address || '');
     setCustomerIdNumber(customer.idNumber);
     setCustomerIdState(customer.idState);
-    setVehicleLicensePlate(customer.vehicleLicensePlate || '');
+    setVehicleLicensePlate(plate);
+    if (materials.length) setNotes(previous => [previous, `Expected materials (unweighed): ${materials.join(', ')}`].filter(Boolean).join('; '));
     // The selected customer's registry photo always wins — freshly retaking it
     // in the compliance studio below will overwrite this again.
     setCaptures((prev) => ({ ...prev, idPhotoUrl: customer.idPhotoUrl }));
@@ -127,21 +164,24 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
   };
 
   const handleSave = async () => {
+    if (saving || draft.loading || draft.recovery) return;
+    setSaveAttempted(true);
     if (!customerName.trim()) {
-      toast.error('Enter the seller name before saving this intake');
+      goToIntakeField('collection-seller-name');
       return;
     }
     const activeLoads = storageService.getTickets().filter(
       (t) => t.ticketType === 'SCRAP_METAL' && t.status === 'PENDING'
     );
     if (activeLoads.length >= MAX_ACTIVE_LOADS) {
-      toast.error(`Up to ${MAX_ACTIVE_LOADS} intakes can be open at once. Complete or clear one first.`);
+      setActiveLoadCount(activeLoads.length);
+      goToIntakeField('collection-capacity');
       return;
     }
 
     const finalId = ticketNumber.trim() || storageService.generateScrapReceiptNumber();
     if (storageService.getTickets().some((t) => t.id === finalId)) {
-      toast.error(`Receipt #${finalId} is already used. Edit the number or generate a new one.`);
+      goToIntakeField('collection-receipt');
       return;
     }
 
@@ -214,6 +254,7 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
       toast.success(`Intake #${finalId} saved`, {
         description: 'Seller details & photos stored. Continue to the scale to log the IN weight.',
       });
+      await draft.clear();
       onSaved(finalId);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Unable to save this intake');
@@ -232,6 +273,9 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 pb-24 sm:pb-12">
+      <DraftRecoveryBanner draft={draft}/>
+      <IntakeFieldGuidance issues={issues}/>
+      <fieldset disabled={draft.loading || !!draft.recovery || saving} className="contents">
       {/* Header */}
       <div className="flex flex-col gap-4 rounded-2xl border border-slate-800 bg-slate-900 p-4 shadow-xl sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
@@ -260,10 +304,12 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
           <div className="rounded-xl border border-slate-800 bg-slate-950 px-3 py-2">
             <p className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Receipt #</p>
             <Input
+              id="collection-receipt" aria-invalid={!!fieldError('collection-receipt')}
               value={ticketNumber}
               onChange={(e) => setTicketNumber(e.target.value)}
               className="mt-1 h-8 w-36 border-slate-700 bg-slate-900 text-center font-mono text-sm font-bold text-amber-300"
             />
+            <IntakeFieldError message={fieldError('collection-receipt')}/>
           </div>
           <Button
             type="button"
@@ -334,7 +380,7 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
                                   <CommandItem
                                     key={customer.id}
                                     value={customer.id}
-                                    onSelect={() => handleCustomerSelect(customer)}
+                                    onSelect={() => { setCustomerSearchOpen(false); setReviewCustomer(customer); }}
                                     className="items-start rounded-lg px-3 py-2.5 text-white data-[selected=true]:bg-emerald-950"
                                   >
                                     <Check className={`mr-2 mt-0.5 h-4 w-4 text-emerald-400 ${selectedCustomerId === customer.id ? 'opacity-100' : 'opacity-0'}`} />
@@ -357,13 +403,15 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
                 </div>
 
                 <div>
-                  <Label className="text-xs text-slate-300">Seller Name *</Label>
+                  <Label htmlFor="collection-seller-name" className="text-xs text-slate-300">Seller Name *</Label>
                   <Input
+                    id="collection-seller-name" aria-invalid={!!fieldError('collection-seller-name')}
                     value={customerName}
                     onChange={(e) => setCustomerName(e.target.value)}
                     placeholder="e.g. Marcus Vance"
                     className="mt-1 h-11 border-slate-800 bg-slate-950 text-xs font-bold text-white"
                   />
+                  <IntakeFieldError message={fieldError('collection-seller-name')}/>
                 </div>
               </div>
 
@@ -373,39 +421,47 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
                     <Phone className="h-3 w-3 text-emerald-400" /> Phone Number
                   </Label>
                   <Input
+                    id="collection-phone" aria-invalid={!!fieldError('collection-phone')}
                     value={customerPhone}
                     onChange={(e) => setCustomerPhone(e.target.value)}
                     placeholder="(555) 000-0000"
                     className="mt-1 h-11 border-slate-800 bg-slate-950 font-mono text-xs font-bold text-emerald-400"
                   />
+                  <IntakeFieldError message={fieldError('collection-phone')}/>
                 </div>
                 <div>
                   <Label className="text-xs text-slate-300">Driver License / ID # · {requirements.data?.requireSellerId === false ? 'Optional' : 'Required before completion'}</Label>
                   <Input
+                    id="collection-id" aria-invalid={!!fieldError('collection-id')}
                     value={customerIdNumber}
                     onChange={(e) => setCustomerIdNumber(e.target.value)}
                     placeholder="e.g. DL-4481029-GA"
                     className="mt-1 h-11 border-slate-800 bg-slate-950 font-mono text-xs text-amber-300"
                   />
+                  <IntakeFieldError message={fieldError('collection-id')}/>
                 </div>
                 <div>
                   <Label className="text-xs text-slate-300">Vehicle License Plate · {requirements.data?.requireVehiclePlate === false ? 'Optional' : 'Required before completion'}</Label>
                   <Input
+                    id="collection-plate" aria-invalid={!!fieldError('collection-plate')}
                     value={vehicleLicensePlate}
                     onChange={(e) => setVehicleLicensePlate(e.target.value.toUpperCase())}
                     placeholder="e.g. TOW-912 (GA)"
                     className="mt-1 h-11 border-slate-800 bg-slate-950 font-mono text-xs uppercase text-slate-200"
                   />
+                  <IntakeFieldError message={fieldError('collection-plate')}/>
                 </div>
               </div>
 
               <div className="space-y-1">
                 <Label htmlFor="seller-address" className="text-xs text-slate-300">Seller address · {requirements.data?.requireAddress === false ? 'Optional' : 'Required before completion'}</Label>
-                <Input id="seller-address" value={customerAddress} onChange={(event) => setCustomerAddress(event.target.value)} maxLength={500} placeholder="Actual seller address" className="h-11 rounded-xl border-slate-700 bg-slate-950 text-white" />
+                <Input id="seller-address" aria-invalid={!!fieldError('seller-address')} value={customerAddress} onChange={(event) => setCustomerAddress(event.target.value)} maxLength={500} placeholder="Actual seller address" className="h-11 rounded-xl border-slate-700 bg-slate-950 text-white" />
+                <IntakeFieldError message={fieldError('seller-address')}/>
               </div>
               <div className="space-y-1">
                 <Label htmlFor="seller-id-state" className="text-xs text-slate-300">Actual ID issuing state / jurisdiction</Label>
-                <Input id="seller-id-state" value={customerIdState} onChange={(event) => setCustomerIdState(event.target.value.toUpperCase())} maxLength={40} className="h-11 max-w-xs rounded-xl border-slate-700 bg-slate-950 text-white" />
+                <Input id="seller-id-state" aria-invalid={!!fieldError('seller-id-state')} value={customerIdState} onChange={(event) => setCustomerIdState(event.target.value.toUpperCase())} maxLength={40} className="h-11 max-w-xs rounded-xl border-slate-700 bg-slate-950 text-white" />
+                <IntakeFieldError message={fieldError('seller-id-state')}/>
                 <p className="text-xs text-slate-300">South Carolina is the local-entry default. Confirm against the actual ID; returning sellers keep their saved jurisdiction. A customer profile is saved with this intake even when the ID number is not yet available.</p>
               </div>
 
@@ -422,8 +478,9 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
           </Card>
 
           {/* Photos card */}
-          <Card className="border-blue-500/40 bg-slate-900 text-white shadow-xl">
-            <CardHeader className="flex flex-row items-center justify-between border-b border-blue-500/30 bg-gradient-to-r from-blue-950/80 to-slate-950 px-4 py-3.5">
+          <Card id="collection-photos" className="border-blue-500/40 bg-slate-900 text-white shadow-xl">
+            <IntakeFieldError message={fieldError('collection-photos')}/>
+            <CardHeader className="flex flex-row items-center justify-between border-b border-blue-500/30 bg-blue-950 px-4 py-3.5">
               <div className="flex items-center gap-2">
                 <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-950 text-sm font-black text-blue-300 ring-1 ring-blue-500/30">2</span>
                 <CardTitle className="text-sm font-bold uppercase tracking-wide text-white">
@@ -521,9 +578,10 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
                 </div>
               </div>
 
+              {activeLoadCount >= MAX_ACTIVE_LOADS && <div id="collection-capacity" className="rounded-xl border border-amber-700 bg-amber-950 p-3 text-xs text-amber-100"><p>All {MAX_ACTIVE_LOADS} intake slots are occupied. Your draft is kept while you clear a slot.</p><Button onClick={onOpenQueue} variant="link" className="px-0 text-amber-100">Open scale queue</Button></div>}
               <Button
                 onClick={() => void handleSave()}
-                disabled={saving}
+                disabled={saving || activeLoadCount >= MAX_ACTIVE_LOADS}
                 className="h-12 w-full gap-2 bg-emerald-600 text-sm font-extrabold text-white shadow-lg shadow-emerald-950 hover:bg-emerald-500"
               >
                 {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Scale className="h-4 w-4" />}
@@ -550,6 +608,8 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
         </div>
       </div>
 
+      </fieldset>
+      <RepeatCustomerReview customer={reviewCustomer} onCancel={() => setReviewCustomer(null)} onConfirm={handleCustomerSelect} suggestMaterials/>
       <ComplianceCaptureModal
         isOpen={captureOpen}
         onClose={() => setCaptureOpen(false)}

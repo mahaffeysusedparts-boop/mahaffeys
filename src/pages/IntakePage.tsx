@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import { useAuth } from '@/context/AuthContext';
 import { IntakeType, Ticket } from '@/types/scrap';
 import { storageService } from '@/services/storageService';
 import { Navbar } from '@/components/layout/Navbar';
@@ -14,13 +15,30 @@ import { Car, Scale, ArrowLeft } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function IntakePage() {
-  const [activeMode, setActiveMode] = useState<IntakeType | null>(null);
+  const { user } = useAuth();
+  const workspaceKey = `intake-workspace:${user?.id}`;
+  const [workspace] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(workspaceKey) || '{}');
+      return {
+        mode: saved.mode === 'CAR_SALVAGE' || saved.mode === 'SCRAP_METAL' ? saved.mode as IntakeType : null,
+        stage: saved.stage === 'SCALE' ? 'SCALE' as const : 'COLLECT' as const,
+        ticketId: typeof saved.ticketId === 'string' ? saved.ticketId : null,
+      };
+    } catch { return { mode: null, stage: 'COLLECT' as const, ticketId: null }; }
+  });
+  const [activeMode, setActiveMode] = useState<IntakeType | null>(workspace.mode);
   const [createdTicket, setCreatedTicket] = useState<Ticket | null>(null);
   const [receiptOpen, setReceiptOpen] = useState(false);
 
   // Two-part scrap intake: Part 1 collects info & photos, Part 2 weighs IN/OUT.
-  const [scrapStage, setScrapStage] = useState<'COLLECT' | 'SCALE'>('COLLECT');
-  const [scrapTicketId, setScrapTicketId] = useState<string | null>(null);
+  const [scrapStage, setScrapStage] = useState<'COLLECT' | 'SCALE'>(workspace.stage);
+  const [scrapTicketId, setScrapTicketId] = useState<string | null>(workspace.ticketId);
+  useEffect(() => {
+    if (!user) return;
+    try { localStorage.setItem(workspaceKey, JSON.stringify({ mode: activeMode, stage: scrapStage, ticketId: scrapTicketId })); }
+    catch { /* Form drafts use independent IndexedDB storage. */ }
+  }, [workspaceKey, user, activeMode, scrapStage, scrapTicketId]);
 
   const handleTicketCreated = (ticket: Ticket) => {
     setCreatedTicket(ticket);
@@ -135,6 +153,7 @@ export default function IntakePage() {
           <IntakeCollectionForm
             onBack={handleResetIntake}
             onSaved={handleIntakeSaved}
+            onOpenQueue={() => { setScrapTicketId(null); setScrapStage('SCALE'); }}
           />
         )}
 

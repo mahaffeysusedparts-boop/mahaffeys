@@ -6,6 +6,7 @@ import type { PaymentEligibility } from '@/types/buyingPayments';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { IntakeFieldError } from './IntakeFieldGuidance';
 import { Hash } from 'lucide-react';
 
 export function useBuyingPaymentEligibility(ticket?: Ticket | null) {
@@ -38,9 +39,12 @@ export function BuyingPaymentFields({ eligibility, error, loading, disabled, val
     <div className="grid grid-cols-2 gap-2">{(['Cash','Check'] as const).map(method => <Button type="button" key={method} aria-pressed={value.method === method} disabled={disabled || loading || !methods.includes(method)} onClick={() => onChange({...value,method})} className={`h-11 rounded-xl ${value.method === method ? 'bg-emerald-700 text-white hover:bg-emerald-600' : 'bg-slate-800 text-slate-100 hover:bg-slate-700'}`}>{method}</Button>)}</div>
     {value.method === 'Check' && <div className="space-y-2 rounded-xl border-2 border-amber-400 bg-amber-950 p-4 shadow-sm">
       <Label htmlFor={`${id}-check`} className="flex items-center gap-2 text-base font-bold text-amber-100"><Hash className="h-5 w-5"/>Record Check Number · Required</Label>
-      <Input id={`${id}-check`} type="text" required maxLength={120} autoComplete="off" placeholder="e.g. 9042" value={value.reference} disabled={disabled} onChange={event => onChange({...value,reference:event.target.value})} aria-describedby={`${id}-check-help`} className="h-14 rounded-xl border-amber-400 bg-slate-950 font-mono text-xl font-bold text-white placeholder:text-slate-400"/>
+      <Input id={`${id}-check`} aria-invalid={!value.reference.trim()} type="text" required maxLength={120} autoComplete="off" placeholder="e.g. 9042" value={value.reference} disabled={disabled} onChange={event => onChange({...value,reference:event.target.value})} aria-describedby={`${id}-check-help`} className="h-14 rounded-xl border-amber-400 bg-slate-950 font-mono text-xl font-bold text-white placeholder:text-slate-400"/>
       <p id={`${id}-check-help`} className="text-xs leading-relaxed text-amber-100">Enter the actual number on the issued check. Leading zeroes and alphanumeric references are kept (e.g. 0009042 or A-9042). No number is generated.</p>
+      <IntakeFieldError message={!value.reference.trim() ? 'Actual check number is missing. Completion remains blocked until it is entered.' : undefined}/>
     </div>}
+    {eligibility?.permitRequired && <div><Label htmlFor={`${id}-permit`} className="text-xs text-slate-100">Permit reference · Required</Label><Input id={`${id}-permit`} aria-invalid={!value.permitReference.trim()} value={value.permitReference} maxLength={200} disabled={disabled} onChange={event => onChange({...value,permitReference:event.target.value})} className="mt-1 h-11 rounded-xl border-slate-700 bg-slate-900 text-white"/><IntakeFieldError message={!value.permitReference.trim() ? 'Enter the required permit reference.' : undefined}/></div>}
+    {eligibility?.documentationRequired && <div><Label htmlFor={`${id}-documentation`} className="text-xs text-slate-100">Supporting documentation reference · Required</Label><Input id={`${id}-documentation`} aria-invalid={!value.documentationReference.trim()} value={value.documentationReference} maxLength={500} disabled={disabled} onChange={event => onChange({...value,documentationReference:event.target.value})} className="mt-1 h-11 rounded-xl border-slate-700 bg-slate-900 text-white"/><IntakeFieldError message={!value.documentationReference.trim() ? 'Enter the required supporting documentation reference.' : undefined}/></div>}
     {loading && <p role="status" className="text-xs text-slate-200">Checking server payment method…</p>}
     {error && <p role="alert" className="text-sm text-amber-200">{error} Refresh the payment method before completing; entered details are kept.</p>}
     {eligibility?.reasons.map(reason => <p key={reason.code} className="text-xs leading-relaxed text-amber-100">{reason.message}</p>)}

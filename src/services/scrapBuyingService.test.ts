@@ -34,6 +34,7 @@ describe('buying payment requests',()=>{
     expect(await service.completeAndPay(draft,'Check',' 000123-A ','','',true)).toEqual(paid);
     const retry=JSON.parse(mocks.request.mock.calls[1][1].body);
     expect(retry.idempotencyKey).toBe(first.idempotencyKey);
+    expect(retry.clientId).toBe(first.clientId);
     expect(mocks.request.mock.calls.filter(([url])=>url==='/api/scrap-buying/commands')).toHaveLength(2);
   });
   it('retains PAY for finalized purchases and sends no stray check number for cash',async()=>{

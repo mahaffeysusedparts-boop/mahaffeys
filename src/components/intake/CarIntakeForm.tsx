@@ -1,4 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { useIntakeDraft } from '@/hooks/useIntakeDraft';
+import { DraftRecoveryBanner } from './DraftRecoveryBanner';
+import { RepeatCustomerReview } from './RepeatCustomerReview';
+import { IntakeFieldGuidance, IntakeFieldError, goToIntakeField, type IntakeIssue } from './IntakeFieldGuidance';
 import { CarIntakeRecord, Customer, Ticket } from '@/types/scrap';
 import { storageService } from '@/services/storageService';
 import { apiRequest } from '@/services/apiClient';
@@ -152,23 +156,62 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
 
   const [payoutMethod, setPayoutMethod] = useState<'Cash' | 'Check' | 'ACH Direct Transfer'>('Cash');
   const [checkNumber, setCheckNumber] = useState<string>('CHK-' + Math.floor(1000 + Math.random() * 9000));
+  const initialReceiptRef = useRef(customReceiptNumber);
+  const initialCheckRef = useRef(checkNumber);
+  const [reviewCustomer, setReviewCustomer] = useState<Customer | null>(null);
+  const [saveAttempted, setSaveAttempted] = useState(false);
+  const draft = useIntakeDraft('car-intake', {
+    customReceiptNumber: { value: customReceiptNumber, restore: setCustomReceiptNumber },
+    sellerName: { value: sellerName, restore: setSellerName },
+    sellerIdNumber: { value: sellerIdNumber, restore: setSellerIdNumber },
+    sellerPhone: { value: sellerPhone, restore: setSellerPhone },
+    sellerAddress: { value: sellerAddress, restore: setSellerAddress },
+    selectedCustomer: { value: selectedCustomer, restore: setSelectedCustomer },
+    sellerIdPhotoUrl: { value: sellerIdPhotoUrl, restore: setSellerIdPhotoUrl },
+    licensePlate: { value: licensePlate, restore: setLicensePlate },
+    photoUrl: { value: photoUrl, restore: setPhotoUrl },
+    doorJambPhotoUrl: { value: doorJambPhotoUrl, restore: setDoorJambPhotoUrl },
+    vin: { value: vin, restore: setVin }, year: { value: year, restore: setYear },
+    make: { value: make, restore: setMake }, model: { value: model, restore: setModel },
+    trim: { value: trim, restore: setTrim }, color: { value: color, restore: setColor },
+    mileage: { value: mileage, restore: setMileage },
+    engineSizeLiters: { value: engineSizeLiters, restore: setEngineSizeLiters },
+    engineCylinders: { value: engineCylinders, restore: setEngineCylinders },
+    engineModel: { value: engineModel, restore: setEngineModel }, fuelType: { value: fuelType, restore: setFuelType },
+    decodedVehicle: { value: decodedVehicle, restore: setDecodedVehicle },
+    titleStatus: { value: titleStatus, restore: setTitleStatus }, titleNumber: { value: titleNumber, restore: setTitleNumber },
+    purchasePrice: { value: purchasePrice, restore: setPurchasePrice }, originSource: { value: originSource, restore: setOriginSource },
+    notes: { value: notes, restore: setNotes },
+    hasCatalyticConverter: { value: hasCatalyticConverter, restore: setHasCatalyticConverter },
+    catCondition: { value: catCondition, restore: setCatCondition },
+    hasEngineAndTrans: { value: hasEngineAndTrans, restore: setHasEngineAndTrans },
+    hasBattery: { value: hasBattery, restore: setHasBattery },
+    hasAluminumRims: { value: hasAluminumRims, restore: setHasAluminumRims },
+    fluidsDrained: { value: fluidsDrained, restore: setFluidsDrained },
+    payoutMethod: { value: payoutMethod, restore: setPayoutMethod }, checkNumber: { value: checkNumber, restore: setCheckNumber },
+  }, !!(sellerName || sellerPhone || sellerIdNumber || sellerAddress || licensePlate || vin || photoUrl || doorJambPhotoUrl || sellerIdPhotoUrl || notes || make || model || trim || color || titleNumber || originSource || purchasePrice || mileage || engineSizeLiters || engineCylinders || engineModel || fuelType)
+    || year !== new Date().getFullYear() || titleStatus !== 'Salvage Title' || !hasCatalyticConverter || catCondition !== 'Original OEM'
+    || !hasEngineAndTrans || !hasBattery || !hasAluminumRims || fluidsDrained || payoutMethod !== 'Cash'
+    || customReceiptNumber !== initialReceiptRef.current || checkNumber !== initialCheckRef.current);
+  const issues: IntakeIssue[] = saveAttempted ? [
+    ...(!customReceiptNumber.trim() ? [{ target: 'car-receipt', message: 'Enter a receipt number.' }] : []),
+    ...(storageService.getTickets().some(ticket => ticket.id === customReceiptNumber.trim()) ? [{ target: 'car-receipt', message: 'Receipt number is already used. Generate a new number before saving.' }] : []),
+    ...(!sellerName.trim() ? [{ target: 'car-seller-name', message: 'Enter the seller name.' }] : []),
+    ...(sellerIdPhotoUrl && !sellerIdNumber.trim() ? [{ target: 'car-seller-id', message: 'Enter the ID number for the captured seller ID.' }] : []),
+    ...(!Number.isFinite(purchasePrice) || purchasePrice < 0 ? [{ target: 'car-price', message: 'Enter a valid nonnegative purchase price.' }] : []),
+  ] : [];
+  const fieldError = (target: string) => issues.find(issue => issue.target === target)?.message;
 
   // Confirmed plate from the scanner: fill the field, then pull seller history via LPR.
   const handlePlateCaptured = async (plate: string) => {
     setLicensePlate(plate);
     setLprLoading(true);
     try {
-      const result = await apiRequest<{ plate: string; customer: { fullName: string; phone: string; idNumber?: string; address?: string; vehicleLicensePlate?: string } | null }>(
+      const result = await apiRequest<{ plate: string; customer: Customer | null }>(
         `/api/lpr/lookup?plate=${encodeURIComponent(plate)}`
       );
       if (result.customer) {
-        setSellerName((prev) => prev || result.customer!.fullName);
-        setSellerPhone((prev) => prev || result.customer!.phone || '');
-        setSellerIdNumber((prev) => prev || result.customer!.idNumber || '');
-        setSellerAddress((prev) => prev || result.customer!.address || '');
-        toast.success(`Seller history found for plate ${plate}`, {
-          description: `${result.customer.fullName}${result.customer.phone ? ` · ${result.customer.phone}` : ''} — fields pre-filled.`,
-        });
+        setReviewCustomer(result.customer);
       } else {
         toast.info(`No prior seller found for plate ${plate}`, {
           description: 'This plate is not on file yet — enter the seller details below.',
@@ -204,14 +247,14 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
     };
   }, [sellerSearch, sellerSearchOpen]);
 
-  // Selecting a registered seller auto-fills their details AND their saved ID photo
-  const handleSellerSelect = (customer: Customer) => {
+  // Seller details are reused only after the operator confirms the review.
+  const handleSellerSelect = (customer: Customer, plate: string) => {
     setSelectedCustomer(customer);
     setSellerName(customer.fullName);
     setSellerIdNumber(customer.idNumber);
     setSellerPhone(customer.phone || '');
     setSellerAddress(customer.address || '');
-    setLicensePlate(customer.vehicleLicensePlate || '');
+    setLicensePlate(plate);
     setSellerIdPhotoUrl(customer.idPhotoUrl || '');
     if (customer.idPhotoUrl) {
       toast.success('Seller found — ID photo pulled from their customer record');
@@ -249,6 +292,7 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
     const newNum = `T-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
     setCustomReceiptNumber(newNum);
     toast.info(`Generated Receipt #${newNum}`);
+    return newNum;
   };
 
   // Handle local image file upload for vehicle photo
@@ -343,25 +387,13 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
   }, [vin]);
 
   const handleSubmitTicket = async () => {
-
-    if (isSaving) return;
-
-    if (!customReceiptNumber.trim()) {
-      toast.error('Please enter a Receipt / Ticket Number');
-      return;
-    }
-    if (!sellerName.trim()) {
-      toast.error('Enter who the vehicle came from (seller name)');
-      return;
-    }
-    if (sellerIdPhotoUrl && !sellerIdNumber.trim()) {
-      toast.error('Enter the seller ID number so their ID photo can be saved to their profile');
-      return;
-    }
-    if (purchasePrice < 0 || isNaN(purchasePrice)) {
-      toast.error('Please enter a valid Purchase Price ($)');
-      return;
-    }
+    if (isSaving || draft.loading || draft.recovery) return;
+    setSaveAttempted(true);
+    const invalidTarget = !customReceiptNumber.trim() || storageService.getTickets().some(ticket => ticket.id === customReceiptNumber.trim()) ? 'car-receipt'
+      : !sellerName.trim() ? 'car-seller-name'
+      : sellerIdPhotoUrl && !sellerIdNumber.trim() ? 'car-seller-id'
+      : !Number.isFinite(purchasePrice) || purchasePrice < 0 ? 'car-price' : null;
+    if (invalidTarget) { goToIntakeField(invalidTarget); return; }
 
     const settings = storageService.getSettings();
     const currentOp = settings.operatorName;
@@ -488,7 +520,14 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
       toast.success(`Vehicle saved to inventory`, {
         description: `${year} ${make} ${model} added as pending intake. Sticker is ready to print.`,
       });
-
+      await draft.clear();
+      setSaveAttempted(false);
+      setYear(new Date().getFullYear()); setMake(''); setModel(''); setColor(''); setMileage(0);
+      setPurchasePrice(0); setTitleStatus('Salvage Title');
+      setHasCatalyticConverter(true); setCatCondition('Original OEM'); setHasEngineAndTrans(true);
+      setHasBattery(true); setHasAluminumRims(true); setFluidsDrained(false);
+      const nextCheck = 'CHK-' + Math.floor(1000 + Math.random() * 9000);
+      setPayoutMethod('Cash'); setCheckNumber(nextCheck); initialCheckRef.current = nextCheck;
       setVin('');
       setTrim('');
       setSellerName('');
@@ -511,7 +550,7 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
       setEngineModel('');
       setFuelType('');
       setOriginSource('');
-      handleAutoGenerateReceiptNumber();
+      initialReceiptRef.current = handleAutoGenerateReceiptNumber();
     } catch (error) {
       const storageFull = error instanceof DOMException && error.name === 'QuotaExceededError';
       toast.error('Car intake could not be saved', {
@@ -538,6 +577,9 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
 
   return (
     <div className="max-w-5xl mx-auto space-y-6 pb-12 font-sans">
+      <DraftRecoveryBanner draft={draft}/>
+      <IntakeFieldGuidance issues={issues}/>
+      <fieldset disabled={draft.loading || !!draft.recovery || isSaving} className="contents">
       {/* Device Camera Native Input */}
 
       <input
@@ -611,11 +653,13 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
 
           <div className="flex items-center gap-2">
             <Input
+              id="car-receipt" aria-invalid={!!fieldError('car-receipt')}
               value={customReceiptNumber}
               onChange={(e) => setCustomReceiptNumber(e.target.value)}
               placeholder="e.g. T-2025-1001"
               className="bg-slate-950 border-slate-700 text-amber-300 font-mono font-extrabold text-sm h-10 w-52 text-center"
             />
+            <IntakeFieldError message={fieldError('car-receipt')}/>
             <Button
               type="button"
               size="sm"
@@ -947,7 +991,7 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
                                 <CommandItem
                                   key={customer.id}
                                   value={customer.id}
-                                  onSelect={() => handleSellerSelect(customer)}
+                                  onSelect={() => { setSellerSearchOpen(false); setReviewCustomer(customer); }}
                                   className="items-start rounded-lg px-3 py-2.5 text-white data-[selected=true]:bg-blue-950"
                                 >
                                   <div className="flex min-w-0 flex-1 items-center gap-2">
@@ -986,11 +1030,13 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
                     <span>Seller / Source Full Name</span>
                   </Label>
                   <Input
+                    id="car-seller-name" aria-invalid={!!fieldError('car-seller-name')}
                     value={sellerName}
                     onChange={(e) => setSellerName(e.target.value)}
                     placeholder="e.g. Marcus Vance / Vance Repair Shop"
                     className="bg-slate-950 border-slate-800 text-white text-xs mt-1 h-10 font-bold"
                   />
+                  <IntakeFieldError message={fieldError('car-seller-name')}/>
                 </div>
 
                 <div>
@@ -998,11 +1044,13 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
                     <span>Driver License / State ID # (Optional)</span>
                   </Label>
                   <Input
+                    id="car-seller-id" aria-invalid={!!fieldError('car-seller-id')}
                     value={sellerIdNumber}
                     onChange={(e) => setSellerIdNumber(e.target.value)}
                     placeholder="e.g. DL-9823145-GA"
                     className="bg-slate-950 border-slate-800 text-amber-300 font-mono text-xs mt-1 h-10 font-bold"
                   />
+                  <IntakeFieldError message={fieldError('car-seller-id')}/>
                 </div>
               </div>
 
@@ -1101,6 +1149,7 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
                   <div className="relative">
                     <span className="absolute left-3 top-2.5 text-slate-500 font-bold">$</span>
                     <Input
+                      id="car-price" aria-invalid={!!fieldError('car-price')}
                       type="number"
                       value={purchasePrice}
                       onChange={(e) => setPurchasePrice(parseFloat(e.target.value) || 0)}
@@ -1108,6 +1157,7 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
                       className="bg-slate-950 border-slate-800 text-emerald-400 font-mono font-bold text-base pl-7"
                     />
                   </div>
+                  <IntakeFieldError message={fieldError('car-price')}/>
                   <span className="text-[10px] text-slate-400 mt-1 block">
                     Purchase price paid to acquire the vehicle
                   </span>
@@ -1312,6 +1362,8 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
 
       </div>
 
+      </fieldset>
+      <RepeatCustomerReview customer={reviewCustomer} currentPlate={licensePlate} onCancel={() => setReviewCustomer(null)} onConfirm={handleSellerSelect}/>
       <VinScannerModal
         open={vinScannerOpen}
         onOpenChange={setVinScannerOpen}

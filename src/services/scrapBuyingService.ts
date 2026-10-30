@@ -1,6 +1,7 @@
 import { apiRequest } from './apiClient';
 import { sharedStorage } from './sharedStorage';
 import { storageService } from './storageService';
+import { intakeClientId } from './intakeOwnershipService';
 import type { Ticket } from '@/types/scrap';
 import type { PaymentEligibility, BuyingPolicy, LegacyBuyingReview } from '@/types/buyingPayments';
 
@@ -13,15 +14,25 @@ async function command(body: Record<string,unknown>) {
   const signature = JSON.stringify(body);
   const retryStorageKey = ['PAY','FINALIZE_AND_PAY'].includes(String(body.action)) ? `buying-payment-retry:${signature}` : null;
   let idempotencyKey = pendingKeys.get(signature);
-  if (!idempotencyKey && retryStorageKey) {
-    try { idempotencyKey = sessionStorage.getItem(retryStorageKey) ?? undefined; } catch { /* In-memory retries still work when browser storage is unavailable. */ }
+  let clientId = intakeClientId;
+  if (retryStorageKey) {
+    try {
+      idempotencyKey ??= sessionStorage.getItem(retryStorageKey) ?? undefined;
+      clientId = sessionStorage.getItem(`${retryStorageKey}:client`) ?? clientId;
+    } catch { /* In-memory retries still work when browser storage is unavailable. */ }
   }
   if (!idempotencyKey) idempotencyKey = crypto.randomUUID();
   pendingKeys.set(signature,idempotencyKey);
-  if (retryStorageKey) { try { sessionStorage.setItem(retryStorageKey,idempotencyKey); } catch { /* Server ticket locking also prevents duplicate payments. */ } }
-  const ticket = await apiRequest<Ticket>('/api/scrap-buying/commands',{method:'POST',body:JSON.stringify({...body,idempotencyKey})});
+  if (retryStorageKey) {
+    try { sessionStorage.setItem(retryStorageKey,idempotencyKey); sessionStorage.setItem(`${retryStorageKey}:client`,clientId); }
+    catch { /* Server ticket locking also prevents duplicate payments. */ }
+  }
+  const ticket = await apiRequest<Ticket>('/api/scrap-buying/commands',{method:'POST',body:JSON.stringify({...body,clientId,idempotencyKey})});
   pendingKeys.delete(signature);
-  if (retryStorageKey) { try { sessionStorage.removeItem(retryStorageKey); } catch { /* Payment has already been acknowledged. */ } }
+  if (retryStorageKey) {
+    try { sessionStorage.removeItem(retryStorageKey); sessionStorage.removeItem(`${retryStorageKey}:client`); }
+    catch { /* Payment has already been acknowledged. */ }
+  }
   return cacheTicket(ticket);
 }
 async function recordPayment(action: 'PAY'|'FINALIZE_AND_PAY', ticket: Ticket, method: 'Cash'|'Check', reference: string, permitReference: string, documentationReference: string, reviewed = false) {
@@ -37,6 +48,7 @@ export const scrapBuyingService = {
   create: (ticket: Ticket) => command({action:'CREATE',id:ticket.id,revision:0,ticket}),
   adopt: (id: string) => command({action:'ADOPT',id,revision:0}),
   save: (ticket: Ticket, binAcknowledgment?: import('@/types/binDeductions').BinReviewAcknowledgment) => command({action:'SAVE',id:ticket.id,revision:ticket.buying?.revision ?? 0,ticket,...(binAcknowledgment ? {binAcknowledgment} : {})}),
+  updateSeller: (ticket: Ticket, seller: { phone: string; address: string; idNumber: string; idState: string; idType: import('@/types/scrap').Customer['idType']; plate: string; captures: import('@/types/scrap').ComplianceCaptures }) => command({ action: 'UPDATE_SELLER', id: ticket.id, revision: ticket.buying?.revision ?? 0, seller }),
   void: (ticket: Ticket,reason: string) => command({action:'VOID',id:ticket.id,revision:ticket.buying?.revision ?? 0,reason}),
   eligibility: (ticket: Ticket) => apiRequest<PaymentEligibility>(`/api/scrap-buying/eligibility?id=${encodeURIComponent(ticket.id)}&revision=${ticket.buying?.revision ?? 0}`),
   completeAndPay: (ticket: Ticket,method: 'Cash'|'Check',reference: string,permitReference: string,documentationReference: string,reviewed = false) => recordPayment('FINALIZE_AND_PAY',ticket,method,reference,permitReference,documentationReference,reviewed),

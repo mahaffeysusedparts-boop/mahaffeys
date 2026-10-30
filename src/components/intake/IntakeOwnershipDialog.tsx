@@ -1,0 +1,7 @@
+import type { useIntakeOwnership } from '@/hooks/useIntakeOwnership';
+import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel } from '@/components/ui/alert-dialog';
+import { Button } from '@/components/ui/button';
+
+export function IntakeOwnershipDialog({ ownership }: { ownership: ReturnType<typeof useIntakeOwnership> }) {
+  return <AlertDialog open={!!ownership.conflict} onOpenChange={open => { if (!open) ownership.cancel(); }}><AlertDialogContent className="rounded-2xl border-amber-600 bg-slate-900 text-slate-100"><AlertDialogHeader><AlertDialogTitle className="text-amber-200">Another workstation is handling this intake</AlertDialogTitle><AlertDialogDescription className="text-slate-200">{ownership.conflict?.owner.operatorName} is working on #{ownership.conflict?.ticketId}. Coordinate with them before taking over. Confirming will block further edits on their workstation and load the latest saved ticket here. Unsaved inputs on their device are not transferred.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel className="rounded-xl border-slate-600 bg-slate-900 text-slate-100">Keep their ownership</AlertDialogCancel><Button disabled={ownership.busy} onClick={() => void ownership.confirm()} className="rounded-xl bg-amber-700 text-white hover:bg-amber-600">{ownership.busy ? 'Claiming…' : 'Confirm takeover'}</Button></AlertDialogFooter></AlertDialogContent></AlertDialog>;
+}
