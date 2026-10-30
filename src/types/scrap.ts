@@ -151,6 +151,9 @@ export interface PullYardVehicle {
     reason: string;
   };
   partsRemaining: string[];
+  partChecks?: import('./vehicleActivity').VehiclePartCheck[];
+  history?: import('./vehicleActivity').VehicleHistoryEvent[];
+  vehicleRevision?: number;
   dismantlingLog: VehicleDismantlingLog;
   photoUrl?: string;
   purchasePrice?: number;

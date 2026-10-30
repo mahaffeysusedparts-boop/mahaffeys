@@ -347,10 +347,13 @@ async function uploadSerializedState(key: string, serialized: string) {
 
   for (let index = 0; index < total; index += 1) {
     const chunk = serialized.slice(index * STATE_CHUNK_SIZE, (index + 1) * STATE_CHUNK_SIZE);
-    await apiRequest(`/api/state/${encodeURIComponent(key)}/chunk`, {
+    const result = await apiRequest<{ value?: unknown }>(`/api/state/${encodeURIComponent(key)}/chunk`, {
       method: "POST",
       body: JSON.stringify({ uploadId, index, total, chunk }),
     });
+    if (key === 'mahaffeys_pull_yard_vehicles' && result.value !== undefined && pendingWrites.get(key) === serialized) {
+      sharedStorage.applyServerValue(key, result.value);
+    }
   }
 }
 
@@ -367,6 +370,13 @@ const PENDING_WEIGH_FIELDS = ["scaleGrossInWeight", "scaleGrossInAt", "scaleTare
 function mergeRecord(localRecord: Record<string, unknown>, serverRecord: Record<string, unknown>) {
   if (serverRecord.buying) return Number((localRecord.buying as {revision?:number})?.revision ?? 0)>Number((serverRecord.buying as {revision?:number}).revision ?? 0)?localRecord:serverRecord;
   if (localRecord.buying) return localRecord;
+  if (serverRecord.vehicleRevision !== undefined || localRecord.vehicleRevision !== undefined) {
+    const localRevision = Number(localRecord.vehicleRevision ?? 0);
+    const serverRevision = Number(serverRecord.vehicleRevision ?? 0);
+    if (serverRevision > localRevision) return serverRecord;
+    if (localRevision > serverRevision) return localRecord;
+    return { ...serverRecord, ...localRecord, history: serverRecord.history, partChecks: serverRecord.partChecks };
+  }
   const localUpdatedAt = Date.parse(String(localRecord.updatedAt ?? "")) || 0;
   const serverUpdatedAt = Date.parse(String(serverRecord.updatedAt ?? "")) || 0;
   if (localUpdatedAt || serverUpdatedAt) {

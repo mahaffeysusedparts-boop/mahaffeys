@@ -4,16 +4,12 @@ import {
   ArrowLeft,
   CalendarDays,
   Car,
-  CheckCircle2,
   Fuel,
   MapPin,
   Phone,
-  Scale,
   Share2,
   ShieldCheck,
-  Wrench,
 } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { VehicleAvailabilityBadge } from '@/components/inventory/VehicleAvailabilityBadge';
@@ -22,12 +18,17 @@ import { storageService } from '@/services/storageService';
 import { PullYardVehicle } from '@/types/scrap';
 import { generateSamplePhoto } from '@/utils/complianceUtils';
 import { toast } from 'sonner';
+import { useAuth } from '@/context/AuthContext';
+import { hasPageAccess } from '@/utils/pageAccess';
+import { VehiclePartsPanel } from '@/components/inventory/VehiclePartsPanel';
 
 const FALLBACK_VEHICLE_PHOTO = generateSamplePhoto('vehicle');
 
 export default function PublicVehicleDetailPage() {
   const { vin = '' } = useParams();
   const settings = storageService.getSettings();
+  const { user } = useAuth();
+  const canOpenStaffRecord = user && hasPageAccess(user.role, 'pull-a-part', settings.rolePageAccess);
   const [vehicle, setVehicle] = useState<PullYardVehicle | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
@@ -125,9 +126,10 @@ export default function PublicVehicleDetailPage() {
                 </h1>
                 <p className="mt-2 font-mono text-xs tracking-wider text-slate-400">VIN {vehicle.vin}</p>
               </div>
-              <Button onClick={() => void shareVehicle()} className="w-full rounded-xl bg-sky-600 font-black text-white hover:bg-sky-500 md:w-auto">
-                <Share2 className="mr-2 size-4" /> Share vehicle
-              </Button>
+              <div className="flex flex-wrap gap-2">
+                <Button asChild className="rounded-xl bg-emerald-700 font-bold text-white hover:bg-emerald-600"><Link to={`/yard-vehicles/${encodeURIComponent(vehicle.id)}`}>{canOpenStaffRecord ? 'Open staff record & actions' : 'Staff sign-in & actions'}</Link></Button>
+                <Button onClick={() => void shareVehicle()} className="rounded-xl bg-sky-600 font-black text-white hover:bg-sky-500"><Share2 className="mr-2 size-4" /> Share vehicle</Button>
+              </div>
             </div>
 
             <div className="grid gap-6 lg:grid-cols-[1.45fr_0.8fr]">
@@ -141,27 +143,7 @@ export default function PublicVehicleDetailPage() {
                   />
                 </div>
 
-                <Card className="rounded-3xl border-slate-800 bg-slate-900 text-white">
-                  <CardContent className="p-5 sm:p-6">
-                    <div className="mb-4 flex items-center gap-2">
-                      <Wrench className="size-5 text-amber-400" />
-                      <h2 className="text-lg font-black">Available components</h2>
-                    </div>
-                    {vehicle.status !== 'CRUSHED' && vehicle.partsRemaining.length ? (
-                      <div className="grid gap-2 sm:grid-cols-2">
-                        {vehicle.partsRemaining.map((part) => (
-                          <div key={part} className="flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-950 px-3 py-2.5 text-sm text-slate-200">
-                            <CheckCircle2 className="size-4 shrink-0 text-emerald-400" /> {part}
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="rounded-xl bg-slate-950 p-4 text-sm text-slate-400">
-                        {vehicle.status === 'CRUSHED' ? 'This vehicle is no longer available for parts.' : 'No components are currently listed as available.'}
-                      </p>
-                    )}
-                  </CardContent>
-                </Card>
+                <VehiclePartsPanel vehicle={vehicle} />
               </div>
 
               <aside className="space-y-4">

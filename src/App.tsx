@@ -30,6 +30,7 @@ const ContainersPage = lazy(() => import("./pages/ContainersPage"));
 const CashDrawerPage = lazy(() => import("./pages/CashDrawerPage"));
 const YardMapPage = lazy(() => import("./pages/YardMapPage"));
 const PullAPartPage = lazy(() => import("./pages/PullAPartPage"));
+const VehicleRecordPage = lazy(() => import("./pages/VehicleRecordPage"));
 const CamerasPage = lazy(() => import("./pages/CamerasPage"));
 const SystemHealthPage = lazy(() => import("./pages/SystemHealthPage"));
 const ServerAdminPage = lazy(() => import("./pages/ServerAdminPage"));
@@ -85,6 +86,7 @@ const App = () => (
               <Route path="/intake" element={guarded(<IntakePage />, "intake")} />
               <Route path="/bin-inspection" element={guarded(<BinInspectionPage />, "bin-inspection")} />
               <Route path="/pull-a-part" element={guarded(<PullAPartPage />, "pull-a-part")} />
+              <Route path="/yard-vehicles/:id" element={guarded(<VehicleRecordPage />, "pull-a-part")} />
               <Route path="/compliance" element={guarded(<CompliancePage />, "compliance")} />
               <Route path="/cameras" element={guarded(<CamerasPage />, "cameras")} />
               <Route path="/tickets" element={guarded(<TicketsPage />, "tickets")} />

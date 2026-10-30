@@ -1,6 +1,10 @@
 import type { PoolClient } from 'pg';
 import { createError } from 'nitro/h3';
 import { preserveEvidenceMappings } from './scaleEvidenceConfig';
+import { protectVehicleChanges } from './vehicleActivity';
+import { trackVehicleMapChanges } from './vehicleMapHistory';
+import { mergeInventory } from './inventory';
+import type { PullYardVehicle, Ticket, YardMapItem } from '../../src/types/scrap';
 
 export async function lockFinancialState(client: PoolClient) {
   await client.query('SELECT pg_advisory_xact_lock(114680)');
@@ -9,7 +13,7 @@ export async function stateValue<T>(client: PoolClient, key: string, fallback: T
   const result = await client.query('SELECT value FROM app_state WHERE key=$1', [key]);
   return result.rows[0]?.value ?? fallback;
 }
-export async function putState(client: PoolClient, key: string, value: unknown, userId: string) {
+export async function putState(client: PoolClient, key: string, value: unknown, userId: string | null) {
   await client.query(`INSERT INTO app_state(key,value,updated_at,updated_by) VALUES($1,$2::jsonb,NOW(),$3)
     ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value,updated_at=EXCLUDED.updated_at,updated_by=EXCLUDED.updated_by`, [key, JSON.stringify(value), userId]);
 }
@@ -23,9 +27,31 @@ export const legacyFinancialFields = ['ticketType','createdAt','customerId','cus
 
 // All generic sync/chunk/import paths share the same lock as buying commands.
 // Protected records omitted by an evicted/stale cache are retained, not deleted.
-export async function protectFinancialState(client: PoolClient, key: string, incoming: unknown, actorRole: string, actorName: string) {
+export async function protectFinancialState(client: PoolClient, key: string, incoming: unknown, actorRole: string, actorName: string, actorId?: string) {
   if (key.startsWith('mahaffeys_bin_') || key.startsWith('bin_inspection') || key.startsWith('bin_deduction')) throw createError({statusCode:403,statusMessage:'Bin records must use dedicated versioned endpoints'});
   if (key === 'mahaffeys_payment_safeguards' || key.startsWith('mahaffeys_payment_safeguards_revision_')) throw createError({statusCode:403,statusMessage:'Payment safeguards must use the revisioned administrator safeguards endpoint'});
+  if (key === 'mahaffeys_pull_yard_vehicles') {
+    await lockFinancialState(client);
+    const previous = mergeInventory(await stateValue<PullYardVehicle[]>(client, key, []), await stateValue<Ticket[]>(client, 'mahaffeys_tickets', []), await stateValue<string[]>(client, 'mahaffeys_removed_inventory_vehicles', []));
+    const settings = await stateValue<{ crushHoldEnabled?: boolean; crushHoldDays?: number }>(client, 'mahaffeys_settings', {});
+    return protectVehicleChanges(previous, incoming, actorName, actorRole, { enabled: settings.crushHoldEnabled !== false, crushHoldDays: settings.crushHoldDays ?? 30 });
+  }
+  if (key === 'mahaffeys_removed_inventory_vehicles') {
+    await lockFinancialState(client);
+    return incoming;
+  }
+  if (key === 'mahaffeys_yard_layout') {
+    await lockFinancialState(client);
+    if (!Array.isArray(incoming)) throw createError({ statusCode: 400, statusMessage: 'Yard layout must be an array' });
+    const previous = await stateValue<YardMapItem[]>(client, key, []);
+    const stored = await stateValue<PullYardVehicle[]>(client, 'mahaffeys_pull_yard_vehicles', []);
+    const vehicles = mergeInventory(stored, await stateValue<Ticket[]>(client, 'mahaffeys_tickets', []), await stateValue<string[]>(client, 'mahaffeys_removed_inventory_vehicles', []));
+    const tracked = trackVehicleMapChanges(vehicles, previous, incoming, actorName);
+    if (tracked.some((vehicle, index) => vehicle !== vehicles[index])) {
+      await putState(client, 'mahaffeys_pull_yard_vehicles', tracked, actorId ?? null);
+    }
+    return incoming;
+  }
   if (key === 'mahaffeys_shipments') {
     await lockFinancialState(client);
     if (!Array.isArray(incoming) || incoming.some(row => !row || typeof row.id !== 'string') || new Set(incoming.map(row => row.id)).size !== incoming.length) throw createError({statusCode:400,statusMessage:'Shipments require uniquely identified records'});

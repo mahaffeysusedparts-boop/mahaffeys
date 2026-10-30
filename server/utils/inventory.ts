@@ -69,6 +69,8 @@ const vehicleFromTicket = (ticket: Ticket): PullYardVehicle | null => {
     fuelType: car.fuelType,
     dateSetInYard: ticket.createdAt,
     status: car.yardStatus || "PENDING",
+    holdUntil: car.holdUntil,
+    holdOverride: car.holdOverride,
     partsRemaining: ["Engine Assembly", "Transmission", "Doors", "Wheels", "Headlights", "Fenders"],
     photoUrl: car.photoUrl || ticket.complianceCaptures?.vehiclePhotoUrl,
     purchasePrice: car.purchasePrice ?? ticket.finalPayout,

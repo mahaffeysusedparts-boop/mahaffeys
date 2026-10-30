@@ -14,6 +14,7 @@ import { TimeTravelSlider } from "./TimeTravelSlider";
 import { CloudOff, Crosshair, Eye, Loader2, Maximize2, Minus, MousePointer2, Plus, Ruler, RotateCcw, Save, Users, X } from "lucide-react";
 import { toast } from "sonner";
 import { useConfirm } from "@/hooks/useConfirm";
+import { useSearchParams } from 'react-router-dom';
 
 const CANVAS_WIDTH = 2400;
 const CANVAS_HEIGHT = 1500;
@@ -36,6 +37,8 @@ interface InteractiveYardMapProps { bays: YardBayLocation[]; vehicles: PullYardV
 export function InteractiveYardMap({ bays, vehicles, metals }: InteractiveYardMapProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const skipNextSaveRef = useRef(false);
+  const [searchParams] = useSearchParams();
+  const locatedVehicle = useRef('');
   const [items, setItems] = useState<YardMapItem[]>(() => storageService.getYardLayout());
   const [syncStatus, setSyncStatus] = useState<ConnectionStatus>(() => sharedStorage.getStatus());
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -217,6 +220,13 @@ export function InteractiveYardMap({ bays, vehicles, metals }: InteractiveYardMa
     setFlashId(id);
     window.setTimeout(() => setFlashId((current) => current === id ? null : current), 1600);
   };
+
+  useEffect(() => {
+    const id = searchParams.get('vehicle');
+    if (!id || locatedVehicle.current === id) return;
+    const marker = displayItems.find(item => item.linkedEntityType === 'VEHICLE' && item.linkedEntityId === id);
+    if (marker && viewportRef.current) { locatedVehicle.current = id; handleLocate(marker.id); }
+  }, [displayItems, searchParams]);
 
   const visibleItems = useMemo(() => {
     const needle = query.trim().toLowerCase();

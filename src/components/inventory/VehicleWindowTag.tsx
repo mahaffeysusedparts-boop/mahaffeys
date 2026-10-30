@@ -6,6 +6,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import { format } from 'date-fns';
 import { Button } from '@/components/ui/button';
 import { Printer } from 'lucide-react';
+import { vehiclePublicUrl } from '@/utils/vehicleRecords';
 
 interface VehicleWindowTagProps {
   vehicle: PullYardVehicle;
@@ -18,10 +19,10 @@ export const VehicleWindowTag: React.FC<VehicleWindowTagProps> = ({ vehicle, yar
     window.print();
   };
 
-  const vehicleUrl = `${publicUrl}/vehicles?vin=${vehicle.vin}`;
+  const vehicleUrl = vehiclePublicUrl(vehicle.vin, publicUrl);
 
   return (
-    <div className="p-4 bg-gray-100">
+    <div className="rounded-2xl p-4 bg-gray-100 text-slate-900">
       <div className="printable-area bg-white p-6 max-w-md mx-auto border-4 border-black border-dashed">
         <div className="text-center mb-4">
           <h1 className="text-3xl font-bold uppercase">{yardName}</h1>
@@ -56,7 +57,7 @@ export const VehicleWindowTag: React.FC<VehicleWindowTagProps> = ({ vehicle, yar
         <div className="mt-2 text-center text-sm">
           <p>Date Set: {format(new Date(vehicle.dateSetInYard), 'MM/dd/yyyy')}</p>
           <p className="font-mono text-xs mt-1">VIN: {vehicle.vin}</p>
-          <p className="mt-2 font-semibold">Scan QR code for part interchange info.</p>
+          <p className="mt-2 font-semibold">Scan for vehicle details, location, and parts availability.</p>
         </div>
       </div>
       <div className="mt-4 text-center non-printable">

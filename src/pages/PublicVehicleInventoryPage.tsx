@@ -1,7 +1,7 @@
 "use client";
 
 import { lazy, memo, Suspense, useCallback, useDeferredValue, useEffect, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, Navigate, useSearchParams } from "react-router-dom";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -68,6 +68,7 @@ const VehicleCard = memo(({ vehicle, onInterchangeClick }: { vehicle: PullYardVe
             <Clock className="h-3.5 w-3.5" /> Awaiting yard processing
           </p>
         ) : null}
+        <Button asChild className="w-full rounded-xl bg-sky-700 font-bold text-white hover:bg-sky-600"><Link to={`/inventory/vehicle/${encodeURIComponent(vehicle.vin)}`}>Vehicle details & availability</Link></Button>
         <Button variant="outline" className="w-full rounded-xl" onClick={() => onInterchangeClick(vehicle)}>
           <Wrench className="mr-2 h-4 w-4" /> Find Interchangeable Parts
         </Button>
@@ -130,6 +131,9 @@ export default function PublicVehicleInventoryPage() {
       });
     return () => controller.abort();
   }, [deferredSearchTerm, page, refreshToken, sortBy, statusFilter, updateQuery]);
+
+  const tagVin = searchParams.get('vin');
+  if (tagVin) return <Navigate to={`/inventory/vehicle/${encodeURIComponent(tagVin)}`} replace />;
 
   return (
     <div className="flex min-h-screen flex-col bg-slate-50 dark:bg-slate-900">

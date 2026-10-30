@@ -78,7 +78,10 @@ export default defineHandler(async (event) => {
     .map((row) => row.updated_at instanceof Date ? row.updated_at.toISOString() : String(row.updated_at))
     .sort()
     .at(-1) || null;
-  const publicItems = response.items.map(({ purchasePrice: _purchasePrice, notes: _notes, originSource: _originSource, sourceTicketId: _sourceTicketId, ...vehicle }) => vehicle);
+  const publicItems = response.items.map(({ purchasePrice: _purchasePrice, notes: _notes, originSource: _originSource, sourceTicketId: _sourceTicketId, history: _history, vehicleRevision: _revision, partChecks, ...vehicle }) => ({
+    ...vehicle,
+    partChecks: partChecks?.map(({ name, status, checkedAt }) => ({ name, status, checkedAt, checkedBy: 'Yard staff' })),
+  }));
 
   setResponseHeader(event, "Cache-Control", "no-store");
   return { ...response, items: publicItems, updatedAt };

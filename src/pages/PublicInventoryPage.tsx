@@ -51,6 +51,8 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
+import { vehicleParts } from '@/utils/vehicleRecords';
+import { PartStatusBadge } from '@/components/inventory/VehiclePartsPanel';
 
 const PartsInterchangeModal = lazy(() =>
   import("@/components/inventory/PartsInterchangeModal").then((module) => ({
@@ -409,7 +411,7 @@ export default function PublicInventoryPage() {
                   <Select value={partFilter} onValueChange={(value) => updateQuery({ part: value, page: null })}>
                     <SelectTrigger className="h-12 rounded-xl border-slate-700 bg-slate-900 text-white"><SelectValue placeholder="All components" /></SelectTrigger>
                     <SelectContent className="border-slate-700 bg-slate-900 text-white">
-                      <SelectItem value="ALL">All Available Components</SelectItem><SelectItem value="Engine">Engine / Short Block</SelectItem><SelectItem value="Transmission">Transmission</SelectItem><SelectItem value="Doors">Doors & Panels</SelectItem><SelectItem value="Wheels">Alloy Wheels & Rims</SelectItem><SelectItem value="Headlights">Headlights / Lenses</SelectItem><SelectItem value="Fenders">Fenders / Body</SelectItem>
+                      <SelectItem value="ALL">All Listed Components</SelectItem><SelectItem value="Engine">Engine / Short Block</SelectItem><SelectItem value="Transmission">Transmission</SelectItem><SelectItem value="Doors">Doors & Panels</SelectItem><SelectItem value="Wheels">Alloy Wheels & Rims</SelectItem><SelectItem value="Headlights">Headlights / Lenses</SelectItem><SelectItem value="Fenders">Fenders / Body</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -427,7 +429,7 @@ export default function PublicInventoryPage() {
             <div className="grid grid-cols-[1.2fr_1fr_1fr_auto] gap-3">
               <div className="relative"><Search className="absolute left-3 top-3 size-4 text-slate-500" /><Input placeholder="Search year, make, model, or VIN" value={search} onChange={(event) => updateQuery({ search: event.target.value, page: null })} className="h-10 border-slate-800 bg-slate-950 pl-9 text-xs text-white" /></div>
               <Select value={selectedSection} onValueChange={(value) => updateQuery({ section: value, page: null })}><SelectTrigger className="h-10 border-slate-800 bg-slate-950 text-xs text-white"><SelectValue placeholder="All Yard Sections" /></SelectTrigger><SelectContent className="border-slate-800 bg-slate-900 text-xs text-white"><SelectItem value="ALL">All Yard Sections</SelectItem><SelectItem value="Domestic Trucks & SUVs">Domestic Trucks & SUVs</SelectItem><SelectItem value="Ford & Lincoln">Ford & Lincoln</SelectItem><SelectItem value="GM & Chevrolet">GM & Chevrolet</SelectItem><SelectItem value="Asian Imports">Asian Imports</SelectItem><SelectItem value="Chrysler & Dodge">Chrysler & Dodge</SelectItem><SelectItem value="European">European</SelectItem></SelectContent></Select>
-              <Select value={partFilter} onValueChange={(value) => updateQuery({ part: value, page: null })}><SelectTrigger className="h-10 border-slate-800 bg-slate-950 text-xs text-white"><SelectValue placeholder="All components" /></SelectTrigger><SelectContent className="border-slate-800 bg-slate-900 text-xs text-white"><SelectItem value="ALL">All Available Components</SelectItem><SelectItem value="Engine">Engine / Short Block</SelectItem><SelectItem value="Transmission">Transmission</SelectItem><SelectItem value="Doors">Doors & Panels</SelectItem><SelectItem value="Wheels">Alloy Wheels & Rims</SelectItem><SelectItem value="Headlights">Headlights / Lenses</SelectItem><SelectItem value="Fenders">Fenders / Body</SelectItem></SelectContent></Select>
+              <Select value={partFilter} onValueChange={(value) => updateQuery({ part: value, page: null })}><SelectTrigger className="h-10 border-slate-800 bg-slate-950 text-xs text-white"><SelectValue placeholder="All components" /></SelectTrigger><SelectContent className="border-slate-800 bg-slate-900 text-xs text-white"><SelectItem value="ALL">All Listed Components</SelectItem><SelectItem value="Engine">Engine / Short Block</SelectItem><SelectItem value="Transmission">Transmission</SelectItem><SelectItem value="Doors">Doors & Panels</SelectItem><SelectItem value="Wheels">Alloy Wheels & Rims</SelectItem><SelectItem value="Headlights">Headlights / Lenses</SelectItem><SelectItem value="Fenders">Fenders / Body</SelectItem></SelectContent></Select>
               <Button type="button" variant="outline" onClick={clearFilters} disabled={!activeFilterCount} className="h-10 rounded-xl border-slate-700 bg-slate-950 px-5 text-xs font-black text-slate-200 hover:bg-slate-800">Clear filters</Button>
             </div>
           </CardContent>
@@ -642,20 +644,13 @@ export default function PublicInventoryPage() {
                       {/* Available Parts checklist */}
                       <div className="space-y-1.5">
                         <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
-                          {veh.status === "CRUSHED" ? "Component availability" : `Intact Components (${veh.partsRemaining.length}):`}
+                          Component availability
                         </span>
                         {veh.status === "CRUSHED" ? (
                           <p className="text-xs font-semibold text-rose-300">This vehicle is no longer available for parts.</p>
                         ) : (
-                          <div className="flex flex-wrap gap-1">
-                            {veh.partsRemaining.map((part, i) => (
-                              <span
-                                key={i}
-                                className="text-[10px] px-2 py-0.5 rounded bg-slate-950 text-slate-300 border border-slate-800 font-mono"
-                              >
-                                {part}
-                              </span>
-                            ))}
+                          <div className="flex flex-wrap gap-2">
+                            {vehicleParts(veh).map(part => <div key={part.name.toLowerCase()} className="flex flex-wrap items-center gap-1 rounded-xl border border-slate-700 bg-slate-900 p-2"><span className="text-[10px] font-bold text-slate-100">{part.name}</span><PartStatusBadge status={part.status} /></div>)}
                           </div>
                         )}
                       </div>

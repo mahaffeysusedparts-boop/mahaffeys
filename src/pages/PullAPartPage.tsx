@@ -70,8 +70,22 @@ import {
 } from "lucide-react";
 import { BulkVehicleUploadModal } from "@/components/inventory/BulkVehicleUploadModal";
 import { toast } from "sonner";
+import { Link, useSearchParams } from 'react-router-dom';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { fetchYardVehicles } from '@/services/vehicleRecordService';
+import { VehicleScannerDialog } from '@/components/inventory/VehicleScannerDialog';
+import { BulkVehicleActionsDialog } from '@/components/inventory/BulkVehicleActionsDialog';
+import { VehicleWindowTag } from '@/components/inventory/VehicleWindowTag';
 
 export default function PullAPartPage() {
+  const queryClient = useQueryClient();
+  const yardQuery = useQuery({ queryKey: ['yard-vehicles'], queryFn: fetchYardVehicles, refetchInterval: 10000 });
+  const [searchParams] = useSearchParams();
+  const openedRecord = useRef('');
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [bulkTargets, setBulkTargets] = useState<PullYardVehicle[] | null>(null);
+  const [bulkLoading, setBulkLoading] = useState(false);
   const [vehicles, setVehicles] = useState<PullYardVehicle[]>([]);
   const [parts, setParts] = useState<PullPartItem[]>([]);
   const [cores, setCores] = useState<CoreReturnLog[]>([]);
@@ -154,7 +168,13 @@ export default function PullAPartPage() {
 
   useEffect(() => {
     loadData();
-  }, []);
+    return storageService.subscribe('mahaffeys_pull_yard_vehicles', () => {
+      setVehicles(storageService.getPullYardVehicles());
+      void queryClient.invalidateQueries({ queryKey: ['yard-vehicles'] });
+    });
+  }, [queryClient]);
+
+  useEffect(() => { if (yardQuery.data) setVehicles(yardQuery.data); }, [yardQuery.data]);
 
   const handleOpenAddVeh = () => {
     setEditingVeh(null);
@@ -254,6 +274,7 @@ export default function PullAPartPage() {
     const partsList = vehParts.split(",").map((s) => s.trim()).filter(Boolean);
 
     const vehObj: PullYardVehicle = {
+      ...editingVeh,
       id: editingVeh ? editingVeh.id : `veh-${Date.now()}`,
       section: vehSection,
       year: vehYear,
@@ -263,7 +284,7 @@ export default function PullAPartPage() {
       vin: vehVin.toUpperCase().trim() || `NO-VIN-${Math.floor(1000 + Math.random() * 9000)}`,
       dateSetInYard: editingVeh ? editingVeh.dateSetInYard : new Date().toISOString(),
       status: vehStatus,
-      partsRemaining: partsList.length > 0 ? partsList : ["Body Shell"],
+      partsRemaining: partsList,
       purchasePrice: vehPurchasePrice,
       originSource: vehOriginSource.trim() || undefined,
       notes: vehNotes.trim() || undefined,
@@ -377,6 +398,7 @@ export default function PullAPartPage() {
 
   const handleConfirmRemoveVehicle = () => {
     if (!deletingVehicle) return;
+    storageService.markVehicleRemoved(deletingVehicle.id);
     storageService.removePullYardVehicle(deletingVehicle.id);
     loadData();
     toast.success(`Removed ${deletingVehicle.year} ${deletingVehicle.make} ${deletingVehicle.model} from database`);
@@ -464,6 +486,34 @@ export default function PullAPartPage() {
   const pendingCount = vehicles.filter((v) => v.status === "PENDING").length;
   const crushedCount = vehicles.filter((v) => v.status === "CRUSHED").length;
 
+  useEffect(() => {
+    const id = searchParams.get('vehicle');
+    const action = searchParams.get('action');
+    const vehicle = vehicles.find(row => row.id === id);
+    const key = `${id}:${action}`;
+    if (!vehicle || openedRecord.current === key) return;
+    openedRecord.current = key;
+    if (action === 'log') handleOpenPullLog(vehicle);
+    else if (action === 'edit') handleOpenEditVeh(vehicle);
+  }, [vehicles, searchParams]);
+
+  const toggleSelection = (id: string, checked: boolean) => setSelectedIds(current => {
+    if (!checked) return current.filter(value => value !== id);
+    if (current.includes(id)) return current;
+    if (current.length >= 500) { toast.error('Select at most 500 vehicles per batch'); return current; }
+    return [...current, id];
+  });
+  const openBulkActions = async () => {
+    setBulkLoading(true);
+    try {
+      const latest = await fetchYardVehicles();
+      const targets = latest.filter(vehicle => selectedIds.includes(vehicle.id));
+      if (targets.length !== selectedIds.length) throw new Error('A selected vehicle is no longer in inventory. Clear the selection and select vehicles again.');
+      setBulkTargets(targets);
+    } catch (reason) { toast.error(reason instanceof Error ? reason.message : 'Could not load a fresh bulk preview'); }
+    finally { setBulkLoading(false); }
+  };
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
       <Navbar />
@@ -501,6 +551,7 @@ export default function PullAPartPage() {
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
+            <Button onClick={() => setScannerOpen(true)} className="rounded-xl bg-sky-600 text-xs font-bold text-white hover:bg-sky-700"><Scan className="mr-1.5 size-4" /> Scan vehicle tag</Button>
             <Button
               onClick={() => setInterchangeModalOpen(true)}
               className="bg-purple-600 hover:bg-purple-500 text-white font-extrabold text-xs gap-1.5 shadow-md"
@@ -638,6 +689,8 @@ export default function PullAPartPage() {
 
           {/* TAB 1: VEHICLE YARD WORKSTATION & DISMANTLING TABLE */}
           <TabsContent value="finder" className="space-y-4">
+            {yardQuery.isError && <p role="alert" className="rounded-xl border border-rose-700 bg-rose-950 p-3 text-sm text-rose-200">Live vehicle inventory could not load: {yardQuery.error.message}. Showing cached records. Bulk updates require a fresh server preview.</p>}
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-sky-700 bg-sky-950 px-4 py-3"><div><p className="text-sm font-bold text-sky-100">{selectedIds.length ? `${selectedIds.length} vehicles selected` : 'Select vehicles to move or update together'}</p><p className="mt-1 text-xs text-sky-200">Selections are kept across filters. Open any vehicle name for its history and component checks.</p></div><div className="flex gap-2">{selectedIds.length > 0 && <Button variant="outline" onClick={() => setSelectedIds([])} className="rounded-xl border-sky-600 bg-sky-900 text-xs text-white hover:bg-sky-800 hover:text-white">Clear selection</Button>}<Button disabled={!selectedIds.length || bulkLoading} onClick={() => void openBulkActions()} className="rounded-xl bg-sky-600 text-xs font-bold text-white hover:bg-sky-700"><Layers3 className="mr-1.5 size-4" />{bulkLoading ? 'Loading fresh records…' : 'Bulk move / update'}</Button></div></div>
             <Card className="bg-slate-900 border-slate-800 text-white overflow-hidden shadow-xl">
               <CardHeader className="py-4 px-6 bg-slate-950/60 border-b border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div className="flex flex-wrap items-center gap-2">
@@ -696,6 +749,7 @@ export default function PullAPartPage() {
                 <Table>
                   <TableHeader className="bg-slate-950">
                     <TableRow className="border-slate-800 text-xs">
+                      <TableHead className="w-10"><Checkbox aria-label="Select all matching vehicles" checked={filteredVehicles.length > 0 && filteredVehicles.every(vehicle => selectedIds.includes(vehicle.id)) ? true : filteredVehicles.some(vehicle => selectedIds.includes(vehicle.id)) ? 'indeterminate' : false} onCheckedChange={checked => { if (checked === true) { const next = [...new Set([...selectedIds, ...filteredVehicles.map(vehicle => vehicle.id)])]; if (next.length > 500) toast.error('Select at most 500 vehicles per batch; narrow the filter first'); else setSelectedIds(next); } else setSelectedIds(current => current.filter(id => !filteredVehicles.some(vehicle => vehicle.id === id))); }} className="border-slate-400 data-[state=checked]:bg-sky-600" /></TableHead>
                       <TableHead className="text-slate-400">Photo</TableHead>
                       <TableHead className="text-slate-400">Yard Section</TableHead>
                       <TableHead className="text-slate-400">Vehicle Specs & VIN</TableHead>
@@ -709,14 +763,14 @@ export default function PullAPartPage() {
                   <TableBody>
                     {filteredVehicles.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={8} className="text-center py-10 text-slate-500 text-xs font-sans">
-                          No vehicles found matching search and status filter.
+                        <TableCell colSpan={9} className="text-center py-10 text-slate-500 text-xs font-sans">
+                          {yardQuery.isPending ? 'Loading vehicle records…' : 'No vehicles found matching search and status filter.'}
                         </TableCell>
                       </TableRow>
                     ) : (
                       filteredVehicles.map((v) => (
-                        <TableRow key={v.id} className="border-slate-800 hover:bg-slate-800/40 text-xs font-mono">
-                          
+                        <TableRow key={v.id} className={`border-slate-800 hover:bg-slate-800/40 text-xs font-mono ${selectedIds.includes(v.id) ? 'bg-sky-950/50' : ''}`}>
+                          <TableCell><Checkbox aria-label={`Select ${v.year} ${v.make} ${v.model}, VIN ${v.vin}`} checked={selectedIds.includes(v.id)} onCheckedChange={checked => toggleSelection(v.id, checked === true)} className="border-slate-400 data-[state=checked]:bg-sky-600" /></TableCell>
                           {/* Photo Thumbnail */}
                           <TableCell className="w-16 p-2">
                             <div className="w-12 h-10 rounded-lg bg-slate-950 overflow-hidden border border-slate-800 shrink-0 flex items-center justify-center">
@@ -735,7 +789,7 @@ export default function PullAPartPage() {
 
                           {/* Specs & VIN */}
                           <TableCell className="font-sans">
-                            <span className="font-bold text-white block">{v.year} {v.make} {v.model}</span>
+                            <Link to={`/yard-vehicles/${encodeURIComponent(v.id)}`} className="block rounded-md font-bold text-sky-200 underline-offset-4 hover:underline">{v.year} {v.make} {v.model}</Link>
                             <span className="text-[10px] text-slate-400 font-mono">{v.vin}</span>
                             {(() => {
                               const hold = holdStatus(
@@ -856,7 +910,8 @@ export default function PullAPartPage() {
                               variant="ghost"
                               onClick={() => setSelectedVehForTicket(v)}
                               className="h-7 w-7 p-0 text-amber-400 hover:text-amber-300 hover:bg-slate-800"
-                              title="Print Yard Pass"
+                              title="Print vehicle QR window tag"
+                              aria-label={`Print QR tag for ${v.year} ${v.make} ${v.model}`}
                             >
                               <Printer className="w-3.5 h-3.5" />
                             </Button>
@@ -1149,7 +1204,7 @@ export default function PullAPartPage() {
             </div>
 
             <div>
-              <Label className="text-slate-300">Remaining Parts List (Comma Separated)</Label>
+              <Label className="text-slate-300">Listed Components (Comma Separated · Not Verified)</Label>
               <Input
                 value={vehParts}
                 onChange={(e) => setVehParts(e.target.value)}
@@ -1259,6 +1314,10 @@ export default function PullAPartPage() {
         </AlertDialogContent>
       </AlertDialog>
 
+      <VehicleScannerDialog open={scannerOpen} onOpenChange={setScannerOpen} />
+      {bulkTargets && <BulkVehicleActionsDialog vehicles={bulkTargets} onClose={() => setBulkTargets(null)} onSaved={() => { setSelectedIds([]); void queryClient.invalidateQueries({ queryKey: ['yard-vehicles'] }); }} />}
+      <Dialog open={!!selectedVehForTicket} onOpenChange={open => { if (!open) setSelectedVehForTicket(null); }}><DialogContent className="max-h-[90dvh] overflow-y-auto rounded-3xl border-slate-700 bg-slate-900 text-white"><DialogHeader><DialogTitle>Vehicle window tag</DialogTitle><DialogDescription className="text-slate-300">Scan for vehicle details, yard location, parts availability, and staff actions.</DialogDescription></DialogHeader>{selectedVehForTicket && <VehicleWindowTag vehicle={selectedVehForTicket} yardName={storageService.getSettings().yardName} publicUrl={window.location.origin} />}</DialogContent></Dialog>
+      <Dialog open={!!logVehicle} onOpenChange={open => { if (!open) setLogVehicle(null); }}><DialogContent className="rounded-3xl border-slate-700 bg-slate-900 text-white"><DialogHeader><DialogTitle>Dismantling & fluid log</DialogTitle><DialogDescription className="text-slate-300">{logVehicle?.year} {logVehicle?.make} {logVehicle?.model} · Record cumulative removed quantities. Changes are included in vehicle history.</DialogDescription></DialogHeader><div className="grid gap-4 sm:grid-cols-2"><div className="space-y-2"><Label htmlFor="removed-cats">Catalytic converters removed</Label><Input id="removed-cats" type="number" min={0} step={1} value={catsRemoved} onChange={event => setCatsRemoved(Number(event.target.value))} className="rounded-xl border-slate-600 bg-slate-800" /></div><div className="space-y-2"><Label htmlFor="removed-wheels">Wheels removed</Label><Input id="removed-wheels" type="number" min={0} max={8} step={1} value={wheelsRemoved} onChange={event => setWheelsRemoved(Number(event.target.value))} className="rounded-xl border-slate-600 bg-slate-800" /></div><div className="flex items-center gap-2"><Checkbox id="gas-drained" checked={gasDrained} onCheckedChange={checked => setGasDrained(checked === true)} className="border-slate-400 data-[state=checked]:bg-emerald-600" /><Label htmlFor="gas-drained">Gas drained</Label></div><div className="flex items-center gap-2"><Checkbox id="oil-drained" checked={oilDrained} onCheckedChange={checked => setOilDrained(checked === true)} className="border-slate-400 data-[state=checked]:bg-emerald-600" /><Label htmlFor="oil-drained">Oil drained</Label></div><div className="space-y-2 sm:col-span-2"><Label htmlFor="processor-log-notes">Processor notes</Label><Textarea id="processor-log-notes" value={processorNotes} onChange={event => setProcessorNotes(event.target.value)} className="rounded-xl border-slate-600 bg-slate-800" /></div></div><p className="text-xs text-slate-300">For availability of a whole component or wheel set, open the vehicle record and record a component check.</p><DialogFooter><Button variant="outline" onClick={() => setLogVehicle(null)} className="rounded-xl border-slate-600 bg-slate-800 text-white hover:bg-slate-700 hover:text-white">Cancel</Button><Button onClick={() => handleSavePullLog(false)} className="rounded-xl bg-sky-600 text-white hover:bg-sky-700">Save log</Button>{logVehicle?.status === 'PENDING' && <Button onClick={() => handleSavePullLog(true)} className="rounded-xl bg-emerald-600 text-white hover:bg-emerald-700">Save & make available</Button>}</DialogFooter></DialogContent></Dialog>
       {/* Parts Interchange Search Modal */}
       <PartsInterchangeModal
         isOpen={interchangeModalOpen}

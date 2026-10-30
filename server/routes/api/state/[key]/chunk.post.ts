@@ -94,13 +94,13 @@ export default defineHandler(async (event) => {
     }
 
     const now = new Date();
-    value = await protectFinancialState(client,key,value,user.role,user.fullName);
+    value = await protectFinancialState(client,key,value,user.role,user.fullName,user.id);
     await client.query(`
       INSERT INTO app_state (key, value, updated_at, updated_by) VALUES ($1, $2::jsonb, $3, $4)
       ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at, updated_by = EXCLUDED.updated_by
     `, [key, JSON.stringify(value), now, user.id]);
     await client.query("DELETE FROM state_upload_chunks WHERE upload_id = $1", [body.uploadId]);
 
-    return { ok: true, complete: true, updatedAt: now.toISOString() };
+    return { ok: true, complete: true, updatedAt: now.toISOString(), ...(key === 'mahaffeys_pull_yard_vehicles' ? { value } : {}) };
   });
 });
