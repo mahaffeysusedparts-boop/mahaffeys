@@ -1,6 +1,7 @@
 import { defineHandler } from "nitro";
 import { requireAdmin } from "../../../utils/auth";
 import { query } from "../../../utils/db";
+import { isLocalPreview } from "../../../utils/databaseMode";
 
 // Photo integrity audit: compares every /api/uploads/<uuid> referenced by the
 // shared records (app_state) against the media_uploads table of the database
@@ -40,13 +41,15 @@ export default defineHandler(async (event) => {
   const totals = await query<{ count: string }>("SELECT COUNT(*)::text AS count FROM media_uploads");
 
   // Report only host + database name — never credentials.
-  let connectedHost = "unknown";
-  let connectedDatabase = "unknown";
-  try {
-    const url = new URL(process.env.NITRO_DATABASE_URL || process.env.DATABASE_URL || "");
-    connectedHost = url.host || "unknown";
-    connectedDatabase = url.pathname.replace(/^\//, "") || "postgres";
-  } catch { /* keep defaults */ }
+  let connectedHost = isLocalPreview() ? "this computer" : "unknown";
+  let connectedDatabase = isLocalPreview() ? "local-preview" : "unknown";
+  if (!isLocalPreview()) {
+    try {
+      const url = new URL(process.env.NITRO_DATABASE_URL || process.env.DATABASE_URL || "");
+      connectedHost = url.host || "unknown";
+      connectedDatabase = url.pathname.replace(/^\//, "") || "postgres";
+    } catch { /* keep defaults */ }
+  }
 
   return {
     connectedHost,

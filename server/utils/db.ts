@@ -1,23 +1,47 @@
 import { Pool, type PoolClient, type QueryResultRow } from "pg";
+import { mkdir } from 'node:fs/promises';
+import { join } from 'node:path';
+import type { PGlite } from '@electric-sql/pglite';
 import { buyingPriceSchema } from './buyingPriceSchema';
+import { isLocalPreview, localPreviewDirectory } from './databaseMode';
 
-let pool: Pool | undefined;
+let pool: Promise<Pool> | undefined;
+let embedded: PGlite | undefined;
 let schemaReady: Promise<void> | undefined;
 
-function getPool() {
-  if (pool) return pool;
-
-  const connectionString = process.env.NITRO_DATABASE_URL || process.env.DATABASE_URL;
-  if (!connectionString) {
-    throw new Error("NITRO_DATABASE_URL is required. Point it to the local PostgreSQL Mahaffeys database.");
-  }
-
-  pool = new Pool({ connectionString, max: 10 });
+function getPool(): Promise<Pool> {
+  if (!pool) pool = createPool();
   return pool;
 }
 
+async function createPool() {
+  if (isLocalPreview()) {
+    const { PGlite } = await import('@electric-sql/pglite');
+    const { createPgConfig } = await import('@electric-sql/pglite/node-postgres');
+    await mkdir(localPreviewDirectory(), { recursive: true });
+    embedded = await PGlite.create(join(localPreviewDirectory(), 'database'));
+    console.log('[storage] Local preview data stays on this computer; external database URLs are ignored.');
+    return new Pool({ ...createPgConfig(embedded), max: 1, idleTimeoutMillis: 0 });
+  }
+
+  const connectionString = process.env.NITRO_DATABASE_URL || process.env.DATABASE_URL;
+  if (!connectionString) {
+    throw new Error("NITRO_DATABASE_URL is required for production. Development previews use local storage automatically.");
+  }
+  return new Pool({ connectionString, max: 10 });
+}
+
+export async function closeDatabase() {
+  if (pool) await (await pool).end();
+  if (embedded) await embedded.close();
+  pool = undefined;
+  embedded = undefined;
+  schemaReady = undefined;
+}
+
 async function initializeSchema() {
-  await getPool().query(`
+  const database = await getPool();
+  await database.query(`
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
       full_name TEXT NOT NULL,
@@ -196,9 +220,9 @@ async function initializeSchema() {
     CREATE INDEX IF NOT EXISTS network_printers_kind_idx ON network_printers (kind);
   `);
 
-  await getPool().query(buyingPriceSchema);
+  await database.query(buyingPriceSchema);
 
-  await getPool().query(`
+  await database.query(`
     INSERT INTO customers (
       id, full_name, phone, id_type, id_number, id_state, address,
       vehicle_license_plate, vehicle_state, notes, created_at,

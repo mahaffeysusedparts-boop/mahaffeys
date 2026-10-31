@@ -20,6 +20,9 @@ importers:
       '@capacitor/ios':
         specifier: 7.4.4
         version: 7.4.4(@capacitor/core@7.4.4)
+      '@electric-sql/pglite':
+        specifier: 0.5.13
+        version: 0.5.13
       '@hookform/resolvers':
         specifier: ^3.9.0
         version: 3.10.0(react-hook-form@7.55.0(react@19.2.8))
@@ -154,7 +157,7 @@ importers:
         version: 0.4.6(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       nitro:
         specifier: ^3.0.260610-beta
-        version: 3.0.260610-beta(idb-keyval@6.3.0)(jiti@2.7.0)(lru-cache@11.5.2)(vite@8.0.10(@types/node@22.14.1)(esbuild@0.27.7)(jiti@2.7.0)(yaml@2.7.1))(xml2js@0.6.2)
+        version: 3.0.260610-beta(@electric-sql/pglite@0.5.13)(idb-keyval@6.3.0)(jiti@2.7.0)(lru-cache@11.5.2)(vite@8.0.10(@types/node@22.14.1)(esbuild@0.27.7)(jiti@2.7.0)(yaml@2.7.1))(xml2js@0.6.2)
       pg:
         specifier: ^8.16.3
         version: 8.23.0
@@ -381,6 +384,9 @@ packages:
     resolution: {integrity: sha512-x5HbnFS3P+igQrCD8r3ZzyLwSZcgORN/ni9QRqlDeGGJK2egTCWsGtdUyYNUZW3oRPHkAifhXTJKWLs1tk8+8A==}
     peerDependencies:
       vite: ^3.0.0 || ^4.0.0 || ^5.0.0 || ^6.0.0 || ^7.0.0 || ^8.0.0
+
+  '@electric-sql/pglite@0.5.13':
+    resolution: {integrity: sha512-4rZuxK1k07w6sSpJzjMri0B9+HuXuC7V9pxVB51pR0T9KPqXg6TD0mdaEwBA9rkcL4jdht4tGDf/wYzAiGhT7g==}
 
   '@emnapi/core@1.10.0':
     resolution: {integrity: sha512-yq6OkJ4p82CAfPl0u9mQebQHKPJkY7WrIuk205cTYnYe+k2Z8YBh11FrbRG/H6ihirqcacOgl2BIO8oyMQLeXw==}
@@ -4375,6 +4381,8 @@ snapshots:
       magic-string: 0.30.17
       vite: 8.0.10(@types/node@22.14.1)(esbuild@0.27.7)(jiti@2.7.0)(yaml@2.7.1)
 
+  '@electric-sql/pglite@0.5.13': {}
+
   '@emnapi/core@1.10.0':
     dependencies:
       '@emnapi/wasi-threads': 1.2.1
@@ -6159,7 +6167,9 @@ snapshots:
 
   date-fns@4.1.0: {}
 
-  db0@0.3.4: {}
+  db0@0.3.4(@electric-sql/pglite@0.5.13):
+    optionalDependencies:
+      '@electric-sql/pglite': 0.5.13
 
   debug@4.4.0(supports-color@7.2.0):
     dependencies:
@@ -6994,11 +7004,11 @@ snapshots:
 
   nf3@0.3.23: {}
 
-  nitro@3.0.260610-beta(idb-keyval@6.3.0)(jiti@2.7.0)(lru-cache@11.5.2)(vite@8.0.10(@types/node@22.14.1)(esbuild@0.27.7)(jiti@2.7.0)(yaml@2.7.1))(xml2js@0.6.2):
+  nitro@3.0.260610-beta(@electric-sql/pglite@0.5.13)(idb-keyval@6.3.0)(jiti@2.7.0)(lru-cache@11.5.2)(vite@8.0.10(@types/node@22.14.1)(esbuild@0.27.7)(jiti@2.7.0)(yaml@2.7.1))(xml2js@0.6.2):
     dependencies:
       consola: 3.4.2
       crossws: 0.4.10(srvx@0.11.22)
-      db0: 0.3.4
+      db0: 0.3.4(@electric-sql/pglite@0.5.13)
       env-runner: 0.1.16
       h3: 2.0.1-rc.22(crossws@0.4.10(srvx@0.11.22))
       hookable: 6.1.1
@@ -7009,7 +7019,7 @@ snapshots:
       rolldown: 1.2.3
       srvx: 0.11.22
       unenv: 2.0.0-rc.24
-      unstorage: 2.0.0-alpha.7(db0@0.3.4)(idb-keyval@6.3.0)(lru-cache@11.5.2)(ofetch@2.0.0-alpha.3)
+      unstorage: 2.0.0-alpha.7(db0@0.3.4(@electric-sql/pglite@0.5.13))(idb-keyval@6.3.0)(lru-cache@11.5.2)(ofetch@2.0.0-alpha.3)
     optionalDependencies:
       jiti: 2.7.0
       vite: 8.0.10(@types/node@22.14.1)(esbuild@0.27.7)(jiti@2.7.0)(yaml@2.7.1)
@@ -7869,9 +7879,9 @@ snapshots:
 
   unpipe@1.0.0: {}
 
-  unstorage@2.0.0-alpha.7(db0@0.3.4)(idb-keyval@6.3.0)(lru-cache@11.5.2)(ofetch@2.0.0-alpha.3):
+  unstorage@2.0.0-alpha.7(db0@0.3.4(@electric-sql/pglite@0.5.13))(idb-keyval@6.3.0)(lru-cache@11.5.2)(ofetch@2.0.0-alpha.3):
     optionalDependencies:
-      db0: 0.3.4
+      db0: 0.3.4(@electric-sql/pglite@0.5.13)
       idb-keyval: 6.3.0
       lru-cache: 11.5.2
       ofetch: 2.0.0-alpha.3

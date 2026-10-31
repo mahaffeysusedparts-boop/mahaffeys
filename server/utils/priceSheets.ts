@@ -5,10 +5,10 @@ import { createError, type H3Event } from 'nitro/h3';
 import { z } from 'zod';
 import { requireUser } from './auth';
 import { getDatabase, query, withTransaction } from './db';
+import { isLocalPreview } from './databaseMode';
 import { parsePriceSheetLines } from './priceSheetParser';
 import { normalizePartsPrice } from '../../src/utils/partsPriceCalculations';
 import type { PriceSheetDraft, PublishedPartsPrices, ReviewedPriceRow } from '../../src/types/priceSheets';
-import type { PoolClient } from 'pg';
 
 export const MAX_PDF_BYTES = 5*1024*1024;
 export async function priceSheetUser(event: H3Event) {
@@ -78,9 +78,26 @@ export async function extractPDF(bytes: Buffer): Promise<Array<{page:number;text
   } finally { await worker.terminate(); }
 }
 
-async function extractionSlot(client: PoolClient) {
-  const lock = await client.query('SELECT pg_try_advisory_lock(114681) AS acquired');
-  if (!lock.rows[0].acquired) throw createError({statusCode:429,statusMessage:'Another PDF is processing. Retry when its review draft is ready.'});
+let localExtractionBusy = false;
+async function withExtractionSlot<T>(callback: () => Promise<T>): Promise<T> {
+  const busy = () => createError({statusCode:429,statusMessage:'Another PDF is processing. Retry when its review draft is ready.'});
+  // The embedded store has one connection; do not hold it while extracting a PDF.
+  if (isLocalPreview()) {
+    if (localExtractionBusy) throw busy();
+    localExtractionBusy = true;
+    try { return await callback(); } finally { localExtractionBusy = false; }
+  }
+  const client = await (await getDatabase()).connect();
+  let acquired = false;
+  try {
+    const lock = await client.query('SELECT pg_try_advisory_lock(114681) AS acquired');
+    if (!lock.rows[0].acquired) throw busy();
+    acquired = true;
+    return await callback();
+  } finally {
+    if (acquired) await client.query('SELECT pg_advisory_unlock(114681)');
+    client.release();
+  }
 }
 async function processPDF(id: string,bytes: Buffer) {
   try {
@@ -97,22 +114,17 @@ async function processPDF(id: string,bytes: Buffer) {
 }
 export async function importPriceSheet(fileName: string,bytes: Buffer,userId: string) {
   if (!bytes.length || bytes.length > MAX_PDF_BYTES || bytes.subarray(0,5).toString() !== '%PDF-') throw createError({statusCode:400,statusMessage:'Upload a valid PDF, maximum 5 MB and 20 pages'});
-  const client = await (await getDatabase()).connect();
-  let acquired = false;
-  try {
-    await extractionSlot(client);acquired = true;
+  return withExtractionSlot(async () => {
     const id = randomUUID();
     await withTransaction(async (transaction) => {
       await transaction.query('INSERT INTO price_sheet_documents(id,file_name,content,byte_size,sha256,uploaded_by) VALUES($1,$2,$3,$4,$5,$6)',[id,fileName.slice(0,200),bytes,bytes.length,createHash('sha256').update(bytes).digest('hex'),userId]);
       await transaction.query("INSERT INTO price_sheet_drafts(id,status) VALUES($1,'PROCESSING')",[id]);
     });
     return await processPDF(id,bytes);
-  } finally {if(acquired)await client.query('SELECT pg_advisory_unlock(114681)');client.release();}
+  });
 }
 export async function retryPriceSheet(id: string,revision: number) {
-  const client = await (await getDatabase()).connect(); let acquired = false;
-  try {
-    await extractionSlot(client);acquired = true;
+  return withExtractionSlot(async () => {
     const bytes = await withTransaction(async (transaction) => {
       const result = await transaction.query('SELECT s.revision,s.status,d.content FROM price_sheet_drafts s JOIN price_sheet_documents d ON d.id=s.id WHERE s.id=$1 FOR UPDATE',[id]);
       const row = result.rows[0];
@@ -121,7 +133,7 @@ export async function retryPriceSheet(id: string,revision: number) {
       return row.content as Buffer;
     });
     return await processPDF(id,bytes);
-  } finally {if(acquired)await client.query('SELECT pg_advisory_unlock(114681)');client.release();}
+  });
 }
 
 export async function publicPartsPrices(): Promise<PublishedPartsPrices> {

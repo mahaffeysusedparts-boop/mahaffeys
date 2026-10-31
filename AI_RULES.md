@@ -69,3 +69,9 @@ Any package used inside `server/` (database drivers like `@neondatabase/serverle
 - Importing server-only packages or referencing server-only env vars (`process.env.DATABASE_URL`, secrets) from `src/` → wrong. The Vite client bundle is public; this leaks them. Server code lives in `server/` only.
 
 <!-- nitro:end -->
+
+## Local Preview Storage
+
+- Vite development (`NODE_ENV=development`) uses PGlite persisted in `data/local-preview/` and MUST ignore external database URLs, so previews cannot change live yard data. Production retains PostgreSQL; integration tests retain their isolated PostgreSQL path.
+- Keep local data out of Git and public assets. Preserve the single-connection transaction semantics; do not hold a connection across calls that acquire another connection.
+- See `docs/local-preview.md` for storage, backup and setup details.

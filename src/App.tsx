@@ -9,6 +9,7 @@ import { ProtectedRoute } from "./components/auth/ProtectedRoute";
 import { LoadingSpinner } from "./components/layout/LoadingSpinner";
 import { AppErrorBoundary } from "./components/common/AppErrorBoundary";
 import { OfflineBanner } from "./components/layout/OfflineBanner";
+import { LocalPreviewBanner } from "./components/layout/LocalPreviewBanner";
 import { MobileQuickActions } from "./components/layout/MobileQuickActions";
 import "./print.css";
 
@@ -65,6 +66,7 @@ const App = () => (
       <TooltipProvider>
         <Toaster />
         <Sonner position="top-right" />
+        <LocalPreviewBanner />
         <OfflineBanner />
         <BrowserRouter>
           <Suspense fallback={<LoadingSpinner />}>

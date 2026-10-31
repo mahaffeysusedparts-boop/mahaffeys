@@ -1,4 +1,4 @@
-import { apiRequest } from './apiClient';
+import { API_BASE_URL, apiRequest } from './apiClient';
 import type { PriceSheetDraft, PriceSheetHistory, PublishedPartsPrices, ReviewedPriceRow } from '@/types/priceSheets';
 
 export const priceSheetService = {
@@ -19,5 +19,5 @@ export const priceSheetService = {
   publish: (id: string,revision: number,expectedActiveVersion: string|null) => apiRequest<{version:string}>(`/api/price-sheets/${encodeURIComponent(id)}/publish`,{method:'POST',body:JSON.stringify({revision,expectedActiveVersion,reviewedWarnings:true})}),
   rollback: (version: string,expectedActiveVersion: string) => apiRequest<{version:string}>('/api/price-sheets/rollback',{method:'POST',body:JSON.stringify({version,expectedActiveVersion})}),
   publicPrices: () => apiRequest<PublishedPartsPrices>('/api/public/parts-prices',{cache:'no-cache'}),
-  originalUrl: (id: string) => `${(import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/,'')}/api/price-sheets/${encodeURIComponent(id)}/document`,
+  originalUrl: (id: string) => `${API_BASE_URL}/api/price-sheets/${encodeURIComponent(id)}/document`,
 };

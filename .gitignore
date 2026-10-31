@@ -34,3 +34,6 @@ dist-ssr
 
 # Playwright test artifacts
 /e2e-tests/fixtures/dyad/preview-dns.cjs
+
+# Private local preview records and backups
+/data/local-preview/

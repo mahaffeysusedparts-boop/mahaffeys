@@ -1,3 +1,5 @@
+import { API_BASE_URL } from './apiClient';
+
 interface UploadResponse {
   id: string;
   url: string;
@@ -5,8 +7,6 @@ interface UploadResponse {
   contentType: string;
   byteSize: number;
 }
-
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
 
 // Camera photos from modern phones are routinely 8-30 MB and get rejected with
 // HTTP 413 by the upload endpoint. Anything above this threshold is downscaled

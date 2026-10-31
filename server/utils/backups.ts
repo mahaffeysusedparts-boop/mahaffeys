@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import { withTransaction } from "./db";
 import { canonicalBackupTables } from './buyingPriceSchema';
 import { lockFinancialState } from './financialState';
+import { isLocalPreview, localPreviewDirectory } from './databaseMode';
 
 /**
  * Server-side app-state backups.
@@ -17,10 +18,11 @@ import { lockFinancialState } from './financialState';
 const BACKUP_FILE_PATTERN = /^app-state-\d{8}-\d{4}\.json$/;
 
 export function isDatabaseConfigured() {
-  return Boolean(process.env.NITRO_DATABASE_URL || process.env.DATABASE_URL);
+  return isLocalPreview() || Boolean(process.env.NITRO_DATABASE_URL || process.env.DATABASE_URL);
 }
 
 export function getBackupDir() {
+  if (isLocalPreview()) return join(localPreviewDirectory(), 'backups');
   return resolve(process.env.NITRO_BACKUP_DIR || "./data/backups");
 }
 

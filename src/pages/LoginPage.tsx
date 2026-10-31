@@ -175,7 +175,9 @@ export default function LoginPage() {
                 <Sparkles className="w-5 h-5 text-amber-400" /> Create Administrator Account
               </CardTitle>
               <CardDescription className="text-xs text-slate-400 mt-1">
-                No administrator exists in the shared PC database. Create the primary account once, then use it from every authorized device.
+                {import.meta.env.DEV
+                  ? 'Create a separate preview administrator. Your account and records stay on this computer, not the live yard server.'
+                  : 'No administrator exists in the shared PC database. Create the primary account once, then use it from every authorized device.'}
               </CardDescription>
             </CardHeader>
 
