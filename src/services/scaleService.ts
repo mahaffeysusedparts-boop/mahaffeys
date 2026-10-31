@@ -79,6 +79,8 @@ class ScaleService {
   };
   private watchdogTimer: ReturnType<typeof setTimeout> | null = null;
   private watchdogTimeoutMs = 10000; // 10 seconds
+  private lastPollConfirmedAt = 0;
+  private pollAbort: AbortController | null = null;
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 15;
   private baseReconnectDelay = 1000;
@@ -378,16 +380,20 @@ class ScaleService {
     try {
       const currentScale = this.getCurrentScale();
       const params = currentScale ? this.buildScaleParams(currentScale) : new URLSearchParams();
-
-      const response = await fetch(`/api/scale/status?${params.toString()}`, { cache: 'no-store' });
+      const abort = new AbortController();
+      this.pollAbort = abort;
+      const startedAt = Date.now();
+      const response = await fetch(`/api/scale/status?${params.toString()}`, { cache: 'no-store', signal: abort.signal });
       if (!response.ok) throw new Error(`Scale server returned ${response.status}`);
       const serverStatus = await response.json() as ServerScaleStatus;
+      if (abort.signal.aborted || Date.now() - startedAt >= this.watchdogTimeoutMs) throw new Error('Scale poll exceeded the watchdog interval');
       // A response from the previous platform must never become capturable.
       if ((currentScale?.id ?? null) !== this.currentScaleId) return;
       if (!Number.isFinite(serverStatus.weight) || !['LBS', 'KG'].includes(serverStatus.unit)) {
         throw new Error('Scale server returned an invalid reading');
       }
       if (serverStatus.unit !== this.status.unit) this.noiseFilterWindow = [];
+      this.lastPollConfirmedAt = Date.now();
 
       // Success - reset circuit breaker
       this.circuitBreaker = {
@@ -494,7 +500,13 @@ class ScaleService {
 
   private startWatchdog(): void {
     this.watchdogTimer = setInterval(() => {
-      // If no successful poll in watchdogTimeoutMs, trigger reconnect
+      if (this.requestInFlight && Date.now() - this.lastPollConfirmedAt >= this.watchdogTimeoutMs) {
+        this.status.connected = false;
+        this.status.isStable = false;
+        this.status.errorMessage = 'Scale polling stopped responding. Last reading is not capturable.';
+        this.pollAbort?.abort();
+        this.notify();
+      }
       if (this.circuitBreaker.state === 'OPEN' && this.reconnectAttempts < this.maxReconnectAttempts) {
         this.scheduleReconnect();
       }

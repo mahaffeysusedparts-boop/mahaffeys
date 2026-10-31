@@ -15,6 +15,14 @@ let finance:typeof import('./financialState');
 const user={id:'test-admin',fullName:'SYNTHETIC TEST OPERATOR',username:'test-admin',role:'admin',status:'approved',createdAt:new Date().toISOString()} as PublicUser;
 let ticket:Ticket;
 const grade={id:'test-grade',name:'TEST FERROUS',code:'TEST',category:'Ferrous',ratePerLb:0.5,description:'Synthetic test grade'};
+const fixtureClient = randomUUID();
+async function execute(request: Parameters<typeof buying.executeBuyingCommand>[0], actor: PublicUser) {
+  if (['SAVE','UPDATE_SELLER','FINALIZE','FINALIZE_AND_PAY'].includes(request.action) && !request.clientId) {
+    await db.query(`INSERT INTO intake_ownership(ticket_id,user_id,operator_name,client_id,expires_at) VALUES($1,$2,$3,$4,NOW()+INTERVAL '90 seconds') ON CONFLICT(ticket_id) DO UPDATE SET user_id=EXCLUDED.user_id,operator_name=EXCLUDED.operator_name,client_id=EXCLUDED.client_id,expires_at=EXCLUDED.expires_at`,[request.id,actor.id,actor.fullName,fixtureClient]);
+    request = {...request,clientId:fixtureClient};
+  }
+  return buying.executeBuyingCommand(request,actor);
+}
 const command=(action:'CREATE'|'SAVE'|'FINALIZE'|'FINALIZE_AND_PAY'|'PAY',extra:Record<string,unknown>={})=>({action,id:ticket?.id??'test-ticket',revision:ticket?.buying?.revision??0,idempotencyKey:randomUUID(),...extra});
 
 describe.skipIf(!safe)('real PostgreSQL buying invariants (isolated TEST_DATABASE_URL schema)',()=>{
@@ -55,11 +63,51 @@ describe.skipIf(!safe)('real PostgreSQL buying invariants (isolated TEST_DATABAS
     await expect(save(firstClient)).rejects.toThrow('handling this intake');
     draft=await save(secondClient);
     await db.query("UPDATE intake_ownership SET expires_at=NOW()-INTERVAL '1 second' WHERE ticket_id=$1",[draft.id]);
-    await expect(save(firstClient)).resolves.toHaveProperty('id',draft.id);
+    await expect(save(firstClient)).rejects.toThrow('Ownership expired');
+    await db.query("UPDATE intake_ownership SET client_id=$2,expires_at=NOW()+INTERVAL '90 seconds' WHERE ticket_id=$1",[draft.id,firstClient]);
+    draft=await save(firstClient);
+    const retry={action:'SAVE' as const,id:draft.id,revision:draft.buying!.revision,idempotencyKey:randomUUID(),clientId:firstClient,ticket:{...draft,notes:'REPLAY AFTER EXPIRY'}};
+    const confirmed=await buying.executeBuyingCommand(retry,user);
+    await db.query("UPDATE intake_ownership SET expires_at=NOW()-INTERVAL '1 second' WHERE ticket_id=$1",[draft.id]);
+    expect(await buying.executeBuyingCommand(retry,user)).toEqual(confirmed);
+  });
+  it('serializes the final queue slot and rolls back losing customer creation',async()=>{
+    const snapshot=(await db.query("SELECT value FROM app_state WHERE key='mahaffeys_tickets'")).rows[0].value;
+    const drafts=(await db.query("SELECT ticket_id FROM scrap_buying_tickets WHERE stage='DRAFT'")).rows.length;
+    const legacy=Array.from({length:9-drafts},(_,index)=>({id:'capacity-legacy-'+index,ticketType:'SCRAP_METAL',status:'PENDING',customerName:'CAPACITY TEST'}));
+    await db.withTransaction(client=>finance.putState(client,'mahaffeys_tickets',[...snapshot,...legacy],user.id));
+    const input={fullName:'ATOMIC CAPACITY SELLER',phone:'',idType:'Driver License' as const,idNumber:'',idState:'',address:'',isCommercial:false};
+    const requests=['A','B'].map(suffix=>({action:'CREATE' as const,id:'capacity-new-'+suffix,revision:0,idempotencyKey:randomUUID(),ticket:{customerName:input.fullName},sellerProfile:{input}}));
+    try {
+      const before=Number((await db.query('SELECT COUNT(*) FROM customers')).rows[0].count);
+      const results=await Promise.allSettled(requests.map(request=>buying.executeBuyingCommand(request,user)));
+      expect(results.filter(row=>row.status==='fulfilled')).toHaveLength(1);
+      expect(Number((await db.query('SELECT COUNT(*) FROM customers')).rows[0].count)).toBe(before+1);
+      const winner=results.findIndex(row=>row.status==='fulfilled');
+      const accepted=await buying.executeBuyingCommand(requests[winner],user);
+      expect(await buying.executeBuyingCommand(requests[winner],user)).toEqual(accepted);
+      const adopted=await buying.executeBuyingCommand({action:'ADOPT',id:legacy[0].id,revision:0,idempotencyKey:randomUUID()},user);
+      expect(adopted.id).toBe(legacy[0].id);
+    } finally {
+      await db.query("DELETE FROM scrap_buying_events WHERE ticket_id LIKE 'capacity-%'");
+      await db.query("DELETE FROM scrap_buying_tickets WHERE ticket_id LIKE 'capacity-%'");
+      await db.query("DELETE FROM customers WHERE full_name=$1",[input.fullName]);
+      await db.withTransaction(client=>finance.putState(client,'mahaffeys_tickets',snapshot,user.id));
+    }
+  });
+  it('rejects a changed confirmed seller snapshot without creating a ticket or changing the profile',async()=>{
+    const {toCustomer}=await import('./customers');
+    const confirmed=toCustomer((await db.query('SELECT * FROM customers WHERE id=$1',['test-seller'])).rows[0]);
+    await db.query("UPDATE customers SET phone='CONCURRENT PROFILE' WHERE id='test-seller'");
+    try {
+      await expect(buying.executeBuyingCommand({action:'CREATE',id:'stale-seller-test',revision:0,idempotencyKey:randomUUID(),ticket:{customerName:confirmed.fullName,customerId:confirmed.id},sellerProfile:{selectedId:confirmed.id,confirmedProfile:confirmed,input:{fullName:confirmed.fullName,phone:'LOSING EDIT',idType:confirmed.idType,idNumber:confirmed.idNumber,idState:confirmed.idState,address:confirmed.address,isCommercial:false}}},user)).rejects.toThrow('profile changed');
+      expect((await db.query("SELECT phone FROM customers WHERE id='test-seller'")).rows[0].phone).toBe('CONCURRENT PROFILE');
+      expect((await db.query("SELECT ticket_id FROM scrap_buying_tickets WHERE ticket_id='stale-seller-test'")).rows).toHaveLength(0);
+    } finally { await db.query("UPDATE customers SET phone=$1 WHERE id='test-seller'",[confirmed.phone]); }
   });
   it('consumes authoritative truck review, rejects stale acknowledgment and never carries deductions into the next cycle',async()=>{
-    let draft=await buying.executeBuyingCommand({action:'CREATE',id:'bin-canonical-test',revision:0,idempotencyKey:randomUUID(),ticket:{customerName:'BIN TEST'}} as Parameters<typeof buying.executeBuyingCommand>[0],user);
-    const save=async(next:Ticket,binAcknowledgment?:Record<string,unknown>)=>buying.executeBuyingCommand({action:'SAVE',id:draft.id,revision:draft.buying!.revision,idempotencyKey:randomUUID(),ticket:next,binAcknowledgment} as Parameters<typeof buying.executeBuyingCommand>[0],user);
+    let draft=await execute({action:'CREATE',id:'bin-canonical-test',revision:0,idempotencyKey:randomUUID(),ticket:{customerName:'BIN TEST'}} as Parameters<typeof buying.executeBuyingCommand>[0],user);
+    const save=async(next:Ticket,binAcknowledgment?:Record<string,unknown>)=>execute({action:'SAVE',id:draft.id,revision:draft.buying!.revision,idempotencyKey:randomUUID(),ticket:next,binAcknowledgment} as Parameters<typeof buying.executeBuyingCommand>[0],user);
     const capture=async(type:'SCALE_IN'|'SCALE_OUT',lbs:number)=>{
       const id=randomUUID();const at=new Date().toISOString();
       const reading={id,scaleId:null,originalWeight:lbs,originalUnit:'LBS' as const,normalizedLbs:lbs,actorId:user.id,capturedAt:at,stable:false,source:'MANUAL' as const};
@@ -90,10 +138,10 @@ describe.skipIf(!safe)('real PostgreSQL buying invariants (isolated TEST_DATABAS
   });
   it('idempotent create and concurrent stale draft updates',async()=>{
     const request=command('CREATE',{ticket:{customerId:'test-seller',customerName:'TEST SELLER',customerPhone:'5550001234',customerIdNumber:'TEST-ID',vehicleLicensePlate:'TEST-PLATE',complianceCaptures:{idPhotoUrl:'/TEST/id',personPhotoUrl:'/TEST/person',vehiclePhotoUrl:'/TEST/vehicle',licensePlatePhotoUrl:'/TEST/plate',loadPhotoUrl:'/TEST/load'}}});
-    ticket=await buying.executeBuyingCommand(request as Parameters<typeof buying.executeBuyingCommand>[0],user);
-    expect(await buying.executeBuyingCommand(request as Parameters<typeof buying.executeBuyingCommand>[0],user)).toEqual(ticket);
+    ticket=await execute(request as Parameters<typeof buying.executeBuyingCommand>[0],user);
+    expect(await execute(request as Parameters<typeof buying.executeBuyingCommand>[0],user)).toEqual(ticket);
     const revision=ticket.buying!.revision;
-    const results=await Promise.allSettled(['A','B'].map(notes=>buying.executeBuyingCommand({...command('SAVE'),revision,ticket:{...ticket,notes}} as Parameters<typeof buying.executeBuyingCommand>[0],user)));
+    const results=await Promise.allSettled(['A','B'].map(notes=>execute({...command('SAVE'),revision,ticket:{...ticket,notes}} as Parameters<typeof buying.executeBuyingCommand>[0],user)));
     expect(results.filter(result=>result.status==='fulfilled')).toHaveLength(1);
     ticket=(await db.query('SELECT document FROM scrap_buying_tickets WHERE ticket_id=$1',[ticket.id])).rows[0].document;
   });
@@ -103,16 +151,16 @@ describe.skipIf(!safe)('real PostgreSQL buying invariants (isolated TEST_DATABAS
     await db.withTransaction(client=>finance.putState(client,'mahaffeys_settings',{...settings,scales:[...settings.scales,...scales]},user.id));
     try {
       for(const scale of scales) {
-        let draft=await buying.executeBuyingCommand(command('CREATE',{id:`live-ticket-${scale.connectionType}`,revision:0,ticket:{customerName:'LIVE SCALE TEST'}}) as Parameters<typeof buying.executeBuyingCommand>[0],user);
+        let draft=await execute(command('CREATE',{id:`live-ticket-${scale.connectionType}`,revision:0,ticket:{customerName:'LIVE SCALE TEST'}}) as Parameters<typeof buying.executeBuyingCommand>[0],user);
         const at=new Date().toISOString();const id=randomUUID();
         const capture={id,scaleId:scale.id,originalWeight:200,originalUnit:'LBS',normalizedLbs:200,actorId:user.id,capturedAt:at,stable:true,source:'SCALE'};
         const save={action:'SAVE',id:draft.id,revision:draft.buying!.revision,idempotencyKey:randomUUID(),ticket:{...draft,selectedWeighingType:'PLATFORM',pendingPlatformCapture:{capture,capturedLbs:200,tareLbs:0,tareTreatment:'NONE',isManual:false},weightTransactions:[{id,type:'SINGLE_WEIGHT',weightLbs:200,recordedAt:at,capture}]}};
-        await expect(buying.executeBuyingCommand({...save,ticket:{...save.ticket,pendingPlatformCapture:{...save.ticket.pendingPlatformCapture,capture:{...capture,stable:false}},weightTransactions:[{...save.ticket.weightTransactions[0],capture:{...capture,stable:false}}]}} as Parameters<typeof buying.executeBuyingCommand>[0],user)).rejects.toThrow();
-        draft=await buying.executeBuyingCommand(save as Parameters<typeof buying.executeBuyingCommand>[0],user);
+        await expect(execute({...save,ticket:{...save.ticket,pendingPlatformCapture:{...save.ticket.pendingPlatformCapture,capture:{...capture,stable:false}},weightTransactions:[{...save.ticket.weightTransactions[0],capture:{...capture,stable:false}}]}} as Parameters<typeof buying.executeBuyingCommand>[0],user)).rejects.toThrow();
+        draft=await execute(save as Parameters<typeof buying.executeBuyingCommand>[0],user);
         expect(draft.pendingPlatformCapture?.isManual).toBe(false);
         expect(draft.weightTransactions?.[0].capture?.source).toBe('SCALE');
         const line={id:randomUUID(),metalGradeId:grade.id,metalName:grade.name,metalCategory:grade.category,...validatedBreakdown(200,0,0,0.5),deductionPercent:0,ratePerLb:0.5,weighingMode:'SINGLE_WEIGHT',sourceCaptureIds:[id],tareTreatment:'NONE',loadNumber:1};
-        draft=await buying.executeBuyingCommand({action:'SAVE',id:draft.id,revision:draft.buying!.revision,idempotencyKey:randomUUID(),ticket:{...draft,pendingPlatformCapture:undefined,scrapLines:[line]}} as Parameters<typeof buying.executeBuyingCommand>[0],user);
+        draft=await execute({action:'SAVE',id:draft.id,revision:draft.buying!.revision,idempotencyKey:randomUUID(),ticket:{...draft,pendingPlatformCapture:undefined,scrapLines:[line]}} as Parameters<typeof buying.executeBuyingCommand>[0],user);
         expect(draft.scrapLines?.[0].netWeight).toBe(200);
         expect(draft.buying!.activeCycleId).toBeUndefined();
       }
@@ -123,21 +171,21 @@ describe.skipIf(!safe)('real PostgreSQL buying invariants (isolated TEST_DATABAS
   it('confirms one platform cycle and one payable line without auto-finalization',async()=>{
     const at=new Date().toISOString();const id=randomUUID();
     const capture={id,scaleId:'test-platform',originalWeight:200,originalUnit:'LBS' as const,normalizedLbs:200,actorId:user.id,capturedAt:at,stable:false,source:'MANUAL' as const};
-    ticket=await buying.executeBuyingCommand({...command('SAVE'),ticket:{...ticket,selectedWeighingType:'PLATFORM',pendingPlatformCapture:{capture,capturedLbs:200,tareLbs:50,tareTreatment:'MANUAL',isManual:true},weightTransactions:[{id,type:'SINGLE_WEIGHT',weightLbs:200,recordedAt:at,capture}]}} as Parameters<typeof buying.executeBuyingCommand>[0],user);
+    ticket=await execute({...command('SAVE'),ticket:{...ticket,selectedWeighingType:'PLATFORM',pendingPlatformCapture:{capture,capturedLbs:200,tareLbs:50,tareTreatment:'MANUAL',isManual:true},weightTransactions:[{id,type:'SINGLE_WEIGHT',weightLbs:200,recordedAt:at,capture}]}} as Parameters<typeof buying.executeBuyingCommand>[0],user);
     expect(ticket.buying!.activeCycleId).toBeTruthy();
     const line={id:randomUUID(),metalGradeId:grade.id,metalName:grade.name,metalCategory:grade.category,...validatedBreakdown(200,50,10,0.5),deductionPercent:10,ratePerLb:0.5,deductionReason:'TEST contamination',weighingMode:'SINGLE_WEIGHT',sourceCaptureIds:[id],tareTreatment:'MANUAL',loadNumber:1};
-    ticket=await buying.executeBuyingCommand({...command('SAVE'),ticket:{...ticket,pendingPlatformCapture:undefined,scrapLines:[line]}} as Parameters<typeof buying.executeBuyingCommand>[0],user);
+    ticket=await execute({...command('SAVE'),ticket:{...ticket,pendingPlatformCapture:undefined,scrapLines:[line]}} as Parameters<typeof buying.executeBuyingCommand>[0],user);
     expect(ticket.buying!.stage).toBe('DRAFT');expect(ticket.buying!.activeCycleId).toBeUndefined();
     expect(Number((await db.query('SELECT COUNT(*) FROM scrap_buying_line_sources WHERE line_id=$1',[line.id])).rows[0].count)).toBe(1);
-    ticket=await buying.executeBuyingCommand(command('FINALIZE',{reviewed:true}) as Parameters<typeof buying.executeBuyingCommand>[0],user);
+    ticket=await execute(command('FINALIZE',{reviewed:true}) as Parameters<typeof buying.executeBuyingCommand>[0],user);
     expect(ticket.buying!.stage).toBe('FINALIZED');expect(ticket.buying!.payment).toBeUndefined();
   });
   it('chooses Check above the ferrous threshold without policy and records concurrent payment once',async()=>{
     const preview=await buying.previewPaymentEligibility(ticket.id,ticket.buying!.revision,user);
     expect(preview.allowedMethods).toEqual(['Check']);
-    await expect(buying.executeBuyingCommand(command('PAY',{method:'Cash',disbursed:true}) as Parameters<typeof buying.executeBuyingCommand>[0],user)).rejects.toThrow();
-    await expect(buying.executeBuyingCommand(command('PAY',{method:'Check',reference:'FIRST-001',disbursed:true}) as Parameters<typeof buying.executeBuyingCommand>[0],{...user,role:'yard_employee'})).rejects.toThrow();
-    const responses=await Promise.all([1,2].map(()=>buying.executeBuyingCommand(command('PAY',{method:'Check',reference:'FIRST-001',disbursed:true}) as Parameters<typeof buying.executeBuyingCommand>[0],{...user,role:'scale_operator'})));
+    await expect(execute(command('PAY',{method:'Cash',disbursed:true}) as Parameters<typeof buying.executeBuyingCommand>[0],user)).rejects.toThrow();
+    await expect(execute(command('PAY',{method:'Check',reference:'FIRST-001',disbursed:true}) as Parameters<typeof buying.executeBuyingCommand>[0],{...user,role:'yard_employee'})).rejects.toThrow();
+    const responses=await Promise.all([1,2].map(()=>execute(command('PAY',{method:'Check',reference:'FIRST-001',disbursed:true}) as Parameters<typeof buying.executeBuyingCommand>[0],{...user,role:'scale_operator'})));
     expect(responses[0].buying!.payment!.id).toBe(responses[1].buying!.payment!.id);
     expect(responses[0].buying!.payment!.paymentRuleVersion).toBe('category-thresholds-v1');
     expect(Number((await db.query('SELECT COUNT(*) FROM scrap_buying_payments')).rows[0].count)).toBe(1);
@@ -148,36 +196,36 @@ describe.skipIf(!safe)('real PostgreSQL buying invariants (isolated TEST_DATABAS
   it('approved operators atomically complete Check purchases; invalid details roll back and retries preserve the actual number',async()=>{
     const original = ticket;
     const create = command('CREATE',{id:'combined-check-test',revision:0,ticket:{customerId:'test-seller',customerName:'TEST SELLER',customerPhone:'5550001234',customerIdNumber:'TEST-ID',vehicleLicensePlate:'TEST-PLATE',complianceCaptures:original.complianceCaptures}});
-    ticket=await buying.executeBuyingCommand(create as Parameters<typeof buying.executeBuyingCommand>[0],user);
+    ticket=await execute(create as Parameters<typeof buying.executeBuyingCommand>[0],user);
     const at=new Date().toISOString();const captureId=randomUUID();
     const capture={id:captureId,scaleId:'test-platform',originalWeight:100,originalUnit:'LBS',normalizedLbs:100,actorId:user.id,capturedAt:at,stable:false,source:'MANUAL'};
-    ticket=await buying.executeBuyingCommand({...command('SAVE'),ticket:{...ticket,selectedWeighingType:'PLATFORM',pendingPlatformCapture:{capture,capturedLbs:100,tareLbs:0,tareTreatment:'NONE',isManual:true},weightTransactions:[{id:captureId,type:'SINGLE_WEIGHT',weightLbs:100,recordedAt:at,capture}]}} as Parameters<typeof buying.executeBuyingCommand>[0],user);
+    ticket=await execute({...command('SAVE'),ticket:{...ticket,selectedWeighingType:'PLATFORM',pendingPlatformCapture:{capture,capturedLbs:100,tareLbs:0,tareTreatment:'NONE',isManual:true},weightTransactions:[{id:captureId,type:'SINGLE_WEIGHT',weightLbs:100,recordedAt:at,capture}]}} as Parameters<typeof buying.executeBuyingCommand>[0],user);
     const line={id:randomUUID(),metalGradeId:grade.id,metalName:grade.name,metalCategory:grade.category,...validatedBreakdown(100,0,0,0.5),deductionPercent:0,ratePerLb:0.5,weighingMode:'SINGLE_WEIGHT',sourceCaptureIds:[captureId],tareTreatment:'NONE',loadNumber:1};
-    ticket=await buying.executeBuyingCommand({...command('SAVE'),ticket:{...ticket,pendingPlatformCapture:undefined,scrapLines:[line]}} as Parameters<typeof buying.executeBuyingCommand>[0],user);
+    ticket=await execute({...command('SAVE'),ticket:{...ticket,pendingPlatformCapture:undefined,scrapLines:[line]}} as Parameters<typeof buying.executeBuyingCommand>[0],user);
     const preview=await buying.previewPaymentEligibility(ticket.id,ticket.buying!.revision,{...user,role:'scale_operator'});
     expect(preview.allowedMethods).toContain('Check');
     const request=command('FINALIZE_AND_PAY',{method:'Check',reference:'',reviewed:true,disbursed:true});
-    await expect(buying.executeBuyingCommand(request as Parameters<typeof buying.executeBuyingCommand>[0],{...user,role:'scale_operator'})).rejects.toThrow();
+    await expect(execute(request as Parameters<typeof buying.executeBuyingCommand>[0],{...user,role:'scale_operator'})).rejects.toThrow();
     expect((await db.query('SELECT stage FROM scrap_buying_tickets WHERE ticket_id=$1',[ticket.id])).rows[0].stage).toBe('DRAFT');
     expect(Number((await db.query('SELECT COUNT(*) FROM scrap_buying_payments WHERE ticket_id=$1',[ticket.id])).rows[0].count)).toBe(0);
-    await expect(buying.executeBuyingCommand({...request,reference:'00123-Ab',disbursed:false} as Parameters<typeof buying.executeBuyingCommand>[0],user)).rejects.toThrow();
+    await expect(execute({...request,reference:'00123-Ab',disbursed:false} as Parameters<typeof buying.executeBuyingCommand>[0],user)).rejects.toThrow();
     const valid={...request,reference:'00123-Ab'};
-    const paid=await Promise.all([user,{...user,role:'scale_operator'}].map(actor=>buying.executeBuyingCommand(valid as Parameters<typeof buying.executeBuyingCommand>[0],actor)));
+    const paid=await Promise.all([user,{...user,role:'scale_operator'}].map(actor=>execute(valid as Parameters<typeof buying.executeBuyingCommand>[0],actor)));
     expect(paid[0].buying!.payment!.id).toBe(paid[1].buying!.payment!.id);
     expect(paid[0].checkNumber).toBe('00123-Ab');
     expect(paid[0].buying!.payment!.checkReference).toBe('00123-Ab');
-    expect(await buying.executeBuyingCommand(valid as Parameters<typeof buying.executeBuyingCommand>[0],user)).toEqual(paid[0]);
+    expect(await execute(valid as Parameters<typeof buying.executeBuyingCommand>[0],user)).toEqual(paid[0]);
     const stored=(await db.query('SELECT document FROM scrap_buying_tickets WHERE ticket_id=$1',[ticket.id])).rows[0].document;
     expect(stored.checkNumber).toBe('00123-Ab');
     const canonical=(await db.query('SELECT check_reference FROM scrap_buying_payments WHERE ticket_id=$1',[ticket.id])).rows[0];
     expect(canonical.check_reference).toBe('00123-Ab');
     const drawer=(await db.query("SELECT value FROM app_state WHERE key='mahaffeys_cash_drawer'")).rows[0].value;
     expect(drawer.filter((row:{ticketId?:string})=>row.ticketId===ticket.id)).toHaveLength(0);
-    await expect(buying.executeBuyingCommand(valid as Parameters<typeof buying.executeBuyingCommand>[0],{...user,status:'pending'})).rejects.toThrow();
+    await expect(execute(valid as Parameters<typeof buying.executeBuyingCommand>[0],{...user,status:'pending'})).rejects.toThrow();
     // A separate legitimate finalized purchase cannot reuse this number, even with changed casing.
     const duplicate={...stored,id:'duplicate-check-test',status:'COMPLETED',checkNumber:undefined,buying:{...stored.buying,revision:1,stage:'FINALIZED',payment:undefined}};
     await db.query('INSERT INTO scrap_buying_tickets(ticket_id,revision,stage,document,created_by) VALUES($1,1,$2,$3::jsonb,$4)',[duplicate.id,'FINALIZED',JSON.stringify(duplicate),user.id]);
-    await expect(buying.executeBuyingCommand({...command('PAY'),id:duplicate.id,revision:1,method:'Check',reference:'00123-ab',disbursed:true} as Parameters<typeof buying.executeBuyingCommand>[0],user)).rejects.toThrow();
+    await expect(execute({...command('PAY'),id:duplicate.id,revision:1,method:'Check',reference:'00123-ab',disbursed:true} as Parameters<typeof buying.executeBuyingCommand>[0],user)).rejects.toThrow();
     expect(Number((await db.query('SELECT COUNT(*) FROM scrap_buying_payments WHERE ticket_id=$1',[duplicate.id])).rows[0].count)).toBe(0);
     ticket=original;
   });
@@ -186,28 +234,28 @@ describe.skipIf(!safe)('real PostgreSQL buying invariants (isolated TEST_DATABAS
     for(let mask=0;mask<8;mask++) {
       const flags={requirePhotos:false,requirePhone:false,requireAddress:false,requireSellerId:!!(mask&1),requireVehiclePlate:!!(mask&2),requireExplicitReview:!!(mask&4),revision:mask+1,updatedAt:null,updatedBy:user.fullName,reason:'SYNTHETIC TEST'};
       await db.withTransaction(client=>finance.putState(client,'mahaffeys_intake_requirements',flags,user.id));
-      ticket=await buying.executeBuyingCommand(command('CREATE',{id:`optional-${mask}`,revision:0,ticket:{customerName:`TEST OPTIONAL ${mask}`,customerId:flags.requireSellerId?'test-seller':undefined,customerIdNumber:flags.requireSellerId?'TEST-ID':undefined,vehicleLicensePlate:flags.requireVehiclePlate?'TEST-PLATE':undefined}}) as Parameters<typeof buying.executeBuyingCommand>[0],{...user,role:'scale_operator'});
+      ticket=await execute(command('CREATE',{id:`optional-${mask}`,revision:0,ticket:{customerName:`TEST OPTIONAL ${mask}`,customerId:flags.requireSellerId?'test-seller':undefined,customerIdNumber:flags.requireSellerId?'TEST-ID':undefined,vehicleLicensePlate:flags.requireVehiclePlate?'TEST-PLATE':undefined}}) as Parameters<typeof buying.executeBuyingCommand>[0],{...user,role:'scale_operator'});
       const at=new Date().toISOString();const captureId=randomUUID();
       const capture={id:captureId,scaleId:'test-platform',originalWeight:100,originalUnit:'LBS',normalizedLbs:100,actorId:user.id,capturedAt:at,stable:false,source:'MANUAL'};
-      ticket=await buying.executeBuyingCommand({...command('SAVE'),ticket:{...ticket,selectedWeighingType:'PLATFORM',pendingPlatformCapture:{capture,capturedLbs:100,tareLbs:0,tareTreatment:'NONE',isManual:true},weightTransactions:[{id:captureId,type:'SINGLE_WEIGHT',weightLbs:100,recordedAt:at,capture}]}} as Parameters<typeof buying.executeBuyingCommand>[0],user);
+      ticket=await execute({...command('SAVE'),ticket:{...ticket,selectedWeighingType:'PLATFORM',pendingPlatformCapture:{capture,capturedLbs:100,tareLbs:0,tareTreatment:'NONE',isManual:true},weightTransactions:[{id:captureId,type:'SINGLE_WEIGHT',weightLbs:100,recordedAt:at,capture}]}} as Parameters<typeof buying.executeBuyingCommand>[0],user);
       const line={id:randomUUID(),metalGradeId:grade.id,metalName:grade.name,metalCategory:grade.category,...validatedBreakdown(100,0,0,0.5),deductionPercent:0,ratePerLb:0.5,weighingMode:'SINGLE_WEIGHT',sourceCaptureIds:[captureId],tareTreatment:'NONE',loadNumber:1};
-      ticket=await buying.executeBuyingCommand({...command('SAVE'),ticket:{...ticket,pendingPlatformCapture:undefined,scrapLines:[line]}} as Parameters<typeof buying.executeBuyingCommand>[0],user);
+      ticket=await execute({...command('SAVE'),ticket:{...ticket,pendingPlatformCapture:undefined,scrapLines:[line]}} as Parameters<typeof buying.executeBuyingCommand>[0],user);
       const preview=await buying.previewPaymentEligibility(ticket.id,ticket.buying!.revision,user);
       expect(preview.allowedMethods).toContain('Check');
       if(!flags.requireSellerId) {
         expect(preview.allowedMethods).not.toContain('Cash');
         expect(preview.reasons).toEqual([]);
       }
-      if(flags.requireExplicitReview) await expect(buying.executeBuyingCommand(command('FINALIZE_AND_PAY',{method:'Check',reference:`TEST-${mask}`,disbursed:true,reviewed:false}) as Parameters<typeof buying.executeBuyingCommand>[0],user)).rejects.toThrow();
-      await expect(buying.executeBuyingCommand(command('FINALIZE_AND_PAY',{method:'Check',reference:'   ',disbursed:true,reviewed:flags.requireExplicitReview}) as Parameters<typeof buying.executeBuyingCommand>[0],user)).rejects.toThrow();
+      if(flags.requireExplicitReview) await expect(execute(command('FINALIZE_AND_PAY',{method:'Check',reference:`TEST-${mask}`,disbursed:true,reviewed:false}) as Parameters<typeof buying.executeBuyingCommand>[0],user)).rejects.toThrow();
+      await expect(execute(command('FINALIZE_AND_PAY',{method:'Check',reference:'   ',disbursed:true,reviewed:flags.requireExplicitReview}) as Parameters<typeof buying.executeBuyingCommand>[0],user)).rejects.toThrow();
       const request=command('FINALIZE_AND_PAY',{method:'Check',reference:mask===0?' 0009042 ':`TEST-00${mask}-Ab`,disbursed:true,reviewed:flags.requireExplicitReview});
-      const paid=await buying.executeBuyingCommand(request as Parameters<typeof buying.executeBuyingCommand>[0],{...user,role:'scale_operator'});
+      const paid=await execute(request as Parameters<typeof buying.executeBuyingCommand>[0],{...user,role:'scale_operator'});
       expect(paid.buying!.stage).toBe('PAID');
       expect(paid.buying!.sellerIdentity).toEqual(flags.requireSellerId?{idType:'DRIVER LICENSE',idState:'SC',idNumber:'TEST-ID'}:undefined);
       expect(paid.buying!.intakeRequirementReview).toMatchObject({revision:flags.revision,requirePhotos:false,requirePhone:false,requireAddress:false,requireSellerId:flags.requireSellerId,requireVehiclePlate:flags.requireVehiclePlate,requireExplicitReview:flags.requireExplicitReview,reviewed:flags.requireExplicitReview});
       expect(paid.checkNumber).toBe(mask===0?'0009042':`TEST-00${mask}-Ab`);
       expect(paid.buying!.payment!.checkReference).toBe(paid.checkNumber);
-      expect(await buying.executeBuyingCommand({...request,idempotencyKey:randomUUID()} as Parameters<typeof buying.executeBuyingCommand>[0],user)).toEqual(paid);
+      expect(await execute({...request,idempotencyKey:randomUUID()} as Parameters<typeof buying.executeBuyingCommand>[0],user)).toEqual(paid);
       expect(Number((await db.query('SELECT COUNT(*) FROM scrap_buying_payments WHERE ticket_id=$1',[ticket.id])).rows[0].count)).toBe(1);
     }
     // A forged client preference cannot remove server requirements, and preview still permits check-number entry.
@@ -216,7 +264,7 @@ describe.skipIf(!safe)('real PostgreSQL buying invariants (isolated TEST_DATABAS
     await db.query('INSERT INTO scrap_buying_tickets(ticket_id,revision,stage,document,created_by) VALUES($1,1,$2,$3::jsonb,$4)',[draft.id,'DRAFT',JSON.stringify(draft),user.id]);
     const preview=await buying.previewPaymentEligibility(draft.id,1,user);
     expect(preview.allowedMethods).toEqual([]);expect(preview.selectableMethods).toContain('Check');
-    await expect(buying.executeBuyingCommand({...command('FINALIZE'),id:draft.id,revision:1,reviewed:false,ticket:{...draft,requireSellerId:false,requireVehiclePlate:false,requireExplicitReview:false}} as Parameters<typeof buying.executeBuyingCommand>[0],user)).rejects.toThrow();
+    await expect(execute({...command('FINALIZE'),id:draft.id,revision:1,reviewed:false,ticket:{...draft,requireSellerId:false,requireVehiclePlate:false,requireExplicitReview:false}} as Parameters<typeof buying.executeBuyingCommand>[0],user)).rejects.toThrow();
     ticket=original;
   });
   it('generic state cannot replace paid canonical data, create another drawer payment, or reopen legacy terminal tickets',async()=>{
@@ -236,20 +284,20 @@ describe.skipIf(!safe)('real PostgreSQL buying invariants (isolated TEST_DATABAS
       expect((await buying.previewPaymentEligibility(finalized.id,1,user)).allowedMethods).toEqual(['Check']);
     }
     const request={...command('PAY'),id:finalized.id,revision:1,method:'Check',reference:'CATEGORY-009',disbursed:true};
-    const paid=await Promise.all([1,2].map(()=>buying.executeBuyingCommand(request as Parameters<typeof buying.executeBuyingCommand>[0],user)));
+    const paid=await Promise.all([1,2].map(()=>execute(request as Parameters<typeof buying.executeBuyingCommand>[0],user)));
     expect(paid[0].buying!.payment!.id).toBe(paid[1].buying!.payment!.id);
     expect(paid[0].buying!.payment!.paymentRuleVersion).toBe('category-thresholds-v1');
     expect(paid[0].buying!.payment!.safeguardReview).toBeUndefined();
-    expect(await buying.executeBuyingCommand({...request,idempotencyKey:randomUUID()} as Parameters<typeof buying.executeBuyingCommand>[0],user)).toEqual(paid[0]);
+    expect(await execute({...request,idempotencyKey:randomUUID()} as Parameters<typeof buying.executeBuyingCommand>[0],user)).toEqual(paid[0]);
     const duplicate={...finalized,id:'category-duplicate'};
     await db.query('INSERT INTO scrap_buying_tickets(ticket_id,revision,stage,document,created_by) VALUES($1,1,$2,$3::jsonb,$4)',[duplicate.id,'FINALIZED',JSON.stringify(duplicate),user.id]);
-    await expect(buying.executeBuyingCommand({...request,id:duplicate.id,idempotencyKey:randomUUID(),reference:'category-009'} as Parameters<typeof buying.executeBuyingCommand>[0],user)).rejects.toThrow();
+    await expect(execute({...request,id:duplicate.id,idempotencyKey:randomUUID(),reference:'category-009'} as Parameters<typeof buying.executeBuyingCommand>[0],user)).rejects.toThrow();
     await expect(db.query('INSERT INTO scrap_buying_payments(ticket_id,id,amount,method,document) VALUES($1,$2,10,$3,$4::jsonb)',[duplicate.id,randomUUID(),'Cash',JSON.stringify({})])).rejects.toThrow();
     const cashTicket={...finalized,id:'category-cash',finalPayout:10};
     await db.query('INSERT INTO scrap_buying_tickets(ticket_id,revision,stage,document,created_by) VALUES($1,1,$2,$3::jsonb,$4)',[cashTicket.id,'FINALIZED',JSON.stringify(cashTicket),user.id]);
     await db.withTransaction(client=>finance.putState(client,'mahaffeys_cash_drawer',[],user.id));
     const cashRequest={...command('PAY'),id:cashTicket.id,revision:1,method:'Cash',disbursed:true};
-    const cash=await Promise.all([1,2].map(()=>buying.executeBuyingCommand({...cashRequest,idempotencyKey:randomUUID()} as Parameters<typeof buying.executeBuyingCommand>[0],user)));
+    const cash=await Promise.all([1,2].map(()=>execute({...cashRequest,idempotencyKey:randomUUID()} as Parameters<typeof buying.executeBuyingCommand>[0],user)));
     expect(cash[0].buying!.payment!.id).toBe(cash[1].buying!.payment!.id);
     const drawer=(await db.query("SELECT value FROM app_state WHERE key='mahaffeys_cash_drawer'")).rows[0].value;
     expect(drawer.filter((row:{ticketId?:string})=>row.ticketId===cashTicket.id)).toHaveLength(1);

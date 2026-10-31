@@ -576,7 +576,7 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
   ].filter((detail): detail is { label: string; value: string } => Boolean(detail.value)) : [];
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6 pb-12 font-sans">
+    <div onChangeCapture={draft.markEdited} className="max-w-5xl mx-auto space-y-6 pb-12 font-sans">
       <DraftRecoveryBanner draft={draft}/>
       <IntakeFieldGuidance issues={issues}/>
       <fieldset disabled={draft.loading || !!draft.recovery || isSaving} className="contents">

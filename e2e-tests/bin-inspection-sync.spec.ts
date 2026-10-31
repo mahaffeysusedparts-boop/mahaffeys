@@ -1,3 +1,4 @@
+import { ownershipFixture, queueEnvelope } from './fixtures/intake-api';
 import { test, expect, type BrowserContext, type Page } from '@playwright/test';
 import { DEFAULT_BIN_CATALOG, type BinReview, type BinDeductionCatalog } from '../src/types/binDeductions';
 import { resolveBinSelections } from '../src/utils/binDeductionRules';
@@ -25,7 +26,9 @@ function syntheticServer() {
     async attach(context: BrowserContext, role: 'yard_employee'|'scale_operator'|'admin') {
       const user = {id:role,fullName:role === 'yard_employee' ? 'Bin Employee' : 'Scale Tester',username:role,role,status:'approved',createdAt:now};
       await context.addInitScript(values => { for (const [key,value] of Object.entries(values)) localStorage.setItem(key,JSON.stringify(value)); }, state());
+      const ownership = ownershipFixture(user);
       await context.route('**/api/**', async route => {
+        if (await ownership(route)) return;
         const url = new URL(route.request().url());
         const path = url.pathname;
         const method = route.request().method();
@@ -36,7 +39,7 @@ function syntheticServer() {
         else if (path === '/api/state/since') response={entries:Object.entries(state()).map(([key,value])=>({key,value,updatedAt:new Date().toISOString(),updatedBy:'scale_operator'})),serverTime:new Date().toISOString()};
         else if (path === '/api/printers') response=[];
         else if (path === '/api/scale/status') response={connected:true,weight:1000,unit:'LBS',isStable:true,isZero:false,registry:[]};
-        else if (path === '/api/scrap-buying/queue') response={tickets:[ticket],policy:null,legacyReviews:[]};
+        else if (path === '/api/scrap-buying/queue') response=queueEnvelope([ticket]);
         else if (path === '/api/scrap-buying/requirements') response={revision:1,requirePhotos:false,requirePhone:false,requireAddress:false,requireSellerId:false,requireVehiclePlate:false,requireExplicitReview:false};
         else if (path === '/api/scrap-buying/eligibility') response={allowedMethods:[],selectableMethods:[],reasons:[],permitRequired:false,documentationRequired:false};
         else if (path === '/api/scrap-buying/bin-deduction-catalog') {
@@ -76,7 +79,7 @@ function syntheticServer() {
 async function openDesk(page: Page) {
   await page.goto('/intake');
   await page.getByText('Start Metal Scrap Ticket',{exact:true}).click();
-  await page.getByRole('button',{name:/Switch to This Intake|Continue This Intake/}).click();
+  await page.getByRole('button',{name:/Claim This Intake|Switch to This Intake|Continue This Intake/}).click();
 }
 
 test('Employee retry and correction sync live without stale weighing conflicts; late review replaces missing acknowledgment', async ({browser}) => {

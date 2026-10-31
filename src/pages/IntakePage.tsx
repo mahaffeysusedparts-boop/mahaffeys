@@ -16,6 +16,11 @@ import { toast } from 'sonner';
 
 export default function IntakePage() {
   const { user } = useAuth();
+  return <IntakeWorkspace key={user?.id ?? 'signed-out'}/>;
+}
+
+function IntakeWorkspace() {
+  const { user } = useAuth();
   const workspaceKey = `intake-workspace:${user?.id}`;
   const [workspace] = useState(() => {
     try {

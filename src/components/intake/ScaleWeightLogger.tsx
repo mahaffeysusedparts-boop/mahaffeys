@@ -1,3 +1,5 @@
+import { pendingIntakeOperation, acknowledgeIntakeOperation, type IntakeOperation } from '@/services/intakeSubmissionService';
+import { MAX_ACTIVE_INTAKES } from '@/utils/intakeQueue';
 import React, { useEffect, useRef, useState } from 'react';
 import { useIntakeDraft } from '@/hooks/useIntakeDraft';
 import { useIntakeOwnership } from '@/hooks/useIntakeOwnership';
@@ -70,7 +72,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 
-const MAX_ACTIVE_LOADS = 10;
+const MAX_ACTIVE_LOADS = MAX_ACTIVE_INTAKES;
 
 type SingleTareMode = 'NONE' | 'SCALE_TARE' | 'MANUAL';
 
@@ -100,7 +102,9 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
   onTicketCreated,
 }) => {
   const requirements = useIntakeRequirements();
-  const ownership = useIntakeOwnership(activeTicketId, onActiveTicketChange);
+  const [operationLoading, setOperationLoading] = useState(true);
+  const [pendingOperation, setPendingOperation] = useState<IntakeOperation | null>(null);
+  const ownership = useIntakeOwnership(operationLoading || pendingOperation ? null : activeTicketId, onActiveTicketChange);
   const [metals] = useState<MetalGrade[]>(() => storageService.getMetals());
   const [popularMetals] = useState<MetalGrade[]>(() => {
     const popular = metals.filter((m) => m.isPopular);
@@ -138,6 +142,16 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
   const [saveState, setSaveState] = useState<'SAVED'|'PENDING'|'ERROR'>('SAVED');
   const [saveError, setSaveError] = useState('');
   const busyRef = useRef(false);
+  const activeIdentity = useRef(activeTicketId);
+  activeIdentity.current = activeTicketId;
+  useEffect(() => {
+    let active = true; setPendingOperation(null); setOperationLoading(true);
+    if (activeTicketId) pendingIntakeOperation(activeTicketId).then(value => {
+      if (active) { setPendingOperation(value); setOperationLoading(false); }
+    }).catch(() => { if (active) { setSaveState('ERROR'); setSaveError('Submission recovery is unavailable; do not submit a replacement payment.'); } });
+    else setOperationLoading(false);
+    return () => { active = false; };
+  }, [activeTicketId]);
   const [reviewConfirmed, setReviewConfirmed] = useState(false);
   const [sellerDirty, setSellerDirty] = useState(false);
   const [paymentInput,setPaymentInput] = useState(initialBuyingPayment);
@@ -192,6 +206,7 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
 
   const canEdit = () => {
     if (busyRef.current) return false;
+    if (pendingOperation) { toast.warning('Reconcile the interrupted save before editing or submitting again.'); return false; }
     if (draft.loading || draft.recovery) { toast.info('Resume or discard the saved scale inputs before editing.'); return false; }
     if (!ownership.owned) { toast.warning(ownership.error || 'Claim this intake before editing it.'); return false; }
     const latest = storageService.getTickets().find((ticket) => ticket.id === activeTicket?.id);
@@ -269,7 +284,6 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
       storageService
         .getTickets()
         .filter((t) => t.ticketType === 'SCRAP_METAL' && t.status === 'PENDING')
-        .slice(0, MAX_ACTIVE_LOADS)
     );
   };
 
@@ -356,11 +370,14 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
     busyRef.current = true; setSaveState('PENDING'); setSaveError('');
     try {
       const saved = await scrapBuyingService.save(ticket, binAcknowledgment);
+      if (activeIdentity.current !== saved.id) return null;
       setActiveTicket(saved); refreshQueue(); setSaveState('SAVED'); setReviewConfirmed(false);
       return saved;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Server did not confirm the update';
-      setSaveState('ERROR'); setSaveError(message); toast.error(message); return null;
+      setSaveState('ERROR'); setSaveError(message); setAutoCapture(false);
+      if (activeTicketId) setPendingOperation(await pendingIntakeOperation(activeTicketId).catch(() => null));
+      toast.error(message); return null;
     } finally { busyRef.current = false; }
   };
 
@@ -369,12 +386,15 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
     busyRef.current = true; setSaveState('PENDING'); setSaveError('');
     try {
       const saved = await scrapBuyingService.updateSeller(activeTicket, seller);
+      if (activeIdentity.current !== saved.id) return false;
       setActiveTicket(saved); refreshQueue(); setSaveState('SAVED'); setReviewConfirmed(false);
       toast.success('Seller details and ticket corrected together');
       return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Seller correction was not confirmed';
-      setSaveState('ERROR'); setSaveError(message); return false;
+      setSaveState('ERROR'); setSaveError(message); setAutoCapture(false);
+      if (activeTicketId) setPendingOperation(await pendingIntakeOperation(activeTicketId).catch(() => null));
+      return false;
     } finally { busyRef.current = false; }
   };
 
@@ -382,7 +402,7 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
   // then pull the refreshed queue so the row disappears everywhere.
   const handleTicketVoided = (ticketId: string) => {
     if (activeTicketId === ticketId) {
-      void draft.clear();
+      void draft.clear().catch(() => undefined);
       setActiveTicket(null);
       onActiveTicketChange(null);
       setNotes('');
@@ -471,10 +491,11 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
       scaleTareOutAt: undefined,
       weightTransactions: recordTransaction(activeTicket, 'SCALE_IN', capture),
     };
-    if (!await persist(next)) return;
+    if (!await persist(next)) return false;
     toast.success(`IN weight logged: ${fmtLbs(lbs)} LBS`, {
       description: `${activeTicket.customerName} is on the yard. Pick the metal grade below, then log the OUT weight after the load dumps.`,
     });
+    return true;
   };
 
   const commitOutWeight = async (lbs: number, capture = makeCapture(lbs, false)) => {
@@ -495,10 +516,11 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
       scaleTareOutAt: capture.capturedAt,
       weightTransactions: recordTransaction(activeTicket, 'SCALE_OUT', capture),
     };
-    if (!await persist(next)) return;
+    if (!await persist(next)) return false;
     toast.success(`OUT weight logged: ${fmtLbs(lbs)} LBS`, {
       description: `Net scrap weight: ${fmtLbs(net)} LBS — review the grade and add the load to the ticket.`,
     });
+    return true;
   };
 
   const handleLogIn = () => {
@@ -529,18 +551,16 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
     return lbs;
   };
 
-  const handleManualLogIn = () => {
+  const handleManualLogIn = async () => {
     const lbs = parseManualWeight();
     if (lbs === null) return;
-    commitInWeight(lbs, makeCapture(lbs, true));
-    setManualWeight('');
+    if (await commitInWeight(lbs, makeCapture(lbs, true))) setManualWeight('');
   };
 
-  const handleManualLogOut = () => {
+  const handleManualLogOut = async () => {
     const lbs = parseManualWeight();
     if (lbs === null) return;
-    commitOutWeight(lbs, makeCapture(lbs, true));
-    setManualWeight('');
+    if (await commitOutWeight(lbs, makeCapture(lbs, true))) setManualWeight('');
   };
 
   const handleDiscardWeighing = () => {
@@ -558,7 +578,8 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
       setAutoCapture(false);
       return;
     }
-    if (!scale.connected || !scale.isStable || currentLbs <= AUTO_CAPTURE_MIN_LBS) return;
+    if (!scale.connected) { autoCaptureContextRef.current = null; setAutoCapture(false); return; }
+    if (!scale.isStable || currentLbs <= AUTO_CAPTURE_MIN_LBS) return;
 
     // Disarm synchronously as well as in state to prevent duplicate captures.
     autoCaptureContextRef.current = null;
@@ -587,7 +608,7 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
     autoCaptureContextRef.current = null;
     setPendingUnstable(null);
     setCorrectionTarget(null);
-  }, [activeTicket?.id, weighState, currentScaleId, weighingMode]);
+  }, [activeTicket?.id, weighState, currentScaleId, weighingMode, ownership.owned]);
 
   // ---- Grade commit -----------------------------------------------------------
   const pendingBreakdown = activeTicket && weighState === 'PENDING_GRADE'
@@ -663,6 +684,8 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
     const draft = { capturedLbs: lbs, tareLbs, tareTreatment: singleTareMode, isManual, capture };
     if (!await persist({ ...activeTicket, pendingPlatformCapture: draft,
       weightTransactions: recordTransaction(activeTicket, 'SINGLE_WEIGHT', capture) })) return;
+    if (isManual) setSingleManualWeight('');
+    setSingleManualTare('');
     toast.success(`Captured ${fmtLbs(lbs)} LBS${isManual ? ' (manual)' : ''} — review this batch`);
   };
 
@@ -829,7 +852,10 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
     if (eligibility.isError || !buyingPaymentReady(eligibility.data,paymentInput)) {
       toast.error('Load the payment method and enter the issued check number if required'); return;
     }
-    if (notes.trim() !== (activeTicket.notes ?? '').trim() && !await persist({...activeTicket,notes:notes.trim()})) return;
+    if (notes.trim() !== (activeTicket.notes ?? '').trim()) {
+      if (!await persist({...activeTicket,notes:notes.trim()})) return;
+      if (requirements.data.requireExplicitReview) { toast.info('Notes changed. Review the confirmed purchase again before payment.'); return; }
+    }
     busyRef.current = true; setSaveState('PENDING'); setSaveError('');
     try {
       const current = storageService.getTickets().find((ticket) => ticket.id === activeTicket.id) ?? activeTicket;
@@ -838,11 +864,12 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
       setSaveState('SAVED'); refreshQueue();
       toast.success(`Ticket #${completed.id} PAID — actual ${completed.payoutMethod.toLowerCase()} payment recorded.`);
       await draft.clear();
+      await acknowledgeIntakeOperation(completed.id);
       setActiveTicket(null); onActiveTicketChange(null); setNotes(''); onTicketCreated(completed);
       void serverQueue.refetch();
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Completion was not confirmed';
-      setSaveState('ERROR'); setSaveError(`${message} If the response is uncertain, refresh the queue before retrying. Never hand over funds twice.`); toast.error(message);
+      setSaveState('ERROR'); setAutoCapture(false); setPendingOperation(await pendingIntakeOperation(activeTicket.id).catch(() => null)); setSaveError(`${message} Reconcile the original operation before retrying. Never hand over funds twice.`); toast.error(message);
       void eligibility.refetch();
     } finally { busyRef.current = false; }
   };
@@ -1008,13 +1035,13 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
           <Button
             size="sm"
             onClick={onNewIntake}
-            disabled={queue.length >= MAX_ACTIVE_LOADS}
+            disabled={!serverQueue.isError && (serverQueue.data?.capacity?.openCount ?? 0) >= MAX_ACTIVE_LOADS}
             className="gap-1.5 bg-sky-600 text-xs font-bold text-white hover:bg-sky-500"
           >
             <Plus className="h-3.5 w-3.5" /> New Intake (Part 1)
           </Button>
           <Badge className="gap-1 border border-amber-500/40 bg-amber-500/10 font-mono text-xs text-amber-300">
-            <Layers className="h-3.5 w-3.5" /> {queue.length}/{MAX_ACTIVE_LOADS} ACTIVE
+            <Layers className="h-3.5 w-3.5" /> {serverQueue.isError || !serverQueue.data?.capacity ? `${queue.length}/${MAX_ACTIVE_LOADS} ACTIVE · UNVERIFIED` : `${serverQueue.data.capacity.openCount}/${MAX_ACTIVE_LOADS} ACTIVE · CONFIRMED`}
           </Badge>
           <Button
             size="sm"
@@ -1176,12 +1203,36 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
       )}
 
       {ownership.error && <div role="alert" className="rounded-xl border border-amber-600 bg-amber-950 p-4 text-sm text-amber-100">{ownership.error}<Button onClick={() => activeTicketId && void ownership.claim(activeTicketId)} variant="link" className="text-amber-100">Review / reclaim intake</Button><Button onClick={handleSwitchAway} variant="link" className="text-amber-100">Return to queue</Button></div>}
+          {pendingOperation && <div role="alert" className="rounded-xl border border-amber-600 bg-amber-950 p-4 text-sm text-amber-100">Not confirmed—review/retry the original submission. Do not hand over funds again. Local inputs are retained.
+            <Button disabled={saveState === 'PENDING'} className="ml-2 rounded-xl bg-sky-700 text-white" onClick={async () => {
+              const id = activeTicketId!; setSaveState('PENDING'); setAutoCapture(false);
+              try {
+                const confirmed = await scrapBuyingService.retry(id);
+                if (activeIdentity.current !== id) return;
+                if (confirmed.buying?.stage === 'PAID') {
+                  await draft.clear(); setActiveTicket(null); onActiveTicketChange(null); onTicketCreated(confirmed);
+                } else {
+                  setActiveTicket(confirmed); setRemoteConflict(false); setReviewConfirmed(false);
+                  const prepared = pendingOperation.payload.ticket as Ticket | undefined;
+                  const lastCapture = prepared?.weightTransactions?.at(-1);
+                  if (lastCapture?.capture?.source === 'MANUAL') {
+                    if (lastCapture.type === 'SINGLE_WEIGHT') { setSingleManualWeight(''); setSingleManualTare(''); }
+                    else setManualWeight('');
+                  }
+                }
+                await acknowledgeIntakeOperation(id); setPendingOperation(null); setSaveState('SAVED'); setSaveError('');
+              } catch (error) {
+                setSaveState('ERROR'); setSaveError(error instanceof Error ? error.message : 'Original submission is not confirmed');
+                setPendingOperation(await pendingIntakeOperation(id).catch(() => pendingOperation));
+              }
+            }}>Reconcile original submission</Button>
+          </div>}
       {activeTicket && (
         <>
           <DraftRecoveryBanner draft={draft}/>
           <p className="text-xs text-sky-100">Confirmed readings are already saved on the server. Recovered inputs must be reviewed against the current ticket; auto-capture and purchase acknowledgement are never resumed automatically.</p>
           {!ownership.owned && !ownership.error && <p role="status" className="rounded-xl bg-sky-950 p-3 text-sm text-sky-100">Verifying this desk’s ownership before editing…</p>}
-          <fieldset disabled={!ownership.owned || draft.loading || !!draft.recovery} className="contents">
+          <fieldset disabled={!ownership.owned || draft.loading || !!draft.recovery || !!pendingOperation} className="contents">
           {/* Seller summary banner */}
           <div className="flex flex-col gap-3 rounded-2xl border border-slate-800 bg-slate-900 p-4 text-xs sm:flex-row sm:items-center sm:justify-between">
             <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">

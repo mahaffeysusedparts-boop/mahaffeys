@@ -9,6 +9,8 @@ import { serverScale } from './scale';
 import { normalizeWeight, validateScaleReading, validatedBreakdown, validatedItemBreakdown } from '../../src/utils/weighingContract';
 import { consumeBinReview } from './binInspections';
 import { intakeRequirementReview } from '../../src/utils/intakeRequirements';
+import { intakeSellerProfileSchema, persistIntakeSeller } from './intakeCreation';
+import { MAX_ACTIVE_INTAKES, openIntakeIds } from '../../src/utils/intakeQueue';
 import { DEFAULT_INTAKE_REQUIREMENTS, normalizeIntakeRequirements, type IntakeRequirements } from '../../src/types/intakeRequirements';
 import type { Ticket, MetalGrade, ScaleConfig, CashDrawerLog } from '../../src/types/scrap';
 import { evaluateBuyingPaymentRules } from '../../src/utils/buyingPaymentRules';
@@ -35,6 +37,7 @@ export const buyingCommandSchema = z.object({
     idNumber: z.string().trim().max(120), idState: z.string().trim().max(40),
     idType: z.enum(['Driver License','State ID','Passport','Military ID']), plate: z.string().trim().max(80),
     captures: z.record(z.string().max(1000000).optional()) }).strict().optional(),
+  sellerProfile: intakeSellerProfileSchema.optional(),
   ticket: z.record(z.unknown()).optional(), method: z.enum(['Cash','Check']).optional(),
   reference: z.string().trim().max(120).optional(), permitReference: z.string().trim().max(200).optional(),
   documentationReference: z.string().trim().max(500).optional(),
@@ -320,12 +323,15 @@ export async function executeBuyingCommand(command: z.infer<typeof buyingCommand
     const retry = await client.query('SELECT request_hash,result FROM scrap_buying_events WHERE actor_id=$1 AND idempotency_key=$2',[user.id,command.idempotencyKey]);
     if (retry.rows[0]) { if (retry.rows[0].request_hash !== hash) fail('Idempotency key was reused for another request'); return retry.rows[0].result as Ticket; }
     await lockIntakeOwnership(client, command.id);
-    if (!['CREATE', 'ADOPT'].includes(command.action)) {
-      const owner = (await client.query('SELECT user_id,client_id,operator_name FROM intake_ownership WHERE ticket_id=$1 AND expires_at>NOW()', [command.id])).rows[0];
-      if (owner && (owner.user_id !== user.id || owner.client_id !== command.clientId)) fail(`${owner.operator_name} is handling this intake on another workstation. Claim it from the scale queue before editing.`);
-    }
     const result = await client.query('SELECT document FROM scrap_buying_tickets WHERE ticket_id=$1 FOR UPDATE',[command.id]);
     const previous: Ticket | undefined = result.rows[0]?.document;
+    const replayedPayment = ['PAY','FINALIZE_AND_PAY'].includes(command.action) && previous?.buying?.stage === 'PAID';
+    if (!['CREATE', 'ADOPT'].includes(command.action) && !replayedPayment) {
+      const owner = (await client.query('SELECT user_id,client_id,operator_name FROM intake_ownership WHERE ticket_id=$1 AND expires_at>clock_timestamp()', [command.id])).rows[0];
+      const needsLease = previous?.buying?.stage === 'DRAFT' && ['SAVE','UPDATE_SELLER','FINALIZE','FINALIZE_AND_PAY'].includes(command.action);
+      if (needsLease && !owner) fail('Ownership expired or is missing. Claim this intake before editing.');
+      if (owner && (owner.user_id !== user.id || owner.client_id !== command.clientId)) fail(`${owner.operator_name} is handling this intake on another workstation. Claim it from the scale queue before editing.`);
+    }
     let next: Ticket;
     if (command.action === 'CREATE' || command.action === 'ADOPT') {
       if (previous) { if (command.action === 'ADOPT') return previous; fail('Ticket already exists'); }
@@ -338,7 +344,12 @@ export async function executeBuyingCommand(command: z.infer<typeof buyingCommand
         if (legacy) fail('Ticket number already exists');
         const seller = z.object({customerName:z.string().trim().min(1).max(200),customerId:z.string().max(120).optional(),customerPhone:z.string().max(80).optional(),customerAddress:z.string().max(1000).optional(),customerIdNumber:z.string().max(120).optional(),vehicleLicensePlate:z.string().max(80).optional(),notes:z.string().max(2000).optional(),complianceCaptures:z.record(z.string().max(1000000).optional()).optional()}).safeParse(command.ticket);
         if (!seller.success) fail('Invalid seller draft',400);
-        next = { ...seller.data,id:command.id,ticketType:'SCRAP_METAL',createdAt:new Date().toISOString(),status:'PENDING',scrapLines:[],grossTotal:0,totalDeductions:0,finalPayout:0,payoutMethod:'Cash',operatorName:user.fullName };
+        const canonicalTickets = (await client.query('SELECT document FROM scrap_buying_tickets')).rows.map(row => row.document as Ticket);
+        if (openIntakeIds(canonicalTickets, tickets).length >= MAX_ACTIVE_INTAKES) fail('The intake queue is full. No new intake was accepted; retain this draft until a slot is available.');
+        if (command.sellerProfile && command.sellerProfile.selectedId !== seller.data.customerId) fail('Seller selection conflicts with ticket identity',400);
+        const profile = command.sellerProfile ? await persistIntakeSeller(client, command.sellerProfile) : {};
+        if (!command.sellerProfile && seller.data.customerId && !(await client.query('SELECT id FROM customers WHERE id=$1',[seller.data.customerId])).rows[0]) fail('Seller profile no longer exists',409);
+        next = { ...seller.data,...profile,id:command.id,ticketType:'SCRAP_METAL',createdAt:new Date().toISOString(),status:'PENDING',scrapLines:[],grossTotal:0,totalDeductions:0,finalPayout:0,payoutMethod:'Cash',operatorName:user.fullName };
       }
       next.buying = {version:1,revision:1,stage:'DRAFT'};
       await client.query('INSERT INTO scrap_buying_tickets(ticket_id,revision,stage,document,created_by) VALUES($1,1,$2,$3::jsonb,$4)',[next.id,'DRAFT',JSON.stringify(next),user.id]);

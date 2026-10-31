@@ -1,39 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 
-type Draft = { values: Record<string, unknown>; savedAt: string };
+import { intakeDraftAccess as accessDraft, migrateIntakeDraft, type IntakeDraftEnvelope as Draft } from '@/services/intakeDraftStorage';
 type Field = { value: unknown; restore: (value: any) => void };
-
-function openDrafts(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open('mahaffeys-intake-drafts', 1);
-    request.onupgradeneeded = () => request.result.createObjectStore('drafts');
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
-}
-async function performDraftAccess(key: string, action: 'read' | 'write' | 'delete', draft?: Draft): Promise<Draft | undefined> {
-  const db = await openDrafts();
-  try {
-    return await new Promise<Draft | undefined>((resolve, reject) => {
-      const transaction = db.transaction('drafts', action === 'read' ? 'readonly' : 'readwrite');
-      const store = transaction.objectStore('drafts');
-      const request = action === 'read' ? store.get(key) : action === 'write' ? store.put(draft, key) : store.delete(key);
-      transaction.oncomplete = () => resolve(action === 'read' ? request.result : undefined);
-      transaction.onerror = () => reject(transaction.error);
-      transaction.onabort = () => reject(transaction.error);
-    });
-  } finally { db.close(); }
-}
-const pendingAccess = new Map<string, Promise<Draft | undefined>>();
-function accessDraft(key: string, action: 'read' | 'write' | 'delete', draft?: Draft) {
-  // Keep writes and deletion ordered so an older autosave cannot resurrect a submitted draft.
-  const operation = (pendingAccess.get(key) ?? Promise.resolve()).catch(() => undefined).then(() => performDraftAccess(key, action, draft));
-  pendingAccess.set(key, operation);
-  const cleanup = () => { if (pendingAccess.get(key) === operation) pendingAccess.delete(key); };
-  operation.then(cleanup, cleanup);
-  return operation;
-}
 
 export function useIntakeDraft(kind: string, fields: Record<string, Field>, meaningful: boolean, reloadToken?: number) {
   const { user } = useAuth();
@@ -56,9 +25,12 @@ export function useIntakeDraft(kind: string, fields: Record<string, Field>, mean
     lastSerialized.current = '';
     setRecovery(null); setReadyKey(''); setSavedAt(''); setError('');
     if (!key) return;
-    accessDraft(key, 'read').then(draft => {
+    accessDraft<Draft>(key, 'read').then(draft => {
       if (!active) return;
-      if (draft) setRecovery(draft);
+      if (draft) {
+        try { setRecovery(migrateIntakeDraft(draft)); }
+        catch { suppressed.current = true; setError('Stored draft is corrupt or unsupported. Discard it explicitly before entering replacement data.'); setRecovery({ version: 1, values: {}, savedAt: new Date().toISOString() }); }
+      }
       setReadyKey(readyIdentity);
     }).catch(() => {
       if (active) { setError('Draft storage is unavailable. Keep this page open until you save.'); setReadyKey(readyIdentity); }
@@ -68,7 +40,7 @@ export function useIntakeDraft(kind: string, fields: Record<string, Field>, mean
 
   const serialized = JSON.stringify(Object.fromEntries(Object.entries(fields).map(([name, field]) => [name, field.value])));
   useEffect(() => {
-    if (!meaningful) suppressed.current = false;
+    // Submission suppression lasts until explicit discard or a new identity.
     if (!key || readyKey !== readyIdentity || recovery || suppressed.current) return;
     if (!meaningful) {
       if (lastSerialized.current) {
@@ -81,7 +53,7 @@ export function useIntakeDraft(kind: string, fields: Record<string, Field>, mean
     }
     if (serialized === lastSerialized.current) return;
     // Start the durable write immediately, including the final edit before navigation.
-    const draft = { values: JSON.parse(serialized), savedAt: new Date().toISOString() };
+    const draft: Draft = { version: 1, values: JSON.parse(serialized), savedAt: new Date().toISOString() };
     const generation = saveGeneration.current;
     lastSerialized.current = serialized;
     accessDraft(key, 'write', draft).then(() => {
@@ -97,21 +69,29 @@ export function useIntakeDraft(kind: string, fields: Record<string, Field>, mean
     suppressed.current = true;
     saveGeneration.current++;
     lastSerialized.current = '';
+    if (key) {
+      try { await accessDraft(key, 'delete'); }
+      catch { setError('Unable to remove the saved draft. Keep the confirmed submission for recovery.'); throw new Error('Intake confirmed, but local draft cleanup failed. Reconcile the confirmed submission before continuing.'); }
+    }
     setRecovery(null); setSavedAt('');
-    if (key) await accessDraft(key, 'delete').catch(() => setError('Unable to remove the saved draft.'));
   };
   const resume = () => {
     if (!recovery) return;
-    for (const [name, field] of Object.entries(current.current.fields)) {
-      if (Object.prototype.hasOwnProperty.call(recovery.values, name)) field.restore(recovery.values[name]);
-    }
+    const entries = Object.entries(current.current.fields).filter(([name]) => Object.prototype.hasOwnProperty.call(recovery.values, name));
+    if (entries.some(([name, field]) => {
+      const value = recovery.values[name];
+      return field.value === null ? value !== null && (typeof value !== 'object' || Array.isArray(value))
+        : typeof value !== typeof field.value || (typeof field.value === 'object' && (value === null || Array.isArray(value)));
+    })) { setError('Draft fields are unreadable. Review or discard this draft; no recovered values were applied.'); return; }
+    for (const [name, field] of entries) field.restore(recovery.values[name]);
     lastSerialized.current = JSON.stringify(recovery.values);
     setSavedAt(recovery.savedAt); setRecovery(null);
   };
   const discard = async () => {
-    await clear();
+    try { await clear(); } catch { return; }
     suppressed.current = false;
     lastSerialized.current = '';
   };
-  return { recovery, savedAt, error, loading: !!key && readyKey !== readyIdentity, resume, discard, clear };
+  const markEdited = () => { suppressed.current = false; };
+  return { recovery, savedAt, error, markEdited, loading: !!key && readyKey !== readyIdentity, resume, discard, clear };
 }

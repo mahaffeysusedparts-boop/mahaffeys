@@ -1,14 +1,16 @@
+import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Ticket } from '../types/scrap';
-const mocks = vi.hoisted(()=>({request:vi.fn(),apply:vi.fn()}));
-vi.mock('./apiClient',()=>({apiRequest:mocks.request}));
+const mocks = vi.hoisted(()=>({request:vi.fn(),apply:vi.fn(),user:{id:'payment-test'}}));
+vi.mock('./apiClient',async original=>({...await original<typeof import('./apiClient')>(),apiRequest:mocks.request}));
+vi.mock('./authService',()=>({authService:{getCurrentUser:()=>mocks.user}}));
 vi.mock('./sharedStorage',()=>({sharedStorage:{applyServerValue:mocks.apply}}));
 vi.mock('./storageService',()=>({storageService:{getTickets:()=>[]}}));
 const draft = {id:'test-ticket',buying:{version:1,revision:4,stage:'DRAFT'}} as Ticket;
 const paid = {...draft,payoutMethod:'Check',checkNumber:'000123-A',buying:{...draft.buying!,revision:5,stage:'PAID',payment:{id:'payment',method:'Check',checkReference:'000123-A'}}} as Ticket;
 
 beforeEach(()=>{
-  vi.resetModules();mocks.request.mockReset();mocks.apply.mockReset();
+  vi.resetModules();mocks.request.mockReset();mocks.apply.mockReset();mocks.user.id=crypto.randomUUID();
   const store=new Map<string,string>();
   vi.stubGlobal('sessionStorage',{getItem:(key:string)=>store.get(key)??null,setItem:(key:string,value:string)=>store.set(key,value),removeItem:(key:string)=>store.delete(key)});
 });

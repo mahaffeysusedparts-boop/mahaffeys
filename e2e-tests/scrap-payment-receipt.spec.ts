@@ -1,3 +1,4 @@
+import { ownershipFixture, queueEnvelope } from './fixtures/intake-api';
 import { test, expect } from '@playwright/test';
 import { evaluateBuyingPaymentRules } from '../src/utils/buyingPaymentRules';
 import type { Ticket } from '../src/types/scrap';
@@ -24,14 +25,16 @@ for (const scenario of [
     } as Ticket;
     const state = () => ({ mahaffeys_tickets: [ticket], mahaffeys_metals: [metal], mahaffeys_settings: { yardName: 'Test Yard', defaultWeightUnit: 'LBS', scales: [], operatorName: user.fullName }, mahaffeys_cash_drawer: [] });
     let paymentCommands = 0;
+    const ownership = ownershipFixture(user);
     await page.route('**/api/**', async route => {
+      if (await ownership(route)) return;
       const path = new URL(route.request().url()).pathname;
       let response: unknown = { ok: true };
       if (path === '/api/auth/status') response = { user, hasAdmin: true };
       else if (path === '/api/state') response = { state: state() };
       else if (path === '/api/printers') response = [];
       else if (path === '/api/scale/status') response = { connected: false, weight: 0, unit: 'LBS', isStable: false, isZero: true, registry: [] };
-      else if (path === '/api/scrap-buying/queue') response = { tickets: [ticket], policy: null, legacyReviews: [] };
+      else if (path === '/api/scrap-buying/queue') response = queueEnvelope([ticket]);
       else if (path === '/api/scrap-buying/requirements') response = { revision: 1, requirePhotos: false, requirePhone: false, requireAddress: false, requireSellerId: false, requireVehiclePlate: false, requireExplicitReview: false };
       else if (path === '/api/scrap-buying/eligibility') response = evaluateBuyingPaymentRules(ticket);
       else if (path === '/api/scrap-buying/commands') {
@@ -55,7 +58,7 @@ for (const scenario of [
     });
     await page.goto('/intake');
     await page.getByText('Start Metal Scrap Ticket', { exact: true }).click();
-    await page.getByRole('button', { name: /Switch to This Intake|Continue This Intake/ }).click();
+    await page.getByRole('button', { name: /Claim This Intake|Switch to This Intake|Continue This Intake/ }).click();
     await expect(page.getByRole('heading', { name: 'Final purchase review' })).toBeVisible();
     await expect(page.getByRole('button', { name: /Pay Later/ })).toHaveCount(0);
     await expect(page.getByRole('button', { name: scenario.method, exact: true })).toHaveAttribute('aria-pressed', 'true');

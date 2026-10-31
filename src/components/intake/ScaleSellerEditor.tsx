@@ -24,28 +24,29 @@ export function ScaleSellerEditor({ ticket, requirements, onSave, onDirtyChange 
   const [phone, setPhone] = useState(ticket.customerPhone ?? '');
   const [address, setAddress] = useState(ticket.customerAddress ?? '');
   const [idNumber, setIdNumber] = useState(ticket.customerIdNumber ?? '');
-  const [idState, setIdState] = useState('SC');
-  const [idType, setIdType] = useState<Customer['idType']>('Driver License');
+  const [idState, setIdState] = useState('');
+  const [idType, setIdType] = useState<Customer['idType'] | ''>('');
   const [plate, setPlate] = useState(ticket.vehicleLicensePlate ?? '');
   const [captures, setCaptures] = useState<ComplianceCaptures>(ticket.complianceCaptures ?? {});
   const [dirty, setDirty] = useState(false);
   const [photosOpen, setPhotosOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  useEffect(() => {
-    if (dirty) return;
-    setPhone(ticket.customerPhone ?? ''); setAddress(ticket.customerAddress || profile.data?.address || '');
-    setIdNumber(ticket.customerIdNumber || profile.data?.idNumber || '');
-    setIdState(profile.data?.idState ?? 'SC'); setIdType(profile.data?.idType ?? 'Driver License');
-    setPlate(ticket.vehicleLicensePlate ?? ''); setCaptures(ticket.complianceCaptures ?? {});
-  }, [ticket, profile.data, dirty]);
   const draft = useIntakeDraft(`scale-seller:${ticket.id}`, {
     phone: { value: phone, restore: value => { setPhone(value); setDirty(true); } },
-    address: { value: address, restore: setAddress }, idNumber: { value: idNumber, restore: setIdNumber },
-    idState: { value: idState, restore: setIdState }, idType: { value: idType, restore: setIdType },
-    plate: { value: plate, restore: setPlate }, captures: { value: captures, restore: setCaptures },
+    address: { value: address, restore: value => { setAddress(value); setDirty(true); } }, idNumber: { value: idNumber, restore: value => { setIdNumber(value); setDirty(true); } },
+    idState: { value: idState, restore: value => { setIdState(value); setDirty(true); } }, idType: { value: idType, restore: value => { setIdType(value); setDirty(true); } },
+    plate: { value: plate, restore: value => { setPlate(value); setDirty(true); } }, captures: { value: captures, restore: value => { setCaptures(value); setDirty(true); } },
   }, dirty);
+  useEffect(() => {
+    if (dirty || draft.loading || draft.recovery) return;
+    setPhone(ticket.customerPhone ?? ''); setAddress(ticket.customerAddress || profile.data?.address || '');
+    setIdNumber(ticket.customerIdNumber || profile.data?.idNumber || '');
+    setIdState(profile.data?.idState ?? ''); setIdType(profile.data?.idType ?? '');
+    setPlate(ticket.vehicleLicensePlate ?? ''); setCaptures(ticket.complianceCaptures ?? {});
+  }, [ticket, profile.data, dirty, draft.loading, draft.recovery]);
   useEffect(() => { onDirtyChange(dirty || !!draft.recovery || draft.loading); }, [dirty, draft.recovery, draft.loading, onDirtyChange]);
+  const markDirty = () => { draft.markEdited(); setDirty(true); };
   const issues: IntakeIssue[] = [
     ...(!phone.trim() && requirements?.requirePhone ? [{ target: 'scale-seller-phone', message: 'Seller phone is required.' }] : []),
     ...(!address.trim() && requirements?.requireAddress ? [{ target: 'scale-seller-address', message: 'Seller address is required.' }] : []),
@@ -58,12 +59,14 @@ export function ScaleSellerEditor({ ticket, requirements, onSave, onDirtyChange 
   const save = async () => {
     if (saving || draft.recovery || draft.loading) return;
     if (idNumber.trim() && !idState.trim()) { setError('Confirm the ID issuing jurisdiction beside the ID field.'); return; }
+    if (!idType) { setError('Confirm the ID type before saving seller corrections.'); return; }
     setSaving(true); setError('');
     try {
       if (await onSave({ phone, address, idNumber, idState, idType, plate, captures })) {
         await draft.clear(); setDirty(false); void profile.refetch();
       } else setError('Seller changes were not saved. Resolve the ownership or save warning and retry.');
-    } finally { setSaving(false); }
+    } catch (failure) { setError(failure instanceof Error ? failure.message : 'Seller correction cleanup failed; retained inputs require review.'); }
+    finally { setSaving(false); }
   };
   const fields = [
     { id: 'scale-seller-phone', label: 'Seller phone', value: phone, set: setPhone, max: 80 },
@@ -79,12 +82,12 @@ export function ScaleSellerEditor({ ticket, requirements, onSave, onDirtyChange 
     <IntakeFieldGuidance issues={issues}/>
     {profile.isError && <p role="alert" className="text-xs text-amber-200">Could not load the customer profile. Retry before correcting ID details.<Button variant="link" onClick={() => void profile.refetch()} className="text-amber-100">Retry</Button></p>}
     <fieldset disabled={saving || draft.loading || !!draft.recovery || profile.isLoading || profile.isError} className="space-y-3">
-      <div className="grid gap-3 sm:grid-cols-2">{fields.map(field => <div key={field.id}><Label htmlFor={field.id} className="text-xs text-slate-100">{field.label}</Label><Input id={field.id} maxLength={field.max} value={field.value} onChange={event => { field.set(event.target.value); setDirty(true); }} aria-invalid={!!message(field.id)} className="mt-1 h-11 rounded-xl border-slate-700 bg-slate-950 text-white"/><IntakeFieldError message={message(field.id)}/></div>)}<div><Label className="text-xs text-slate-100">ID type</Label><Select value={idType} onValueChange={value => { setIdType(value as Customer['idType']); setDirty(true); }}><SelectTrigger className="mt-1 h-11 rounded-xl border-slate-700 bg-slate-950"><SelectValue/></SelectTrigger><SelectContent>{(['Driver License','State ID','Passport','Military ID'] as const).map(type => <SelectItem key={type} value={type}>{type}</SelectItem>)}</SelectContent></Select></div></div>
+      <div className="grid gap-3 sm:grid-cols-2">{fields.map(field => <div key={field.id}><Label htmlFor={field.id} className="text-xs text-slate-100">{field.label}</Label><Input id={field.id} maxLength={field.max} value={field.value} onChange={event => { field.set(event.target.value); markDirty(); }} aria-invalid={!!message(field.id)} className="mt-1 h-11 rounded-xl border-slate-700 bg-slate-950 text-white"/><IntakeFieldError message={message(field.id)}/></div>)}<div><Label className="text-xs text-slate-100">ID type</Label><Select value={idType} onValueChange={value => { setIdType(value as Customer['idType']); markDirty(); }}><SelectTrigger className="mt-1 h-11 rounded-xl border-slate-700 bg-slate-950"><SelectValue placeholder="Confirm ID type"/></SelectTrigger><SelectContent>{(['Driver License','State ID','Passport','Military ID'] as const).map(type => <SelectItem key={type} value={type}>{type}</SelectItem>)}</SelectContent></Select></div></div>
       <div id="scale-seller-photos" className="space-y-2"><Button onClick={() => setPhotosOpen(true)} variant="outline" className="rounded-xl border-sky-700 bg-sky-950 text-sky-100"><Camera className="mr-2 h-4 w-4"/>Capture missing photos</Button><IntakeFieldError message={message('scale-seller-photos')}/><div className="flex flex-wrap gap-2">{INTAKE_PHOTO_FIELDS.map(field => captures[field] && <img key={field} src={captures[field]} alt={field.replace('PhotoUrl','')} className="h-16 w-20 rounded-lg object-cover"/>)}</div></div>
       <Button disabled={!dirty || saving} onClick={() => void save()} className="rounded-xl bg-sky-700 text-white hover:bg-sky-600"><Save className="mr-2 h-4 w-4"/>{saving ? 'Saving seller details…' : 'Save seller corrections'}</Button>
     </fieldset>
     {dirty && <p className="text-xs text-amber-200">Unsaved seller corrections: save them before completing payment.</p>}
     {error && <p role="alert" className="text-sm text-amber-200">{error}</p>}
-    <ComplianceCaptureModal isOpen={photosOpen} onClose={() => setPhotosOpen(false)} initialCaptures={captures} intakeType="SCRAP_METAL" onSaveCaptures={value => { setCaptures(value); setDirty(true); }}/>
+    <ComplianceCaptureModal isOpen={photosOpen} onClose={() => setPhotosOpen(false)} initialCaptures={captures} intakeType="SCRAP_METAL" onSaveCaptures={value => { setCaptures(value); markDirty(); }}/>
   </section>;
 }

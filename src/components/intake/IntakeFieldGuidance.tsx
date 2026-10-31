@@ -1,16 +1,23 @@
 import { Button } from '@/components/ui/button';
 import { AlertTriangle, ArrowRight } from 'lucide-react';
+import { toast } from 'sonner';
 
 export interface IntakeIssue { target: string; message: string; beforeCompletion?: boolean }
 export function goToIntakeField(target: string) {
   const element = document.getElementById(target);
-  if (!element) return;
+  if (!element) { toast.info('This control is unavailable in the current intake stage. Return to the relevant editor first.'); return; }
   element.scrollIntoView({ behavior: 'smooth', block: 'center' });
   const input = element.matches('input,textarea,button,select') ? element
     : element.querySelector<HTMLElement>('[aria-invalid="true"]:not(:disabled)')
       ?? element.querySelector<HTMLElement>('input:not(:disabled),textarea:not(:disabled),select:not(:disabled)')
       ?? element.querySelector<HTMLElement>('button:not(:disabled)');
-  (input as HTMLElement | null)?.focus({ preventScroll: true });
+  if (!input || input.matches(':disabled,[aria-disabled="true"]')) {
+    element.tabIndex = -1;
+    element.focus({ preventScroll: true });
+    toast.info('Editing this requirement is paused. Resolve recovery, ownership or the current save before continuing.');
+    return;
+  }
+  input.focus({ preventScroll: true });
 }
 export function IntakeFieldGuidance({ issues }: { issues: IntakeIssue[] }) {
   if (!issues.length) return null;

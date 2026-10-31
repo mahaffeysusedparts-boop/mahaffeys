@@ -1,3 +1,4 @@
+import { ownershipFixture, queueEnvelope } from './fixtures/intake-api';
 import { test, expect } from '@playwright/test';
 import { evaluateBuyingPaymentRules } from '../src/utils/buyingPaymentRules';
 
@@ -10,12 +11,15 @@ for (const savedPhoto of [true, false]) {
     let customer = { id: 'photo-seller', fullName: 'ID Photo Seller', phone: '5551234567', idType: 'Driver License', idNumber: 'PHOTO-123', idState: 'SC', address: '123 Test Road', isCommercial: false, idPhotoUrl: savedPhoto ? '/api/uploads/seller-id' : undefined };
     let savedTicket: any = null;
     let updatedPhoto = '';
+    const ownership = ownershipFixture(user);
     await page.route('**/api/**', async route => {
+      if (await ownership(route)) return;
       const path = new URL(route.request().url()).pathname;
       let response: unknown = { ok: true };
       if (path === '/api/auth/status') response = { user, hasAdmin: true };
       else if (path === '/api/state') response = { state: { mahaffeys_tickets: savedTicket ? [savedTicket] : [], mahaffeys_settings: { operatorName: user.fullName, scales: [] } } };
-      else if (path === '/api/customers') response = { customers: [customer], page: 1, pageSize: 20, total: 1, totalPages: 1 };
+      else if (path.endsWith('/history')) response = { previousTicket: null, lastVehicle: null, commonMaterials: [], historyCount: 0 };
+    else if (path === '/api/customers') response = { customers: [customer], page: 1, pageSize: 20, total: 1, totalPages: 1 };
       else if (path === '/api/customers/photo-seller' && route.request().method() === 'PATCH') {
         const input = route.request().postDataJSON();
         updatedPhoto = input.idPhotoUrl;
@@ -29,7 +33,7 @@ for (const savedPhoto of [true, false]) {
       else if (path === '/api/printers') response = [];
       else if (path === '/api/scale/status') response = { connected: false, weight: 0, unit: 'LBS', isStable: false, isZero: true, registry: [] };
       else if (path === '/api/scrap-buying/requirements') response = { revision: 1, requirePhotos: false, requirePhone: false, requireAddress: false, requireSellerId: false, requireVehiclePlate: false, requireExplicitReview: false };
-      else if (path === '/api/scrap-buying/queue') response = { tickets: savedTicket ? [savedTicket] : [], policy: null, legacyReviews: [] };
+      else if (path === '/api/scrap-buying/queue') response = queueEnvelope(savedTicket ? [savedTicket] : []);
       else if (path === '/api/scrap-buying/eligibility') response = evaluateBuyingPaymentRules(savedTicket);
       else if (path === '/api/scrap-buying/commands') {
         const command = route.request().postDataJSON();
@@ -38,6 +42,8 @@ for (const savedPhoto of [true, false]) {
           return;
         }
         expect(command.action).toBe('CREATE');
+        updatedPhoto = command.sellerProfile.input.idPhotoUrl;
+        customer = { ...customer, ...command.sellerProfile.input };
         savedTicket = { ...command.ticket, buying: { version: 1, revision: 1, stage: 'DRAFT' } };
         response = savedTicket;
       }
@@ -47,6 +53,7 @@ for (const savedPhoto of [true, false]) {
     await page.getByText('Start Metal Scrap Ticket', { exact: true }).click();
     await page.getByRole('combobox', { name: 'Find Registered Customer', exact: true }).click();
     await page.getByRole('option', { name: /ID Photo Seller/ }).click();
+    await page.getByRole('button', { name: 'Confirm & reuse seller details', exact: true }).click();
     if (savedPhoto) await expect(page.getByRole('img', { name: 'ID / License', exact: true })).toHaveAttribute('src', '/api/uploads/seller-id');
     await page.getByRole('button', { name: 'Open Photo Compliance Studio', exact: true }).click();
     const studio = page.getByRole('dialog');
@@ -67,6 +74,7 @@ for (const savedPhoto of [true, false]) {
     await expect(page.getByRole('heading', { name: 'Scrap Intake — Part 1', exact: true })).toBeVisible();
     await page.getByRole('combobox', { name: 'Find Registered Customer', exact: true }).click();
     await page.getByRole('option', { name: /ID Photo Seller/ }).click();
+    await page.getByRole('button', { name: 'Confirm & reuse seller details', exact: true }).click();
     await expect(page.getByRole('img', { name: 'ID / License', exact: true })).toHaveAttribute('src', '/api/uploads/seller-id');
   });
 }
@@ -83,6 +91,7 @@ test('Switching car sellers clears the previous seller ID and photo', async ({ p
     if (path === '/api/auth/status') response = { user, hasAdmin: true };
     else if (path === '/api/users') response = { users: [user] };
     else if (path === '/api/state') response = { state: { mahaffeys_tickets: [] } };
+    else if (path.endsWith('/history')) response = { previousTicket: null, lastVehicle: null, commonMaterials: [], historyCount: 0 };
     else if (path === '/api/customers') response = { customers, page: 1, pageSize: 20, total: 2, totalPages: 1 };
     else if (path === '/api/printers') response = [];
     else if (path === '/api/uploads/first-id') {
@@ -96,9 +105,11 @@ test('Switching car sellers clears the previous seller ID and photo', async ({ p
   const sellers = page.getByRole('combobox', { name: 'Find Returning Seller', exact: true });
   await sellers.click();
   await page.getByRole('option', { name: /First Seller/ }).click();
+  await page.getByRole('button', { name: 'Confirm & reuse seller details', exact: true }).click();
   await expect(page.getByRole('img', { name: 'Seller ID', exact: true })).toBeVisible();
   await sellers.click();
   await page.getByRole('option', { name: /Second Seller/ }).click();
+  await page.getByRole('button', { name: 'Confirm & reuse seller details', exact: true }).click();
   await expect(page.getByRole('img', { name: 'Seller ID', exact: true })).toHaveCount(0);
   await expect(page.getByPlaceholder('e.g. DL-9823145-GA', { exact: true })).toHaveValue('SECOND-ID');
   await expect(page.getByPlaceholder('(555) 555-0123', { exact: true })).toHaveValue('222');

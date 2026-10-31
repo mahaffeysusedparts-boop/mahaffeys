@@ -1,3 +1,6 @@
+import { useQuery } from '@tanstack/react-query';
+import { MAX_ACTIVE_INTAKES } from '@/utils/intakeQueue';
+import { pendingIntakeOperation, acknowledgeIntakeOperation, type IntakeOperation } from '@/services/intakeSubmissionService';
 import React, { useEffect, useRef, useState } from 'react';
 import { useIntakeDraft } from '@/hooks/useIntakeDraft';
 import { DraftRecoveryBanner } from './DraftRecoveryBanner';
@@ -13,6 +16,7 @@ import { calculateComplianceScore } from '@/utils/complianceUtils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -44,7 +48,7 @@ interface IntakeCollectionFormProps {
   onOpenQueue: () => void;
 }
 
-const MAX_ACTIVE_LOADS = 10;
+const MAX_ACTIVE_LOADS = MAX_ACTIVE_INTAKES;
 
 const emptyCaptures: ComplianceCaptures = {
   personPhotoUrl: undefined,
@@ -58,6 +62,12 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
   const requirements = useIntakeRequirements();
   const [activeLoadCount, setActiveLoadCount] = useState(() => storageService.getTickets().filter(ticket => ticket.ticketType === 'SCRAP_METAL' && ticket.status === 'PENDING').length);
   useEffect(() => storageService.subscribe('mahaffeys_tickets', () => setActiveLoadCount(storageService.getTickets().filter(ticket => ticket.ticketType === 'SCRAP_METAL' && ticket.status === 'PENDING').length)), []);
+  const queueStatus = useQuery({ queryKey: ['scrap-buying-queue'], queryFn: () => scrapBuyingService.queue(), refetchInterval: 5000 });
+  const authoritativeCount = queueStatus.isError ? null : queueStatus.data?.capacity?.openCount ?? null;
+  const [pendingOperation, setPendingOperation] = useState<IntakeOperation | null>(null);
+  const [operationLoading, setOperationLoading] = useState(true);
+  const [operationError, setOperationError] = useState('');
+  useEffect(() => { let active = true; pendingIntakeOperation('CREATE').then(value => { if (active) setPendingOperation(value); }).catch(() => { if (active) setOperationError('Submission recovery is unavailable. Keep this form open; do not submit a replacement intake.'); }).finally(() => { if (active) setOperationLoading(false); }); return () => { active = false; }; }, []);
   const [ticketNumber, setTicketNumber] = useState<string>(() => storageService.generateScrapReceiptNumber());
   const initialReceiptRef = useRef(ticketNumber);
   const [customerSearchOpen, setCustomerSearchOpen] = useState(false);
@@ -74,7 +84,8 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
   const [customerPhone, setCustomerPhone] = useState('');
   const [customerAddress, setCustomerAddress] = useState('');
   const [customerIdNumber, setCustomerIdNumber] = useState('');
-  const [customerIdState, setCustomerIdState] = useState('SC');
+  const [customerIdType, setCustomerIdType] = useState<Customer['idType'] | ''>('');
+  const [customerIdState, setCustomerIdState] = useState('');
   const [vehicleLicensePlate, setVehicleLicensePlate] = useState('');
   const [notes, setNotes] = useState('');
 
@@ -91,18 +102,20 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
     customerPhone: { value: customerPhone, restore: setCustomerPhone },
     customerAddress: { value: customerAddress, restore: setCustomerAddress },
     customerIdNumber: { value: customerIdNumber, restore: setCustomerIdNumber },
+    customerIdType: { value: customerIdType, restore: setCustomerIdType },
     customerIdState: { value: customerIdState, restore: setCustomerIdState },
     vehicleLicensePlate: { value: vehicleLicensePlate, restore: setVehicleLicensePlate },
     notes: { value: notes, restore: setNotes },
     captures: { value: captures, restore: setCaptures },
-  }, !!(customerName || customerPhone || customerAddress || customerIdNumber || vehicleLicensePlate || notes || Object.values(captures).some(Boolean)) || customerIdState !== 'SC' || ticketNumber !== initialReceiptRef.current);
+  }, !!(customerName || customerPhone || customerAddress || customerIdNumber || vehicleLicensePlate || notes || Object.values(captures).some(Boolean)) || !!customerIdState || !!customerIdType || ticketNumber !== initialReceiptRef.current);
 
   const compliance = calculateComplianceScore(captures, 'SCRAP_METAL');
   const issues: IntakeIssue[] = [
-    ...(activeLoadCount >= MAX_ACTIVE_LOADS ? [{ target: 'collection-capacity', message: 'The intake queue is full. Complete or void an open intake first.' }] : []),
+    ...(authoritativeCount !== null && authoritativeCount >= MAX_ACTIVE_LOADS ? [{ target: 'collection-capacity', message: 'The intake queue is full. Complete or void an open intake first.' }] : []),
     ...(!customerName.trim() && saveAttempted ? [{ target: 'collection-seller-name', message: 'Enter the seller name.' }] : []),
     ...(!customerPhone.trim() && requirements.data?.requirePhone ? [{ target: 'collection-phone', message: 'Enter the seller phone.', beforeCompletion: true }] : []),
     ...(!customerIdNumber.trim() && requirements.data?.requireSellerId ? [{ target: 'collection-id', message: 'Enter the seller ID number.', beforeCompletion: true }] : []),
+    ...(!customerIdType && !!customerIdNumber.trim() ? [{ target: 'collection-id-type', message: 'Confirm the actual ID type.' }] : []),
     ...(!customerIdState.trim() && requirements.data?.requireSellerId ? [{ target: 'seller-id-state', message: 'Confirm the ID issuing jurisdiction.', beforeCompletion: true }] : []),
     ...(!customerAddress.trim() && requirements.data?.requireAddress ? [{ target: 'seller-address', message: 'Enter the seller address.', beforeCompletion: true }] : []),
     ...(!vehicleLicensePlate.trim() && requirements.data?.requireVehiclePlate ? [{ target: 'collection-plate', message: 'Enter today’s vehicle plate.', beforeCompletion: true }] : []),
@@ -152,6 +165,7 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
     setCustomerAddress(customer.address || '');
     setCustomerIdNumber(customer.idNumber);
     setCustomerIdState(customer.idState);
+    setCustomerIdType(customer.idType);
     setVehicleLicensePlate(plate);
     if (materials.length) setNotes(previous => [previous, `Expected materials (unweighed): ${materials.join(', ')}`].filter(Boolean).join('; '));
     // The selected customer's registry photo always wins — freshly retaking it
@@ -164,21 +178,15 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
   };
 
   const handleSave = async () => {
-    if (saving || draft.loading || draft.recovery) return;
+    if (saving || draft.loading || draft.recovery || operationLoading || pendingOperation || operationError) return;
     setSaveAttempted(true);
     if (!customerName.trim()) {
       goToIntakeField('collection-seller-name');
       return;
     }
-    const activeLoads = storageService.getTickets().filter(
-      (t) => t.ticketType === 'SCRAP_METAL' && t.status === 'PENDING'
-    );
-    if (activeLoads.length >= MAX_ACTIVE_LOADS) {
-      setActiveLoadCount(activeLoads.length);
-      goToIntakeField('collection-capacity');
-      return;
-    }
+    if (authoritativeCount !== null && authoritativeCount >= MAX_ACTIVE_LOADS) { goToIntakeField('collection-capacity'); return; }
 
+    if (customerIdNumber.trim() && !customerIdType) { goToIntakeField('collection-id-type'); return; }
     const finalId = ticketNumber.trim() || storageService.generateScrapReceiptNumber();
     if (storageService.getTickets().some((t) => t.id === finalId)) {
       goToIntakeField('collection-receipt');
@@ -187,12 +195,12 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
 
     setSaving(true);
     try {
-      let customerId = selectedCustomerId;
+      const customerId = selectedCustomerId;
       const customerInput: CustomerInput = {
         fullName: customerName.trim(),
         phone: customerPhone.trim(),
-        idType: selectedCustomer?.idType ?? 'Driver License',
-        idNumber: customerIdNumber.trim() || selectedCustomer?.idNumber || '',
+        idType: customerIdType || 'Driver License',
+        idNumber: customerIdNumber.trim(),
         idState: customerIdState.trim().toUpperCase(),
         address: customerAddress.trim(),
         vehicleLicensePlate: vehicleLicensePlate.trim().toUpperCase(),
@@ -203,22 +211,6 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
         companyName: selectedCustomer?.companyName,
         businessAddress: selectedCustomer?.businessAddress,
       };
-
-      if (customerId) {
-        const updatedCustomer = await customerService.update(customerId, customerInput);
-        setSelectedCustomer(updatedCustomer);
-        setSelectedCustomerLabel(updatedCustomer.isCommercial && updatedCustomer.companyName
-          ? `${updatedCustomer.companyName} — ${updatedCustomer.fullName}`
-          : updatedCustomer.fullName);
-        toast.success('Customer profile updated');
-      } else {
-        const newCustomer = await customerService.create(customerInput);
-        customerId = newCustomer.id;
-        setSelectedCustomerId(newCustomer.id);
-        setSelectedCustomer(newCustomer);
-        setSelectedCustomerLabel(newCustomer.fullName);
-        toast.success('New customer profile created');
-      }
 
       const ticket: Ticket = {
         id: finalId,
@@ -241,7 +233,8 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
         notes: notes.trim() || 'Seller info & photos collected — awaiting scale IN weighing.',
       };
 
-      await scrapBuyingService.create(ticket);
+      const confirmed = await scrapBuyingService.create(ticket, { input: customerInput, selectedId: customerId || undefined, confirmedProfile: selectedCustomer ?? undefined });
+      toast.success(customerId ? 'Customer profile updated' : 'New customer profile created');
 
       const missing = [
         ...(!customerInput.idNumber && requirements.data?.requireSellerId !== false ? ['seller ID'] : []),
@@ -255,8 +248,11 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
         description: 'Seller details & photos stored. Continue to the scale to log the IN weight.',
       });
       await draft.clear();
-      onSaved(finalId);
+      await acknowledgeIntakeOperation('CREATE');
+      onSaved(confirmed.id);
     } catch (error) {
+      setPendingOperation(await pendingIntakeOperation('CREATE').catch(() => null));
+      setOperationError(error instanceof Error ? error.message : 'Unable to save this intake');
       toast.error(error instanceof Error ? error.message : 'Unable to save this intake');
     } finally {
       setSaving(false);
@@ -274,8 +270,18 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
   return (
     <div className="mx-auto max-w-5xl space-y-6 pb-24 sm:pb-12">
       <DraftRecoveryBanner draft={draft}/>
+      <p role="status" className="text-sm text-sky-100">{authoritativeCount === null ? `Queue capacity unverified · cached ${activeLoadCount}/${MAX_ACTIVE_LOADS}` : `Confirmed queue capacity: ${authoritativeCount}/${MAX_ACTIVE_LOADS}`}</p>
+      {operationError && <div role="alert" className="rounded-xl border border-amber-700 bg-amber-950 p-4 text-amber-100">{operationError}{!pendingOperation && <Button variant="link" className="text-amber-100" onClick={() => setOperationError('')}>Review retained inputs</Button>}</div>}
+      {pendingOperation && <div role="alert" className="rounded-xl border border-amber-700 bg-amber-950 p-4 text-amber-100">Interrupted submission retained separately from this form. Reconcile its original values before starting another intake.
+        <Button disabled={saving} className="mt-3 rounded-xl bg-sky-700 text-white" onClick={async () => {
+          setSaving(true);
+          try { const confirmed = await scrapBuyingService.retry('CREATE'); await draft.clear(); await acknowledgeIntakeOperation('CREATE'); onSaved(confirmed.id); }
+          catch (error) { setOperationError(error instanceof Error ? error.message : 'Not confirmed—review/retry'); setPendingOperation(await pendingIntakeOperation('CREATE').catch(() => pendingOperation)); }
+          finally { setSaving(false); }
+        }}>Reconcile original intake &amp; continue</Button>
+      </div>}
       <IntakeFieldGuidance issues={issues}/>
-      <fieldset disabled={draft.loading || !!draft.recovery || saving} className="contents">
+      <fieldset disabled={draft.loading || !!draft.recovery || saving || operationLoading || !!pendingOperation || !!operationError} className="contents">
       {/* Header */}
       <div className="flex flex-col gap-4 rounded-2xl border border-slate-800 bg-slate-900 p-4 shadow-xl sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
@@ -462,9 +468,14 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
                 <Label htmlFor="seller-id-state" className="text-xs text-slate-300">Actual ID issuing state / jurisdiction</Label>
                 <Input id="seller-id-state" aria-invalid={!!fieldError('seller-id-state')} value={customerIdState} onChange={(event) => setCustomerIdState(event.target.value.toUpperCase())} maxLength={40} className="h-11 max-w-xs rounded-xl border-slate-700 bg-slate-950 text-white" />
                 <IntakeFieldError message={fieldError('seller-id-state')}/>
-                <p className="text-xs text-slate-300">South Carolina is the local-entry default. Confirm against the actual ID; returning sellers keep their saved jurisdiction. A customer profile is saved with this intake even when the ID number is not yet available.</p>
+                <p className="text-xs text-slate-300">Confirm against the actual ID; returning sellers keep their reviewed jurisdiction. A customer profile can be saved with no ID, but missing identity is not verified.</p>
               </div>
 
+              <div>
+                <Label htmlFor="collection-id-type" className="text-xs text-slate-300">Actual ID type</Label>
+                <Select value={customerIdType} onValueChange={value => setCustomerIdType(value as Customer['idType'])}><SelectTrigger id="collection-id-type" className="mt-1 h-11 max-w-xs rounded-xl border-slate-700 bg-slate-950 text-white"><SelectValue placeholder="Confirm the ID type"/></SelectTrigger><SelectContent>{(['Driver License','State ID','Passport','Military ID'] as const).map(type => <SelectItem key={type} value={type}>{type}</SelectItem>)}</SelectContent></Select>
+                <IntakeFieldError message={fieldError('collection-id-type')}/>
+              </div>
               <div>
                 <Label className="text-xs text-slate-300">Intake Notes</Label>
                 <Input

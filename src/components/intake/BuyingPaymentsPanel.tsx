@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { pendingIntakeOperations, acknowledgeIntakeOperation, type IntakeOperation } from '@/services/intakeSubmissionService';
+import { useEffect, useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { BuyingPaymentFields, useBuyingPaymentEligibility, initialBuyingPayment, buyingPaymentReady } from './BuyingPaymentFields';
 import { canRecordBuyingPayment } from '@/utils/buyingAuthorization';
@@ -22,13 +23,27 @@ export function BuyingPaymentsPanel({onPaid}: {onPaid?: () => void}) {
   const [paymentInput,setPaymentInput] = useState(initialBuyingPayment);
   const [paymentTicketId,setPaymentTicketId] = useState<string|null>(null);
   const [receipt,setReceipt] = useState<Ticket|null>(null);
+  const [interrupted, setInterrupted] = useState<IntakeOperation[]>([]);
+  const [recoveryError, setRecoveryError] = useState('');
+  const [recovering, setRecovering] = useState(false);
+  useEffect(() => { let active = true; pendingIntakeOperations().then(rows => { if (active) setInterrupted(rows.filter(row => ['PAY','FINALIZE_AND_PAY'].includes(String(row.payload.action)))); }).catch(() => { if (active) setRecoveryError('Payment recovery is unavailable. Do not submit a replacement payment.'); }); return () => { active = false; }; }, [user?.id, paymentTicketId]);
   const selected = queue.data?.tickets.find((ticket) => ticket.id === selectedId);
   const eligibility = useBuyingPaymentEligibility(selected);
   const payment = useMutation({mutationFn:async () => {
+    if (interrupted.some(row => row.scope === selectedId) || recoveryError) throw new Error('Reconcile the interrupted payment before submitting another payment');
     if (!selected || !buyingPaymentReady(eligibility.data,paymentInput)) throw new Error('Enter required payment details first');
     return scrapBuyingService.pay(selected,paymentInput.method,paymentInput.reference,paymentInput.permitReference,paymentInput.documentationReference);
-  },onSuccess:(ticket) => { setReceipt(ticket); setSelectedId(null); setPaymentTicketId(null); setPaymentInput(initialBuyingPayment); toast.success('Payment acknowledged once; receipt copies do not pay again'); void queue.refetch(); onPaid?.(); }});
+  },onSuccess:(ticket) => { setReceipt(ticket); setSelectedId(null); setPaymentTicketId(null); setPaymentInput(initialBuyingPayment); toast.success('Payment acknowledged once; receipt copies do not pay again'); void queue.refetch(); onPaid?.(); }, onError: async () => { setInterrupted((await pendingIntakeOperations()).filter(row => ['PAY','FINALIZE_AND_PAY'].includes(String(row.payload.action)))); }});
   return <section className="space-y-4 rounded-2xl border border-emerald-800 bg-slate-900 p-4 text-white sm:p-6">
+    {recoveryError && <p role="alert" className="text-amber-200">{recoveryError}</p>}
+    {interrupted.map(operation => <div key={operation.operationId} role="alert" className="rounded-xl border border-amber-700 bg-amber-950 p-4 text-amber-100">Payment response not confirmed for #{String(operation.payload.id)}. Do not hand over funds again.
+      <Button disabled={recovering || !allowed} className="ml-2 rounded-xl bg-sky-700 text-white" onClick={async () => {
+        setRecovering(true);
+        try { const confirmed = await scrapBuyingService.retry(operation.scope); if (confirmed.buying?.stage !== 'PAID') throw new Error('Original payment is not confirmed'); setReceipt(confirmed); await acknowledgeIntakeOperation(operation.scope); setInterrupted(rows => rows.filter(row => row.operationId !== operation.operationId)); setSelectedId(null); void queue.refetch(); onPaid?.(); }
+        catch (error) { setRecoveryError(error instanceof Error ? error.message : 'Payment is not confirmed'); }
+        finally { setRecovering(false); }
+      }}>Reconcile original payment</Button>
+    </div>)}
     {canReviewLegacy && <LegacyBuyingReviewPanel/>}
     <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="flex items-center gap-2 text-xl font-bold"><Banknote className="text-emerald-300"/> Buying payments</h2><Button variant="outline" onClick={() => void queue.refetch()} className="rounded-xl border-slate-600 bg-slate-800 text-white">Refresh queue</Button></div>
     <p className="text-sm text-slate-200">Finalized purchases remain unpaid until actual cash disbursement or check issuance is acknowledged here. Historical tickets are excluded until reconciled; no payment status is inferred from legacy completion.</p>
@@ -36,10 +51,10 @@ export function BuyingPaymentsPanel({onPaid}: {onPaid?: () => void}) {
     <PaymentSafeguardsSettings/>
     <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead className="border-b border-slate-700 text-slate-300"><tr><th className="py-2">Ticket / seller</th><th>Stage</th><th>Amount</th><th>Next action</th></tr></thead><tbody>{(queue.data?.tickets ?? []).filter((ticket) => ['FINALIZED','PAID'].includes(ticket.buying?.stage ?? '')).map((ticket) => <tr key={ticket.id} className="border-b border-slate-800"><td className="py-3"><b>#{ticket.id}</b><p>{ticket.customerName}</p></td><td>{ticket.buying?.stage === 'PAID' ? `Paid · ${ticket.buying.payment?.method}` : 'Ready for payout · unpaid'}{ticket.buying?.payment?.checkReference && <p className="font-mono text-xs text-emerald-200">Check #{ticket.buying.payment.checkReference}</p>}</td><td className="font-mono">${ticket.finalPayout.toFixed(2)}</td><td><Button onClick={() => {if(ticket.buying?.stage === 'PAID') setReceipt(ticket);else{setSelectedId(ticket.id);if(paymentTicketId !== ticket.id){setPaymentInput(initialBuyingPayment);setPaymentTicketId(ticket.id);}payment.reset();}}} disabled={ticket.buying?.stage !== 'PAID' && !allowed} className="rounded-xl bg-emerald-700 text-white hover:bg-emerald-600">{ticket.buying?.stage === 'PAID' ? 'Receipt copy' : 'Record payment'}</Button></td></tr>)}</tbody></table></div>
     <Dialog open={!!selectedId} onOpenChange={open=>{if(!open && !payment.isPending)setSelectedId(null);}}><DialogContent className="max-h-[90vh] overflow-y-auto rounded-2xl border-slate-700 bg-slate-950 text-white"><DialogHeader><DialogTitle className="flex gap-2"><ShieldCheck className="text-emerald-300"/>Actual payment · #{selected?.id}</DialogTitle><DialogDescription className="text-slate-200">{selected?.customerName} ·  ${selected?.finalPayout.toFixed(2)}. Record cash handover or check issuance directly.</DialogDescription></DialogHeader>
-      <BuyingPaymentFields eligibility={eligibility.data} error={eligibility.error?.message} loading={eligibility.isLoading} disabled={payment.isPending} value={paymentInput} onChange={setPaymentInput}/>
+      <BuyingPaymentFields eligibility={eligibility.data} error={eligibility.error?.message} loading={eligibility.isLoading} disabled={payment.isPending || interrupted.some(row => row.scope === selectedId) || !!recoveryError} value={paymentInput} onChange={setPaymentInput}/>
       <p className="rounded-xl border border-emerald-700 bg-emerald-950 p-3 text-sm text-emerald-100">By recording payment, you confirm cash was actually handed to this seller / the check with this number was actually issued to this seller. Do not disburse again on retry.</p>
       {payment.isError && <p role="alert" className="text-amber-200">{payment.error.message} Refresh the queue if the result is uncertain; never disburse a second time.</p>}
-      <Button onClick={()=>payment.mutate()} disabled={!allowed || eligibility.isError || !buyingPaymentReady(eligibility.data,paymentInput) || payment.isPending || selected?.buying?.stage!=='FINALIZED'} className="h-12 rounded-xl bg-emerald-600 text-white hover:bg-emerald-500">{payment.isPending?'Awaiting server acknowledgement…':'Complete & Record Payment'}</Button>
+      <Button onClick={()=>payment.mutate()} disabled={!!recoveryError || interrupted.some(row => row.scope === selectedId) || !allowed || eligibility.isError || !buyingPaymentReady(eligibility.data,paymentInput) || payment.isPending || selected?.buying?.stage!=='FINALIZED'} className="h-12 rounded-xl bg-emerald-600 text-white hover:bg-emerald-500">{payment.isPending?'Awaiting server acknowledgement…':'Complete & Record Payment'}</Button>
     </DialogContent></Dialog>
     <ReceiptModal ticket={receipt} open={!!receipt} onOpenChange={(open) => !open && setReceipt(null)}/>
   </section>;

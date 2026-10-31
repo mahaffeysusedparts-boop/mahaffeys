@@ -1,3 +1,4 @@
+import { ownershipFixture, queueEnvelope } from './fixtures/intake-api';
 import { test, expect } from '@playwright/test';
 import type { Ticket } from '../src/types/scrap';
 
@@ -19,7 +20,9 @@ test('Stable weight captures immediately and another device receives same-login 
       await context.addInitScript(values => {
         for (const [key, value] of Object.entries(values)) localStorage.setItem(key, JSON.stringify(value));
       }, state());
+      const ownership = ownershipFixture(user);
       await context.route('**/api/**', async route => {
+        if (await ownership(route)) return;
         const path = new URL(route.request().url()).pathname;
         let response: unknown = { ok: true };
         if (path === '/api/auth/status') response = { user, hasAdmin: true };
@@ -33,7 +36,7 @@ test('Stable weight captures immediately and another device receives same-login 
           polls[index]++;
           if (stable && index === 0 && !firstStableAt) firstStableAt = Date.now();
           response = { connected: true, weight: stable ? 1200 : 50, unit: 'LBS', isStable: stable, isZero: false, registry: [] };
-        } else if (path === '/api/scrap-buying/queue') response = { tickets: [ticket], policy: null, legacyReviews: [] };
+        } else if (path === '/api/scrap-buying/queue') response = queueEnvelope([ticket]);
         else if (path === '/api/scrap-buying/requirements') response = { revision: 1, requirePhotos: false, requirePhone: false, requireAddress: false, requireSellerId: false, requireVehiclePlate: false, requireExplicitReview: false };
         else if (path === '/api/scrap-buying/eligibility') response = { ticketId: ticket.id, revision: ticket.buying!.revision, allowedMethods: [], selectableMethods: [], reasons: [], permitRequired: false, documentationRequired: false };
         else if (path === '/api/scrap-buying/commands') {
@@ -55,7 +58,7 @@ test('Stable weight captures immediately and another device receives same-login 
     for (const page of [desk, otherDevice]) {
       await page.goto('/intake');
       await page.getByText('Start Metal Scrap Ticket', { exact: true }).click();
-      await page.getByRole('button', { name: /Switch to This Intake|Continue This Intake/ }).click();
+      await page.getByRole('button', { name: /Claim This Intake|Switch to This Intake|Continue This Intake/ }).click();
       await expect(page.getByRole('button', { name: /LOG IN WEIGHT/ })).toBeEnabled();
     }
     // Fill the old smoothing window, then change sharply to a stable reading.

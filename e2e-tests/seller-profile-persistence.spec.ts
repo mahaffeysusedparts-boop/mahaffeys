@@ -1,10 +1,13 @@
+import { ownershipFixture, queueEnvelope } from './fixtures/intake-api';
 import { test, expect } from '@playwright/test';
 
 test('Saving a scrap intake without an ID creates a customer profile', async ({ page }) => {
   const user = { id: 'seller-profile-test', fullName: 'Profile Tester', username: 'profile-tester', role: 'scale_operator', status: 'approved' };
   const customerRows: Record<string, unknown>[] = [];
   let savedTicket: Record<string, any> | null = null;
+  const ownership = ownershipFixture(user);
   await page.route('**/api/**', async route => {
+    if (await ownership(route)) return;
     const path = new URL(route.request().url()).pathname;
     let response: unknown = { ok: true };
     if (path === '/api/auth/status') response = { user, hasAdmin: true };
@@ -18,11 +21,13 @@ test('Saving a scrap intake without an ID creates a customer profile', async ({ 
     else if (path === '/api/adc/cameras') response = { status: 'NEEDS_LOGIN', cameras: [] };
     else if (path === '/api/scale/status') response = { connected: false, weight: 0, unit: 'LBS', isStable: false, isZero: true, registry: [] };
     else if (path === '/api/scrap-buying/requirements') response = { revision: 1, requirePhotos: false, requirePhone: false, requireAddress: false, requireSellerId: false, requireVehiclePlate: false, requireExplicitReview: false };
-    else if (path === '/api/scrap-buying/queue') response = { tickets: [], policy: null, legacyReviews: [] };
+    else if (path === '/api/scrap-buying/queue') response = queueEnvelope([]);
     else if (path === '/api/scrap-buying/commands') {
       const command = route.request().postDataJSON();
       if (command.action === 'CREATE') {
-        savedTicket = { ...command.ticket, buying: { version: 1, revision: 1, stage: 'DRAFT' } };
+        const customer = { ...command.sellerProfile.input, id: 'new-profile-1' };
+        customerRows.push(customer);
+        savedTicket = { ...command.ticket, customerId: customer.id, buying: { version: 1, revision: 1, stage: 'DRAFT' } };
         response = savedTicket;
       } else if (command.action === 'ADOPT') {
         response = savedTicket;
