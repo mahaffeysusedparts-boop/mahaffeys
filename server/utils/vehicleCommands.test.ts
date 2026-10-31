@@ -67,4 +67,54 @@ describe('vehicle commands', () => {
     await expect(invoke()).rejects.toMatchObject({ statusCode: 400 });
     expect(mocks.put).not.toHaveBeenCalled();
   });
+  it('saves dismantling, the optional available status and history together', async () => {
+    mocks.body.mockResolvedValue({ action: 'PROCESS', target: target(vehicles[0]), makeAvailable: true, log: {
+      catalyticConvertersRemoved: 1, wheelsRemoved: 4, gasDrained: true, oilDrained: true, notes: 'Ready for the yard',
+    } });
+    await invoke();
+    expect(mocks.put).toHaveBeenCalledTimes(1);
+    expect(vehicles[0].status).toBe('AVAILABLE');
+    expect(vehicles[0].vehicleRevision).toBe(1);
+    expect(vehicles[0].dismantlingLog).toMatchObject({ catalyticConvertersRemoved: 1, wheelsRemoved: 4, gasDrained: true, oilDrained: true, updatedAt: expect.any(String) });
+    expect(vehicles[0].history?.map(event => event.kind)).toEqual(['STATUS', 'PART', 'PART', 'PROCESSING']);
+    expect(vehicles[0].history?.every(event => event.actor === 'Technician' && event.at === vehicles[0].dismantlingLog.updatedAt)).toBe(true);
+    expect(vehicles[0].partsRemaining).toEqual(['Engine']);
+    expect(vehicles[0].partChecks).toEqual([]);
+  });
+  it('retains earlier removed quantities in history when a count is corrected', async () => {
+    mocks.body.mockResolvedValue({ action: 'PROCESS', target: target(vehicles[0]), makeAvailable: false, log: { ...base.dismantlingLog, wheelsRemoved: 4 } });
+    await invoke();
+    const history = [...vehicles[0].history!];
+    mocks.body.mockResolvedValue({ action: 'PROCESS', target: target(vehicles[0]), makeAvailable: false, log: { ...base.dismantlingLog, wheelsRemoved: 2, notes: 'Corrected the count' } });
+    await invoke();
+    expect(vehicles[0].history?.slice(0, history.length)).toEqual(history);
+    expect(vehicles[0].history?.at(-1)?.description).toContain('wheels removed: 4 → 2');
+    expect(vehicles[0].dismantlingLog.wheelsRemoved).toBe(2);
+    expect(vehicles[0].status).toBe('PENDING');
+  });
+  it('rejects stale dismantling saves without applying the available status', async () => {
+    const preview = target(vehicles[0]);
+    vehicles[0].vehicleRevision = 1;
+    mocks.body.mockResolvedValue({ action: 'PROCESS', target: preview, makeAvailable: true, log: { ...base.dismantlingLog, wheelsRemoved: 4 } });
+    await expect(invoke()).rejects.toMatchObject({ statusCode: 409 });
+    expect(mocks.put).not.toHaveBeenCalled();
+    expect(vehicles[0].status).toBe('PENDING');
+    expect(vehicles[0].dismantlingLog.wheelsRemoved).toBe(0);
+  });
+  it.each([-1, 1.5, 9])('rejects an invalid wheel count of %s rather than silently clamping it', async wheelsRemoved => {
+    mocks.body.mockResolvedValue({ action: 'PROCESS', target: target(vehicles[0]), makeAvailable: false, log: { ...base.dismantlingLog, wheelsRemoved } });
+    await expect(invoke()).rejects.toMatchObject({ statusCode: 400 });
+    expect(mocks.put).not.toHaveBeenCalled();
+  });
+  it('does not reopen a crushed vehicle through the dismantling action', async () => {
+    vehicles[0].status = 'CRUSHED';
+    mocks.body.mockResolvedValue({ action: 'PROCESS', target: target(vehicles[0]), makeAvailable: true, log: base.dismantlingLog });
+    await expect(invoke()).rejects.toMatchObject({ statusCode: 409 });
+    expect(mocks.put).not.toHaveBeenCalled();
+  });
+  it('rejects a caller-provided dismantling timestamp', async () => {
+    mocks.body.mockResolvedValue({ action: 'PROCESS', target: target(vehicles[0]), makeAvailable: false, log: { ...base.dismantlingLog, updatedAt: '2020-01-01T00:00:00Z' } });
+    await expect(invoke()).rejects.toMatchObject({ statusCode: 400 });
+    expect(mocks.put).not.toHaveBeenCalled();
+  });
 });
