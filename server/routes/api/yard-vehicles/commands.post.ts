@@ -16,6 +16,10 @@ const patch = z.object({ section: z.enum(VEHICLE_SECTIONS).optional(), rowNumber
 const schema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('BULK'), targets: z.array(target).min(1).max(500), patch }).strict(),
   z.object({ action: z.literal('PART'), target, name: z.string().trim().min(1).max(200), status: z.enum(['NOT_CHECKED','AVAILABLE','REMOVED']), notes: z.string().trim().max(1000).optional() }).strict(),
+  z.object({ action: z.literal('PROCESS'), target, makeAvailable: z.boolean(), log: z.object({
+    catalyticConvertersRemoved: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER), wheelsRemoved: z.number().int().min(0).max(8),
+    gasDrained: z.boolean(), oilDrained: z.boolean(), notes: z.string().trim().max(4000).optional(),
+  }).strict() }).strict(),
   z.object({ action: z.literal('PHOTO'), target, photoUrl: z.string().regex(/^\/api\/uploads\/[a-f0-9-]+$/i) }).strict(),
 ]);
 export default defineHandler(async event => {
@@ -42,6 +46,13 @@ export default defineHandler(async event => {
           throw createError({ statusCode: 409, statusMessage: `${previous.vin} is under a title hold. No bulk changes were applied. Use the individual administrator hold-override workflow first.` });
         }
         next = recordVehicleChanges(previous, next, user.fullName, at);
+      } else if (command.action === 'PROCESS') {
+        if (command.makeAvailable && previous.status !== 'PENDING') throw createError({ statusCode: 409, statusMessage: 'Only a pending vehicle can be made available while saving its dismantling log.' });
+        next = recordVehicleChanges(previous, {
+          ...previous,
+          status: command.makeAvailable ? 'AVAILABLE' : previous.status,
+          dismantlingLog: { ...command.log, notes: command.log.notes || undefined, updatedAt: at },
+        }, user.fullName, at);
       } else if (command.action === 'PART') {
         if (previous.status === 'CRUSHED' && command.status === 'AVAILABLE') throw createError({ statusCode: 409, statusMessage: 'A crushed vehicle cannot have confirmed available parts' });
         const oldCheck = previous.partChecks?.find(part => part.name.toLowerCase() === command.name.toLowerCase());

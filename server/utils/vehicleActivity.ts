@@ -41,7 +41,7 @@ export function recordVehicleChanges(previous: PullYardVehicle | undefined, next
       const difference = next.dismantlingLog[field] - previous.dismantlingLog[field];
       if (difference > 0) add('PART', `${difference} ${field === 'wheelsRemoved' ? 'wheel(s)' : 'catalytic converter(s)'} removed in the dismantling log.`);
     }
-    if (stable(previous.dismantlingLog) !== stable(next.dismantlingLog)) add('PROCESSING', `Dismantling log updated. Gas: ${next.dismantlingLog.gasDrained ? 'drained' : 'not drained'}; oil: ${next.dismantlingLog.oilDrained ? 'drained' : 'not drained'}.${next.dismantlingLog.notes ? ` ${next.dismantlingLog.notes}` : ''}`);
+    if (stable(previous.dismantlingLog) !== stable(next.dismantlingLog)) add('PROCESSING', `Dismantling log updated. Catalytic converters removed: ${previous.dismantlingLog.catalyticConvertersRemoved} → ${next.dismantlingLog.catalyticConvertersRemoved}; wheels removed: ${previous.dismantlingLog.wheelsRemoved} → ${next.dismantlingLog.wheelsRemoved}. Gas: ${next.dismantlingLog.gasDrained ? 'drained' : 'not drained'}; oil: ${next.dismantlingLog.oilDrained ? 'drained' : 'not drained'}.${next.dismantlingLog.notes ? ` ${next.dismantlingLog.notes}` : ''}`);
     if (['year','make','model','vin','color','notes','originSource','purchasePrice'].some(field => previous[field as keyof PullYardVehicle] !== next[field as keyof PullYardVehicle])) add('DETAILS', 'Vehicle details updated.');
   }
   const checks = [...(previous?.partChecks ?? [])];

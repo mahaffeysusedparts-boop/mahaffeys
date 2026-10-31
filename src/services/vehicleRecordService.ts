@@ -16,6 +16,7 @@ export function vehicleTarget(vehicle: PullYardVehicle): VehicleTarget {
 export type VehicleCommand =
   | { action: 'BULK'; targets: VehicleTarget[]; patch: VehiclePatch }
   | { action: 'PART'; target: VehicleTarget; name: string; status: PartAvailabilityStatus; notes?: string }
+  | { action: 'PROCESS'; target: VehicleTarget; log: Omit<PullYardVehicle['dismantlingLog'], 'updatedAt'>; makeAvailable: boolean }
   | { action: 'PHOTO'; target: VehicleTarget; photoUrl: string };
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {

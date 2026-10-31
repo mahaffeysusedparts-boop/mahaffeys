@@ -76,6 +76,7 @@ import { fetchYardVehicles } from '@/services/vehicleRecordService';
 import { VehicleScannerDialog } from '@/components/inventory/VehicleScannerDialog';
 import { BulkVehicleActionsDialog } from '@/components/inventory/BulkVehicleActionsDialog';
 import { VehicleWindowTag } from '@/components/inventory/VehicleWindowTag';
+import { VehicleDismantlingDialog } from '@/components/inventory/VehicleDismantlingDialog';
 
 export default function PullAPartPage() {
   const queryClient = useQueryClient();
@@ -121,11 +122,6 @@ export default function PullAPartPage() {
 
   // Dismantling Log Modal
   const [logVehicle, setLogVehicle] = useState<PullYardVehicle | null>(null);
-  const [catsRemoved, setCatsRemoved] = useState(0);
-  const [wheelsRemoved, setWheelsRemoved] = useState(0);
-  const [gasDrained, setGasDrained] = useState(false);
-  const [oilDrained, setOilDrained] = useState(false);
-  const [processorNotes, setProcessorNotes] = useState("");
 
   // Delete Confirmation Modal
   const [deletingVehicle, setDeletingVehicle] = useState<PullYardVehicle | null>(null);
@@ -363,37 +359,6 @@ export default function PullAPartPage() {
 
   const handleOpenPullLog = (vehicle: PullYardVehicle) => {
     setLogVehicle(vehicle);
-    setCatsRemoved(vehicle.dismantlingLog.catalyticConvertersRemoved);
-    setWheelsRemoved(vehicle.dismantlingLog.wheelsRemoved);
-    setGasDrained(vehicle.dismantlingLog.gasDrained);
-    setOilDrained(vehicle.dismantlingLog.oilDrained);
-    setProcessorNotes(vehicle.dismantlingLog.notes || "");
-  };
-
-  const handleSavePullLog = (moveToAvailable = false) => {
-    if (!logVehicle) return;
-
-    const newStatus: PullYardVehicleStatus = moveToAvailable ? "AVAILABLE" : logVehicle.status;
-
-    storageService.savePullYardVehicle({
-      ...logVehicle,
-      status: newStatus,
-      dismantlingLog: {
-        catalyticConvertersRemoved: Math.max(0, catsRemoved),
-        wheelsRemoved: Math.min(8, Math.max(0, wheelsRemoved)),
-        gasDrained,
-        oilDrained,
-        notes: processorNotes.trim() || undefined,
-        updatedAt: new Date().toISOString(),
-      },
-    });
-    loadData();
-    setLogVehicle(null);
-    toast.success(
-      moveToAvailable
-        ? `${logVehicle.year} ${logVehicle.make} ${logVehicle.model} processed & moved to AVAILABLE on yard!`
-        : `Dismantling log saved for ${logVehicle.year} ${logVehicle.make} ${logVehicle.model}`
-    );
   };
 
   const handleConfirmRemoveVehicle = () => {
@@ -1317,7 +1282,11 @@ export default function PullAPartPage() {
       <VehicleScannerDialog open={scannerOpen} onOpenChange={setScannerOpen} />
       {bulkTargets && <BulkVehicleActionsDialog vehicles={bulkTargets} onClose={() => setBulkTargets(null)} onSaved={() => { setSelectedIds([]); void queryClient.invalidateQueries({ queryKey: ['yard-vehicles'] }); }} />}
       <Dialog open={!!selectedVehForTicket} onOpenChange={open => { if (!open) setSelectedVehForTicket(null); }}><DialogContent className="max-h-[90dvh] overflow-y-auto rounded-3xl border-slate-700 bg-slate-900 text-white"><DialogHeader><DialogTitle>Vehicle window tag</DialogTitle><DialogDescription className="text-slate-300">Scan for vehicle details, yard location, parts availability, and staff actions.</DialogDescription></DialogHeader>{selectedVehForTicket && <VehicleWindowTag vehicle={selectedVehForTicket} yardName={storageService.getSettings().yardName} publicUrl={window.location.origin} />}</DialogContent></Dialog>
-      <Dialog open={!!logVehicle} onOpenChange={open => { if (!open) setLogVehicle(null); }}><DialogContent className="rounded-3xl border-slate-700 bg-slate-900 text-white"><DialogHeader><DialogTitle>Dismantling & fluid log</DialogTitle><DialogDescription className="text-slate-300">{logVehicle?.year} {logVehicle?.make} {logVehicle?.model} · Record cumulative removed quantities. Changes are included in vehicle history.</DialogDescription></DialogHeader><div className="grid gap-4 sm:grid-cols-2"><div className="space-y-2"><Label htmlFor="removed-cats">Catalytic converters removed</Label><Input id="removed-cats" type="number" min={0} step={1} value={catsRemoved} onChange={event => setCatsRemoved(Number(event.target.value))} className="rounded-xl border-slate-600 bg-slate-800" /></div><div className="space-y-2"><Label htmlFor="removed-wheels">Wheels removed</Label><Input id="removed-wheels" type="number" min={0} max={8} step={1} value={wheelsRemoved} onChange={event => setWheelsRemoved(Number(event.target.value))} className="rounded-xl border-slate-600 bg-slate-800" /></div><div className="flex items-center gap-2"><Checkbox id="gas-drained" checked={gasDrained} onCheckedChange={checked => setGasDrained(checked === true)} className="border-slate-400 data-[state=checked]:bg-emerald-600" /><Label htmlFor="gas-drained">Gas drained</Label></div><div className="flex items-center gap-2"><Checkbox id="oil-drained" checked={oilDrained} onCheckedChange={checked => setOilDrained(checked === true)} className="border-slate-400 data-[state=checked]:bg-emerald-600" /><Label htmlFor="oil-drained">Oil drained</Label></div><div className="space-y-2 sm:col-span-2"><Label htmlFor="processor-log-notes">Processor notes</Label><Textarea id="processor-log-notes" value={processorNotes} onChange={event => setProcessorNotes(event.target.value)} className="rounded-xl border-slate-600 bg-slate-800" /></div></div><p className="text-xs text-slate-300">For availability of a whole component or wheel set, open the vehicle record and record a component check.</p><DialogFooter><Button variant="outline" onClick={() => setLogVehicle(null)} className="rounded-xl border-slate-600 bg-slate-800 text-white hover:bg-slate-700 hover:text-white">Cancel</Button><Button onClick={() => handleSavePullLog(false)} className="rounded-xl bg-sky-600 text-white hover:bg-sky-700">Save log</Button>{logVehicle?.status === 'PENDING' && <Button onClick={() => handleSavePullLog(true)} className="rounded-xl bg-emerald-600 text-white hover:bg-emerald-700">Save & make available</Button>}</DialogFooter></DialogContent></Dialog>
+      {logVehicle && <VehicleDismantlingDialog vehicle={logVehicle} onClose={() => setLogVehicle(null)} onSaved={updated => {
+        setVehicles(current => current.map(vehicle => vehicle.id === updated.id ? updated : vehicle));
+        void queryClient.invalidateQueries({ queryKey: ['yard-vehicles'] });
+        void queryClient.invalidateQueries({ queryKey: ['vehicle-record', updated.id] });
+      }} />}
       {/* Parts Interchange Search Modal */}
       <PartsInterchangeModal
         isOpen={interchangeModalOpen}
