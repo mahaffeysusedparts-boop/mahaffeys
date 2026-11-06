@@ -71,6 +71,11 @@ import {
   X,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { IntakeProgressStrip } from './IntakeProgressStrip';
+import { ScaleQueueCard } from './ScaleQueueCard';
+import { assessScrapEvidence } from '@/utils/scrapIntakeProgress';
+import { presentIntakeQueue } from '@/utils/intakeQueuePresentation';
+import { customerService } from '@/services/customerService';
 
 const MAX_ACTIVE_LOADS = MAX_ACTIVE_INTAKES;
 
@@ -85,6 +90,7 @@ interface ScaleWeightLoggerProps {
   activeTicketId: string | null;
   onActiveTicketChange: (id: string | null) => void;
   onTicketCreated: (ticket: Ticket) => void;
+  workspaceNavigation?: (disabled: boolean, beforeLeave: () => Promise<boolean>) => React.ReactNode;
 }
 
 type WeighState = 'AWAITING_IN' | 'AWAITING_OUT' | 'PENDING_GRADE';
@@ -100,6 +106,7 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
   activeTicketId,
   onActiveTicketChange,
   onTicketCreated,
+  workspaceNavigation,
 }) => {
   const requirements = useIntakeRequirements();
   const [operationLoading, setOperationLoading] = useState(true);
@@ -113,7 +120,12 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
 
   const [queue, setQueue] = useState<Ticket[]>([]);
   const [queueSearch, setQueueSearch] = useState('');
+  const [needsDetails, setNeedsDetails] = useState(false);
+  const [oldestFirst, setOldestFirst] = useState(false);
+  const [queueClock, setQueueClock] = useState(Date.now);
+  useEffect(() => { const timer = window.setInterval(() => setQueueClock(Date.now()), 60000); return () => window.clearInterval(timer); }, []);
   const [activeTicket, setActiveTicket] = useState<Ticket | null>(null);
+  const sellerProfile = useQuery({ queryKey: ['intake-seller', activeTicket?.customerId], enabled: !!activeTicket?.customerId, queryFn: () => customerService.get(activeTicket!.customerId!), staleTime: 10000 });
   // Ticket pending a confirmed void (active panel or a queued intake row).
   const [voidTarget, setVoidTarget] = useState<Ticket | null>(null);
 
@@ -157,7 +169,7 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
   const [paymentInput,setPaymentInput] = useState(initialBuyingPayment);
   const eligibility = useBuyingPaymentEligibility(activeTicket);
   const paymentAllowed = canRecordBuyingPayment(authService.getCurrentUser());
-  const serverQueue = useQuery({queryKey:['scrap-buying-queue'],queryFn:() => scrapBuyingService.queue(),refetchInterval:5000});
+  const serverQueue = useQuery({queryKey:['scrap-buying-queue'],queryFn:() => scrapBuyingService.queue(),refetchInterval:5000,staleTime:15000});
 
   const [notes, setNotes] = useState('');
   const binQuery = useBinInspection(activeTicket?.buying?.activeCycleId);
@@ -775,61 +787,29 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
   };
 
   // ---- Queue ------------------------------------------------------------------
+  const navigationBlocked = busyRef.current || saveState === 'PENDING' || operationLoading || !!pendingOperation || draft.loading || !!draft.recovery || !!draft.error || sellerDirty || ownership.busy || !!pendingUnstable || !!correctionTarget;
+  const beforeLeave = async () => !navigationBlocked && await draft.flush();
   const handleSwitch = async (ticket: Ticket) => {
-    if (busyRef.current) return;
     if (ticket.id === activeTicket?.id && ownership.owned) return;
+    if (!await beforeLeave()) return;
     await ownership.claim(ticket.id);
   };
 
-  const handleSwitchAway = () => {
+  const handleSwitchAway = async () => {
+    if (!await beforeLeave()) return;
     setActiveTicket(null);
     onActiveTicketChange(null);
   };
 
-  const queueStatus = (t: Ticket): { label: string; badge: React.ReactNode } => {
-    if (t.pendingPlatformCapture || (t.scaleGrossInWeight == null && (t.scrapLines?.length ?? 0) > 0)) {
-      return { label: t.pendingPlatformCapture ? 'REVIEW PLATFORM BATCH' : 'REVIEW TICKET / ADD LOAD', badge: <Badge className="border border-teal-500/50 bg-teal-950 text-[9px] text-teal-200">{t.pendingPlatformCapture ? 'REVIEW BATCH' : 'REVIEW TICKET'}</Badge> };
-    }
-    if (t.scaleGrossInWeight != null && t.scaleTareOutWeight != null) {
-      return {
-        label: 'PENDING GRADE',
-        badge: (
-          <Badge className="border border-violet-500/40 bg-violet-500/15 font-mono text-[9px] text-violet-300">
-            PENDING GRADE
-          </Badge>
-        ),
-      };
-    }
-    if (t.scaleGrossInWeight != null) {
-      return {
-        label: 'ON YARD — AWAITING OUT',
-        badge: (
-          <Badge className="border border-amber-500/40 bg-amber-500/15 font-mono text-[9px] text-amber-300">
-            ON YARD · AWAITING OUT
-          </Badge>
-        ),
-      };
-    }
-    return {
-      label: 'AWAITING IN',
-      badge: (
-        <Badge className="border border-sky-500/40 bg-sky-500/15 font-mono text-[9px] text-sky-300">
-          AWAITING IN
-        </Badge>
-      ),
-    };
+  const queueVerified = !serverQueue.isError && !!serverQueue.data && !serverQueue.isStale;
+  const assessmentFor = (ticket: Ticket) => {
+    const identity = ticket.buying?.sellerIdentity;
+    const identityVerified = identity && !!identity.idType.trim() && !!identity.idState.trim() && !!identity.idNumber.trim()
+      && (!ticket.customerIdNumber?.trim() || identity.idNumber.trim().toUpperCase() === ticket.customerIdNumber.trim().toUpperCase());
+    return assessScrapEvidence(ticket, requirements.data, { verified: queueVerified && !requirements.isError && !requirements.isStale && !!serverQueue.data?.tickets.some(row => row.id === ticket.id), identity: identityVerified ? true : undefined });
   };
-
-  const filteredQueue = queue.filter((t) => {
-    const q = queueSearch.trim().toLowerCase();
-    if (!q) return true;
-    return (
-      t.id.toLowerCase().includes(q) ||
-      t.customerName.toLowerCase().includes(q) ||
-      (t.customerPhone || '').toLowerCase().includes(q) ||
-      (t.vehicleLicensePlate || '').toLowerCase().includes(q)
-    );
-  });
+  const attentionCount = queue.filter(ticket => assessmentFor(ticket).attention.length > 0).length;
+  const filteredQueue = presentIntakeQueue(queue, { search: queueSearch, needsDetails, oldestFirst, attention: ticket => assessmentFor(ticket).attention.length > 0 });
 
   // ---- Payout -----------------------------------------------------------------
   const lines = activeTicket?.scrapLines || [];

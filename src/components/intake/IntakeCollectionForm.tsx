@@ -41,11 +41,13 @@ import {
   UserCheck,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { IntakeProgressStrip } from './IntakeProgressStrip';
 
 interface IntakeCollectionFormProps {
   onBack: () => void;
   onSaved: (ticketId: string) => void;
   onOpenQueue: () => void;
+  workspaceNavigation?: (disabled: boolean, beforeLeave: () => Promise<boolean>) => React.ReactNode;
 }
 
 const MAX_ACTIVE_LOADS = MAX_ACTIVE_INTAKES;
@@ -58,7 +60,7 @@ const emptyCaptures: ComplianceCaptures = {
   loadPhotoUrl: undefined,
 };
 
-export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBack, onSaved, onOpenQueue }) => {
+export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBack, onSaved, onOpenQueue, workspaceNavigation }) => {
   const requirements = useIntakeRequirements();
   const [activeLoadCount, setActiveLoadCount] = useState(() => storageService.getTickets().filter(ticket => ticket.ticketType === 'SCRAP_METAL' && ticket.status === 'PENDING').length);
   useEffect(() => storageService.subscribe('mahaffeys_tickets', () => setActiveLoadCount(storageService.getTickets().filter(ticket => ticket.ticketType === 'SCRAP_METAL' && ticket.status === 'PENDING').length)), []);
@@ -267,9 +269,13 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
     { title: 'Cargo Load', icon: Package, val: captures.loadPhotoUrl },
   ];
 
+  const navigationBlocked = draft.loading || !!draft.recovery || saving || operationLoading || !!pendingOperation || !!operationError || !!draft.error;
+  const beforeLeave = async () => !navigationBlocked && await draft.flush();
   return (
     <div className="mx-auto max-w-5xl space-y-6 pb-24 sm:pb-12">
+      {workspaceNavigation?.(navigationBlocked, beforeLeave)}
       <DraftRecoveryBanner draft={draft}/>
+      <IntakeProgressStrip input={{ collection: true, evidence: { customerName, customerPhone, customerAddress, customerIdNumber, vehicleLicensePlate, complianceCaptures: captures }, requirements: requirements.data, verified: !requirements.isError && !!requirements.data && !draft.loading && !draft.recovery, identity: !!customerIdNumber.trim() && !!customerIdType && !!customerIdState.trim(), saveFailed: !!operationError || !!pendingOperation || !!draft.error }}/>
       <p role="status" className="text-sm text-sky-100">{authoritativeCount === null ? `Queue capacity unverified · cached ${activeLoadCount}/${MAX_ACTIVE_LOADS}` : `Confirmed queue capacity: ${authoritativeCount}/${MAX_ACTIVE_LOADS}`}</p>
       {operationError && <div role="alert" className="rounded-xl border border-amber-700 bg-amber-950 p-4 text-amber-100">{operationError}{!pendingOperation && <Button variant="link" className="text-amber-100" onClick={() => setOperationError('')}>Review retained inputs</Button>}</div>}
       {pendingOperation && <div role="alert" className="rounded-xl border border-amber-700 bg-amber-950 p-4 text-amber-100">Interrupted submission retained separately from this form. Reconcile its original values before starting another intake.

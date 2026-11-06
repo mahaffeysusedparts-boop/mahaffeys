@@ -52,6 +52,7 @@ import { toast } from 'sonner';
 
 interface CarIntakeFormProps {
   onBack: () => void;
+  workspaceNavigation?: (disabled: boolean, beforeLeave: () => Promise<boolean>) => React.ReactNode;
 }
 
 const compressVehiclePhoto = (file: File): Promise<string> => new Promise((resolve, reject) => {
@@ -74,12 +75,12 @@ const compressVehiclePhoto = (file: File): Promise<string> => new Promise((resol
       context.drawImage(image, 0, 0, canvas.width, canvas.height);
       resolve(canvas.toDataURL('image/jpeg', 0.76));
     };
-    image.src = reader.result as string;
-  };
-  reader.readAsDataURL(file);
-});
-
-export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
+      image.src = reader.result as string;
+    };
+    reader.readAsDataURL(file);
+  });
+  
+  export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack, workspaceNavigation }) => {
   // Vehicle Picture Capture State
   const [photoUrl, setPhotoUrl] = useState<string>('');
   const [isSaving, setIsSaving] = useState(false);
@@ -575,8 +576,11 @@ export const CarIntakeForm: React.FC<CarIntakeFormProps> = ({ onBack }) => {
     { label: 'Built in', value: [decodedVehicle.plantCity, decodedVehicle.plantState, decodedVehicle.plantCountry].filter(Boolean).join(', ') || null },
   ].filter((detail): detail is { label: string; value: string } => Boolean(detail.value)) : [];
 
+  const navigationBlocked = draft.loading || !!draft.recovery || isSaving || !!draft.error;
+  const beforeLeave = async () => !navigationBlocked && await draft.flush();
   return (
     <div onChangeCapture={draft.markEdited} className="max-w-5xl mx-auto space-y-6 pb-12 font-sans">
+      {workspaceNavigation?.(navigationBlocked, beforeLeave)}
       <DraftRecoveryBanner draft={draft}/>
       <IntakeFieldGuidance issues={issues}/>
       <fieldset disabled={draft.loading || !!draft.recovery || isSaving} className="contents">

@@ -92,6 +92,13 @@ export function useIntakeDraft(kind: string, fields: Record<string, Field>, mean
     suppressed.current = false;
     lastSerialized.current = '';
   };
+  const flush = async () => {
+    if (!key || readyKey !== readyIdentity || recovery || error) return false;
+    if (suppressed.current || !current.current.meaningful) return true;
+    const snapshot: Draft = { version: 1, values: Object.fromEntries(Object.entries(current.current.fields).map(([name, field]) => [name, field.value])), savedAt: new Date().toISOString() };
+    try { await accessDraft(key, 'write', snapshot); setSavedAt(snapshot.savedAt); return true; }
+    catch { setError('Draft could not be saved on this workstation. Keep this form open.'); return false; }
+  };
   const markEdited = () => { suppressed.current = false; };
-  return { recovery, savedAt, error, markEdited, loading: !!key && readyKey !== readyIdentity, resume, discard, clear };
+  return { recovery, savedAt, error, markEdited, flush, loading: !!key && readyKey !== readyIdentity, resume, discard, clear };
 }
