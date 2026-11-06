@@ -6,7 +6,7 @@ export interface IntakeIssue { target: string; message: string; beforeCompletion
 export function goToIntakeField(target: string) {
   const element = document.getElementById(target);
   if (!element) { toast.info('This control is unavailable in the current intake stage. Return to the relevant editor first.'); return; }
-  element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  element.scrollIntoView({ behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'center' });
   const input = element.matches('input,textarea,button,select') ? element
     : element.querySelector<HTMLElement>('[aria-invalid="true"]:not(:disabled)')
       ?? element.querySelector<HTMLElement>('input:not(:disabled),textarea:not(:disabled),select:not(:disabled)')

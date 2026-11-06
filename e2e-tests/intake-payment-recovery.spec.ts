@@ -34,12 +34,13 @@ test('A lost payment response reloads and opens the original paid receipt withou
     }
     await route.fulfill({ json: response });
   });
-  await page.goto('/intake'); await page.getByText('Start Metal Scrap Ticket', { exact: true }).click();
+  await page.goto('/intake'); await page.getByRole('region', { name: 'Intake home', exact: true }).getByRole('button', { name: /^Open scale queue / }).click();
   await page.getByRole('button', { name: 'Claim This Intake', exact: true }).click();
   await page.getByLabel('Record Check Number · Required', { exact: true }).fill('000123');
   await page.getByRole('button', { name: 'Complete & Record Payment', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Reconcile original submission', exact: true })).toBeVisible();
   await page.reload();
+      await page.getByRole('button', { name: 'Resume previous workspace', exact: true }).click();
   await page.getByRole('button', { name: 'Reconcile original submission', exact: true }).click();
   await expect(page.getByRole('dialog').getByText('PAID IN FULL', { exact: true })).toHaveCount(2);
   expect(paymentBodies).toHaveLength(2); expect(paymentBodies[1]).toBe(paymentBodies[0]); expect(issued).toBe(1);

@@ -1,0 +1,100 @@
+import { test, expect, type Page } from '@playwright/test';
+import { ownershipFixture, queueEnvelope } from './fixtures/intake-api';
+import type { Ticket } from '../src/types/scrap';
+import { INTAKE_PHOTO_FIELDS } from '../src/utils/intakeRequirements';
+
+const user = { id: 'intake-home-test', fullName: 'Intake Tester', role: 'scale_operator', status: 'approved' };
+function load(id: string, minutes: number, fields: Partial<Ticket> = {}): Ticket {
+  return { id, ticketType: 'SCRAP_METAL', customerName: `${id} Seller`, createdAt: new Date(Date.now() - minutes * 60000).toISOString(), status: 'PENDING', selectedWeighingType: 'VEHICLE_IN_OUT', notes: '', scrapLines: [], grossTotal: 0, totalDeductions: 0, finalPayout: 0, payoutMethod: 'Cash', operatorName: user.fullName, buying: { version: 1, revision: 1, stage: 'DRAFT' }, ...fields };
+}
+async function syntheticApi(page: Page, tickets: Ticket[]) {
+  const ownership = ownershipFixture(user);
+  const commands: string[] = [];
+  const profileRequests: string[] = [];
+  await page.route('**/api/**', async route => {
+    if (await ownership(route)) return;
+    const path = new URL(route.request().url()).pathname;
+    let response: unknown = { ok: true };
+    if (path === '/api/auth/status') response = { user, hasAdmin: true };
+    else if (path === '/api/state') response = { state: { mahaffeys_tickets: tickets, mahaffeys_metals: [], mahaffeys_settings: { operatorName: user.fullName, scales: [] } } };
+    else if (path === '/api/scrap-buying/queue') response = queueEnvelope(tickets);
+    else if (path === '/api/scrap-buying/requirements') response = { revision: 1, requirePhotos: true, requirePhone: true, requireAddress: true, requireSellerId: true, requireVehiclePlate: true, requireExplicitReview: true };
+    else if (path === '/api/scrap-buying/bin-inspections') response = { cycles: [] };
+    else if (path === '/api/scrap-buying/eligibility') response = { allowedMethods: [], reasons: [], permitRequired: false, documentationRequired: false };
+    else if (path === '/api/scrap-buying/commands') {
+      const command = route.request().postDataJSON(); commands.push(command.action);
+      expect(command.action).toBe('ADOPT'); response = tickets.find(ticket => ticket.id === command.id);
+    } else if (path.startsWith('/api/customers/')) {
+      profileRequests.push(path); response = { id: 'PROFILE', fullName: 'Seller', idType: 'Driver License', idState: 'SC', idNumber: 'ID', address: 'Street' };
+    } else if (path === '/api/printers') response = [];
+    else if (path === '/api/scale/status') response = { connected: false, weight: 0, unit: 'LBS', isStable: false, isZero: true, registry: [] };
+    await route.fulfill({ json: response });
+  });
+  return { commands, profileRequests };
+}
+
+for (const count of [0, 2]) {
+  test(`Explicit home entries preserve a collection draft with ${count} queued loads`, async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    const tickets = Array.from({ length: count }, (_, index) => load(`LOAD-${index}`, 10));
+    await syntheticApi(page, tickets);
+    await page.goto('/intake');
+    await expect(page.getByRole('heading', { name: 'What are you starting?' })).toBeVisible();
+    await expect(page.getByText(`${count} active loads · confirmed`, { exact: true })).toBeVisible();
+    await page.getByText('New scrap load', { exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Scrap Intake — Part 1', exact: true })).toBeVisible();
+    await page.getByPlaceholder('e.g. Marcus Vance').fill('Recoverable Seller');
+    const strip = page.getByRole('region', { name: 'Scrap next steps' });
+    await strip.getByText('Workflow steps & states', { exact: true }).click();
+    await expect(strip.getByRole('button', { name: 'Seller details: needs attention', exact: true })).toBeVisible();
+    expect(await strip.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+    await page.getByRole('navigation', { name: 'Intake workspaces' }).getByRole('button', { name: 'Open scale queue', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Scrap Intake — Part 2', exact: true })).toBeVisible();
+    await expect(page.getByRole('textbox', { name: 'Search scale queue', exact: true })).toBeVisible();
+    if (!count) await expect(page.getByText('No active scrap loads.', { exact: true })).toBeVisible();
+    await page.getByRole('navigation', { name: 'Intake workspaces' }).getByRole('button', { name: 'Intake home', exact: true }).click();
+    await page.getByText('New scrap load', { exact: true }).click();
+    await page.getByRole('button', { name: 'Resume draft', exact: true }).click();
+    await expect(page.getByPlaceholder('e.g. Marcus Vance')).toHaveValue('Recoverable Seller');
+    await page.reload();
+    await expect(page.getByRole('heading', { name: 'What are you starting?' })).toBeVisible();
+    await page.getByRole('button', { name: 'Resume previous workspace', exact: true }).click();
+    await page.getByRole('button', { name: 'Resume draft', exact: true }).click();
+    await expect(page.getByPlaceholder('e.g. Marcus Vance')).toHaveValue('Recoverable Seller');
+    await page.getByRole('navigation', { name: 'Intake workspaces' }).getByRole('button', { name: 'New vehicle', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Save to Pending Group', exact: true })).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Scrap next steps' })).toHaveCount(0);
+  });
+}
+
+test('Saved queue cards retain stage beside CURRENT, minute ages, attention filtering and stable sorting', async ({ page }) => {
+  await page.clock.install({ time: new Date('2026-01-03T00:24:00Z') });
+  await page.setViewportSize({ width: 390, height: 844 });
+  const tickets = [load('NEWER', 24, { createdAt: '2026-01-03T00:00:00Z', vehicleLicensePlate: 'TRUCK-251', customerId: 'PROFILE', scaleGrossInWeight: 1000, scaleGrossInAt: '2026-01-03T00:12:00Z', buying: { version: 1, revision: 1, stage: 'DRAFT', activeCycleId: 'CYCLE' } }), load('OLDER', 90, { createdAt: '2026-01-02T22:54:00Z', customerPhone: '555', customerAddress: 'Street', customerIdNumber: 'ID', vehicleLicensePlate: 'COMPLETE-1', complianceCaptures: Object.fromEntries(INTAKE_PHOTO_FIELDS.map(field => [field, '/saved-photo'])), buying: { version: 1, revision: 1, stage: 'DRAFT', sellerIdentity: { idType: 'Driver License', idState: 'SC', idNumber: 'ID' } } })];
+  const api = await syntheticApi(page, tickets);
+  await page.goto('/intake');
+  await page.getByText('Open scale queue', { exact: true }).click();
+  const newer = page.getByRole('article', { name: 'Intake NEWER', exact: true });
+  await expect(newer.getByText('TRUCK-251', { exact: true })).toBeVisible();
+  await expect(newer.getByText('Since intake: 24 min', { exact: true })).toBeVisible();
+  await expect(newer.getByText('Since IN: 12 min', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Needs details (1)', exact: true })).toBeVisible();
+  expect(api.profileRequests).toHaveLength(0);
+  await newer.getByRole('button', { name: 'Claim This Intake', exact: true }).click();
+  await expect(newer.getByText('CURRENT', { exact: true })).toBeVisible();
+  await expect(newer.getByText('On yard · awaiting OUT', { exact: true })).toBeVisible();
+  await page.clock.fastForward(60000);
+  await expect(newer.getByText('Since intake: 25 min', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Needs details (1)', exact: true }).click();
+  await expect(page.getByRole('article')).toHaveCount(1);
+  await page.getByRole('textbox', { name: 'Search scale queue', exact: true }).fill('no-match');
+  await expect(page.getByText('No loads match these filters.', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Clear filters', exact: true }).click();
+  await page.getByRole('combobox', { name: 'Queue order', exact: true }).selectOption('oldest');
+  await expect(page.getByRole('article').first()).toHaveAttribute('aria-label', 'Intake OLDER');
+  await expect(newer.getByText('CURRENT', { exact: true })).toBeVisible();
+  expect(await newer.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+  const strip = page.getByRole('region', { name: 'Scrap next steps' });
+  await strip.getByRole('button', { name: 'Go to next section', exact: true }).click();
+  expect(api.commands).toEqual(['ADOPT']);
+});

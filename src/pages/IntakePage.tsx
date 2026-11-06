@@ -58,7 +58,7 @@ function IntakeWorkspace() {
   const resume = () => {
     setScrapStage(workspace.stage); setScrapTicketId(workspace.ticketId); setActiveMode(workspace.mode);
   };
-  const navigation = (disabled: boolean) => <IntakeWorkspaceNavigation disabled={disabled} current={activeMode === 'CAR_SALVAGE' ? 'VEHICLE' : scrapStage} onEntry={enter}/>;
+  const navigation = (disabled: boolean, beforeLeave: () => Promise<boolean>) => <IntakeWorkspaceNavigation disabled={disabled} current={activeMode === 'CAR_SALVAGE' ? 'VEHICLE' : scrapStage} onEntry={entry => { void beforeLeave().then(allowed => { if (allowed) enter(entry); }); }}/>;
   const home = () => enter('HOME');
 
   return <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">

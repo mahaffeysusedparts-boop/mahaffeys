@@ -125,7 +125,7 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
   const [queueClock, setQueueClock] = useState(Date.now);
   useEffect(() => { const timer = window.setInterval(() => setQueueClock(Date.now()), 60000); return () => window.clearInterval(timer); }, []);
   const [activeTicket, setActiveTicket] = useState<Ticket | null>(null);
-  const sellerProfile = useQuery({ queryKey: ['intake-seller', activeTicket?.customerId], enabled: !!activeTicket?.customerId, queryFn: () => customerService.get(activeTicket!.customerId!), staleTime: 10000 });
+  const sellerProfile = useQuery({ queryKey: ['intake-seller', activeTicket?.customerId], enabled: !!activeTicket?.customerId, queryFn: () => customerService.get(activeTicket!.customerId!), staleTime: 30000, refetchInterval: 10000 });
   // Ticket pending a confirmed void (active panel or a queued intake row).
   const [voidTarget, setVoidTarget] = useState<Ticket | null>(null);
 
@@ -787,7 +787,7 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
   };
 
   // ---- Queue ------------------------------------------------------------------
-  const navigationBlocked = busyRef.current || saveState === 'PENDING' || operationLoading || !!pendingOperation || draft.loading || !!draft.recovery || !!draft.error || sellerDirty || ownership.busy || !!pendingUnstable || !!correctionTarget;
+  const navigationBlocked = busyRef.current || saveState === 'PENDING' || operationLoading || !!pendingOperation || draft.loading || !!draft.recovery || !!draft.error || sellerDirty || ownership.busy || !!pendingUnstable || !!pendingScaleSwitch || !!correctionTarget;
   const beforeLeave = async () => !navigationBlocked && await draft.flush();
   const handleSwitch = async (ticket: Ticket) => {
     if (ticket.id === activeTicket?.id && ownership.owned) return;
@@ -957,9 +957,13 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
     </div>
   );
 
+  const profileVerified = !!sellerProfile.data && !sellerProfile.isError && !sellerProfile.isPending && !sellerProfile.isStale;
+  const savedIdentity = profileVerified ? !!sellerProfile.data?.idType?.trim() && !!sellerProfile.data?.idState?.trim() && !!sellerProfile.data?.idNumber?.trim()
+    && (!activeTicket?.customerIdNumber?.trim() || sellerProfile.data?.idNumber.trim().toUpperCase() === activeTicket.customerIdNumber.trim().toUpperCase()) : undefined;
   // ---- Render -----------------------------------------------------------------
   return (
-    <div className="mx-auto max-w-6xl space-y-6 pb-24 font-sans sm:pb-12">
+    <div className="mx-auto min-w-0 max-w-6xl space-y-6 pb-24 font-sans sm:pb-12">
+      {workspaceNavigation?.(navigationBlocked, beforeLeave)}
       <div role="status" aria-live="polite" className={`rounded-xl border p-3 text-sm ${saveState === 'ERROR' || serverQueue.isError ? 'border-amber-500 bg-amber-950 text-amber-100' : 'border-emerald-800 bg-emerald-950 text-emerald-100'}`}>
         {saveState === 'PENDING' ? 'Saving / loading server draft — not yet confirmed' : saveState === 'ERROR' ? `Not confirmed: ${saveError}` : serverQueue.isError ? 'Shared queue refresh failed. Current work remains on this desk.' : 'Server draft acknowledged · payments are separate'}
       </div>
@@ -969,7 +973,7 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
           <Button
             variant="ghost"
             size="sm"
-            onClick={onBack}
+            onClick={() => { void beforeLeave().then(allowed => { if (allowed) onBack(); }); }}
             className="text-slate-400 hover:bg-slate-800 hover:text-white"
           >
             <ArrowLeft className="h-4 w-4 mr-1" /> Back
@@ -1014,8 +1018,8 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
           </Select>
           <Button
             size="sm"
-            onClick={onNewIntake}
-            disabled={!serverQueue.isError && (serverQueue.data?.capacity?.openCount ?? 0) >= MAX_ACTIVE_LOADS}
+            onClick={() => { void beforeLeave().then(allowed => { if (allowed) onNewIntake(); }); }}
+            disabled={navigationBlocked || (!serverQueue.isError && (serverQueue.data?.capacity?.openCount ?? 0) >= MAX_ACTIVE_LOADS)}
             className="gap-1.5 bg-sky-600 text-xs font-bold text-white hover:bg-sky-500"
           >
             <Plus className="h-3.5 w-3.5" /> New Intake (Part 1)
@@ -1026,7 +1030,7 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
           <Button
             size="sm"
             variant="ghost"
-            onClick={refreshQueue}
+            onClick={() => { refreshQueue(); void serverQueue.refetch(); }}
             className="h-8 text-xs text-slate-400 hover:text-white"
           >
             <RefreshCw className="mr-1 h-3.5 w-3.5" /> Refresh
@@ -1035,128 +1039,29 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
       </div>
 
       {/* Active loads queue */}
-      {queue.length > 0 && (
-        <Card className="border-2 border-amber-500/40 bg-slate-900 text-white shadow-xl">
-          <CardHeader className="flex flex-col gap-2 border-b border-amber-500/30 bg-amber-950/40 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-            <CardTitle className="flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-amber-300">
-              <Layers className="h-4 w-4 text-amber-400" /> Active Intakes — Switch Transactions
-            </CardTitle>
-            {queue.length > 3 && (
-              <div className="relative">
-                <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-500" />
-                <Input
-                  placeholder="Filter by name, phone, tag, or #..."
-                  value={queueSearch}
-                  onChange={(e) => setQueueSearch(e.target.value)}
-                  className="h-9 border-slate-800 bg-slate-950 pl-8 text-xs"
-                />
-              </div>
-            )}
-          </CardHeader>
-
-          <CardContent className="p-3">
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {filteredQueue.map((ticket) => {
-                const ticketLines = ticket.scrapLines || [];
-                const ticketWeight = ticketLines.reduce((sum, line) => sum + line.billableWeight, 0);
-                const materials = [...new Set(ticketLines.map((l) => l.metalName))].slice(0, 3);
-                const isCurrent = activeTicket?.id === ticket.id;
-                const status = queueStatus(ticket);
-                const owner = ownership.owners.find(row => row.ticketId === ticket.id);
-                return (
-                  <div
-                    key={ticket.id}
-                    className={`space-y-2.5 rounded-xl border p-3 text-left transition-all ${
-                      isCurrent
-                        ? 'border-emerald-500 bg-emerald-950/40 text-white ring-1 ring-emerald-500/50'
-                        : 'border-slate-800 bg-slate-950 text-slate-200 hover:border-amber-500/40'
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <div className="truncate text-sm font-bold text-white">{ticket.customerName}</div>
-                        <div className="font-mono text-[10px] text-slate-400">
-                          #{ticket.id} · {new Date(ticket.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        </div>
-                      </div>
-                      {isCurrent ? (
-                        <Badge className="shrink-0 bg-emerald-500 font-mono text-[9px] font-black text-slate-950">
-                          CURRENT
-                        </Badge>
-                      ) : (
-                        status.badge
-                      )}
-                    </div>
-
-                    <div className="space-y-0.5 font-mono text-[11px] text-slate-400">
-                      <div className="text-slate-300">{Math.max(0, Math.floor((Date.now() - Date.parse(ticket.createdAt)) / 60000))} min · Created by {ticket.operatorName || 'Operator'}</div>
-                      <div className={owner && owner.clientId !== ownership.clientId ? 'text-amber-200' : 'text-sky-200'}>{owner ? `Handling: ${owner.operatorName}${owner.clientId === ownership.clientId ? ' · this desk' : ' · another workstation'}` : 'No active handler · available to claim'}</div>
-                      <div className="text-teal-200">{ticket.pendingPlatformCapture ? 'Platform' : ticket.scaleGrossInWeight != null ? 'Truck IN/OUT' : ticket.selectedWeighingType === 'PLATFORM' ? 'Platform' : ticket.selectedWeighingType === 'VEHICLE_IN_OUT' ? 'Truck IN/OUT' : 'Choose weighing type'} · {status.label}</div>
-                      {ticket.customerPhone && (
-                        <div>
-                          Phone: <span className="font-bold text-emerald-400">{ticket.customerPhone}</span>
-                        </div>
-                      )}
-                      {ticket.vehicleLicensePlate && (
-                        <div>
-                          Tag: <span className="text-slate-200">{ticket.vehicleLicensePlate}</span>
-                        </div>
-                      )}
-                      {ticket.scaleGrossInWeight != null && (
-                        <div>
-                          IN:{' '}
-                          <span className="font-bold text-emerald-400">{fmtLbs(ticket.scaleGrossInWeight)} LBS</span>
-                          {ticket.scaleGrossInAt && <span className="text-slate-500"> @ {fmtTime(ticket.scaleGrossInAt)}</span>}
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="space-y-1 rounded-lg border border-slate-800 bg-slate-900/80 px-2.5 py-2 font-mono text-[10px]">
-                      <div className="flex items-center justify-between">
-                        <span className="uppercase tracking-wide text-slate-500">Weighed loads</span>
-                        <span className="font-bold text-white">{ticketLines.length}</span>
-                      </div>
-                      {ticketWeight > 0 && (
-                        <div className="flex items-center justify-between">
-                          <span className="uppercase tracking-wide text-slate-500">Billable weight</span>
-                          <span className="font-bold text-emerald-400">{fmtLbs(ticketWeight)} LBS</span>
-                        </div>
-                      )}
-                      {materials.length > 0 && (
-                        <div className="truncate text-slate-400">
-                          {materials.join(' · ')}
-                          {ticketLines.length > materials.length ? ' +' : ''}
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="flex gap-2">
-                      <Button
-                        size="sm"
-                        disabled={ownership.busy || saveState === 'PENDING'}
-                        onClick={() => void handleSwitch(ticket)}
-                        className="h-8 flex-1 gap-1.5 bg-emerald-600 text-xs font-bold text-white shadow hover:bg-emerald-500"
-                      >
-                        <Scale className="h-3.5 w-3.5" /> {isCurrent && ownership.owned ? 'Continue This Intake' : owner && owner.clientId !== ownership.clientId ? 'Review Ownership' : 'Claim This Intake'}
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={!!owner && owner.clientId !== ownership.clientId}
-                        onClick={() => setVoidTarget(ticket)}
-                        title={owner && owner.clientId !== ownership.clientId ? 'Review and claim ownership before voiding' : 'Void this intake'}
-                        className="h-8 w-9 shrink-0 border-slate-800 bg-slate-950 p-0 text-slate-500 hover:border-red-500/40 hover:bg-red-950/40 hover:text-red-400"
-                      >
-                        <Ban className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      <Card className="rounded-2xl border-2 border-teal-800 bg-slate-900 text-white shadow-xl">
+        <CardHeader className="gap-3 border-b border-teal-800 px-4 py-4">
+          <CardTitle className="flex items-center gap-2 text-sm font-bold text-teal-100"><Layers className="h-4 w-4"/>Active Intakes — Switch Transactions</CardTitle>
+          <p role="status" className="text-xs text-sky-100">{queueVerified ? 'Shared queue snapshot confirmed' : serverQueue.isPending ? 'Loading shared queue — cached evidence unverified' : 'Shared queue stale / unavailable — evidence unverified'}</p>
+          <div className="relative"><Search className="absolute left-3 top-3 h-4 w-4 text-slate-300" aria-hidden="true"/><Input aria-label="Search scale queue" placeholder="Filter by name, phone, plate, or #..." value={queueSearch} onChange={event => setQueueSearch(event.target.value)} className="h-11 rounded-xl border-slate-700 bg-slate-950 pl-9 text-sm"/></div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="outline" aria-pressed={!needsDetails} onClick={() => setNeedsDetails(false)} className={!needsDetails ? 'min-h-11 rounded-xl border-teal-600 bg-teal-900 text-teal-100' : 'min-h-11 rounded-xl border-slate-700 bg-slate-950 text-slate-100'}>All ({queue.length})</Button>
+            <Button variant="outline" aria-pressed={needsDetails} onClick={() => setNeedsDetails(true)} className={needsDetails ? 'min-h-11 rounded-xl border-amber-600 bg-amber-950 text-amber-100' : 'min-h-11 rounded-xl border-slate-700 bg-slate-950 text-slate-100'}>Needs details ({attentionCount})</Button>
+            <label className="flex min-h-11 items-center gap-2 text-xs text-slate-200">Order<select aria-label="Queue order" value={oldestFirst ? 'oldest' : 'current'} onChange={event => setOldestFirst(event.target.value === 'oldest')} className="min-h-11 rounded-xl border border-slate-700 bg-slate-950 px-3 text-slate-100 focus-visible:outline focus-visible:outline-sky-300"><option value="current">Current order</option><option value="oldest">Oldest first</option></select></label>
+          </div>
+        </CardHeader>
+        <CardContent className="p-3">
+          {!filteredQueue.length ? <div className="space-y-3 rounded-xl border border-slate-700 p-6 text-center"><p className="font-bold text-slate-100">{queue.length ? 'No loads match these filters.' : queueVerified ? 'No active scrap loads.' : 'No confirmed loads available. Queue verification is needed.'}</p>{queue.length ? <Button onClick={() => { setQueueSearch(''); setNeedsDetails(false); }} className="min-h-11 rounded-xl bg-sky-700 text-white">Clear filters</Button> : <Button disabled={navigationBlocked} onClick={() => { void beforeLeave().then(allowed => { if (allowed) onNewIntake(); }); }} className="min-h-11 rounded-xl bg-emerald-700 text-white">New scrap load</Button>}</div> :
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            {filteredQueue.map(ticket => {
+              const isCurrent = activeTicket?.id === ticket.id;
+              const owner = ownership.owners.find(row => row.ticketId === ticket.id);
+              const otherDesk = !!owner && owner.clientId !== ownership.clientId;
+              return <ScaleQueueCard key={ticket.id} ticket={ticket} assessment={assessmentFor(ticket)} now={queueClock} current={isCurrent} handler={owner ? 'Handling: ' + owner.operatorName + (otherDesk ? ' · another workstation' : ' · this desk') : 'No active handler · available to claim'} actionLabel={isCurrent && ownership.owned ? 'Continue This Intake' : otherDesk ? 'Review Ownership' : 'Claim This Intake'} disabled={navigationBlocked} voidDisabled={otherDesk} onContinue={() => void handleSwitch(ticket)} onVoid={() => setVoidTarget(ticket)}/>;
+            })}
+          </div>}
+        </CardContent>
+      </Card>
 
       {/* No active intake selected */}
       {!activeTicket && (
@@ -1174,7 +1079,7 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
               </p>
             </div>
             {queue.length === 0 && (
-              <Button onClick={onNewIntake} className="gap-2 bg-emerald-600 text-sm font-bold text-white hover:bg-emerald-500">
+              <Button onClick={() => { void beforeLeave().then(allowed => { if (allowed) onNewIntake(); }); }} className="gap-2 bg-emerald-600 text-sm font-bold text-white hover:bg-emerald-500">
                 <Plus className="h-4 w-4" /> Start Part 1 Intake
               </Button>
             )}
@@ -1261,8 +1166,9 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
           </div>
 
           {remoteConflict && <div role="alert" className="rounded-xl border border-amber-500 bg-amber-950 p-4 text-sm text-amber-100">This ticket changed or closed remotely. Your review is preserved, but writes are blocked. Use Save &amp; Switch Transaction to return to the queue.</div>}
+          <IntakeProgressStrip input={{ ticket: activeTicket, evidence: { ...activeTicket, customerAddress: activeTicket.customerAddress || (!sellerProfile.isError && !sellerProfile.isStale ? sellerProfile.data?.address : undefined) }, requirements: requirements.data, verified: saveState === 'SAVED' && !remoteConflict && !requirements.isError && !requirements.isStale && queueVerified, identity: savedIdentity, addressVerified: !!sellerProfile.data && !sellerProfile.isError && !sellerProfile.isStale, mode: selectedWeighingType, inspection: binQuery.isError || binQuery.isPending || Date.now() - binQuery.dataUpdatedAt > 5000 ? 'unverified' : binReview ? 'complete' : 'pending', inspectionAcknowledged: missingBinAcknowledged, reviewed: reviewConfirmed, paymentVerified: !!eligibility.data && !eligibility.isError && !eligibility.isFetching, paymentIssues: [...(eligibility.data?.reasons.map(reason => reason.message) ?? []), ...(paymentInput.method === 'Check' && !paymentInput.reference.trim() ? ['Enter the actual issued check number'] : []), ...(eligibility.data?.permitRequired && !paymentInput.permitReference.trim() ? ['Enter the required permit reference'] : []), ...(eligibility.data?.documentationRequired && !paymentInput.documentationReference.trim() ? ['Enter the required documentation reference'] : [])], unsaved: sellerDirty || notes.trim() !== (activeTicket.notes ?? '').trim(), saveFailed: saveState === 'ERROR' || !!pendingOperation }}/>
           <fieldset disabled={remoteConflict || saveState === 'PENDING'} className="contents"><ScaleSellerEditor key={activeTicket.id} ticket={activeTicket} requirements={requirements.data} onSave={saveSeller} onDirtyChange={setSellerDirty}/></fieldset>
-          <div id="scale-weighing"><WeighingTypeSelector value={selectedWeighingType} scale={activeScale}
+          <div id="scale-weighing" tabIndex={-1} className="scroll-mt-6"><WeighingTypeSelector value={selectedWeighingType} scale={activeScale}
             locked={remoteConflict || singleCapture !== null || activeTicket.scaleGrossInWeight != null} onSelect={selectWeighingType} /></div>
           {selectedWeighingType && !modeCompatible && <p role="alert" className="rounded-xl border border-amber-500/60 bg-amber-950 p-3 text-sm text-amber-100">Selected mode is incompatible with this scale. Select a compatible scale; existing readings have not been changed.</p>}
 
@@ -1325,7 +1231,7 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
                         </div>
                       </>
                     ) : (
-                      <div className="space-y-4">
+                      <div id="scale-material-review" tabIndex={-1} className="scroll-mt-6 space-y-4">
                         <div className="grid grid-cols-2 gap-2 font-mono sm:grid-cols-4">
                           <div className="rounded-xl border border-slate-800 bg-slate-950 p-3"><span className="block text-[10px] text-slate-400">SINGLE / GROSS</span><span className="text-lg font-bold text-violet-300">{fmtLbs(singleCapture.capturedLbs)} LBS</span>{singleCapture.isManual && <Badge className="mt-1 bg-amber-500/15 text-[9px] text-amber-300">MANUAL</Badge>}</div>
                           <div className="rounded-xl border border-slate-800 bg-slate-950 p-3"><span className="block text-[10px] text-slate-400">TARE USED</span><span className="text-lg font-bold text-amber-300">{fmtLbs(singleCapture.tareLbs)} LBS</span></div>
@@ -1493,7 +1399,7 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
 
                   {weighingMode === 'VEHICLE_IN_OUT' && activeTicket.buying?.activeCycleId && <BinInspectionSummary review={binReview} unconfirmed={binQuery.isError || binQuery.isPending} acknowledge={missingBinAcknowledged} onAcknowledge={setMissingBinAcknowledged} />}
                   {weighState === 'PENDING_GRADE' && (
-                    <div className="space-y-4">
+                    <div id="scale-material-review" tabIndex={-1} className="scroll-mt-6 space-y-4">
                       <div className="grid grid-cols-3 gap-2 font-mono">
                         <div className="rounded-xl border border-slate-800 bg-slate-950 p-3">
                           <span className="block text-[10px] uppercase tracking-wide text-slate-400">IN (Gross)</span>
@@ -1673,7 +1579,7 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
             </div>
 
             {/* Completion and actual payment are recorded atomically. */}
-            <div className="space-y-4 rounded-2xl border border-slate-700 bg-slate-900 p-4 text-white">
+            <div id="scale-final-review" tabIndex={-1} className="scroll-mt-6 space-y-4 rounded-2xl border border-slate-700 bg-slate-900 p-4 text-white">
               <h2 className="text-base font-bold">Final purchase review</h2>
               <p className="rounded-xl border border-amber-500/40 bg-amber-950 p-3 text-xs text-amber-100">Review seller, weights, grades and deductions, then hand over cash or issue the check before completing. No routine manager approval is required.</p>
               <div className="space-y-2 rounded-xl bg-slate-950 p-4 font-mono text-sm">
@@ -1689,7 +1595,7 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
                 <a href="/settings#intake-requirements" className="mt-2 inline-block text-emerald-200 underline">Administrator requirement settings</a>
                 {requirements.isError && <p role="alert" className="mt-2 text-amber-200">Requirements could not refresh. <button onClick={() => void requirements.refetch()} className="underline">Retry</button> before finalizing.</p>}
               </div>
-              <IntakeCompletionGuidance ticket={activeTicket} requirements={requirements.data} eligibility={eligibility.data} eligibilityError={eligibility.error?.message} reviewed={reviewConfirmed} paymentInput={paymentInput} sellerDirty={sellerDirty}/>
+              <IntakeCompletionGuidance ticket={activeTicket} requirements={!requirements.isError && !requirements.isStale ? requirements.data : undefined} eligibility={eligibility.data} eligibilityError={eligibility.error?.message} reviewed={reviewConfirmed} paymentInput={paymentInput} sellerDirty={sellerDirty} identityVerified={savedIdentity} profileAddress={profileVerified ? sellerProfile.data?.address : undefined}/>
               <div id="scale-payment"><BuyingPaymentFields eligibility={eligibility.data} error={eligibility.error?.message} loading={eligibility.isLoading} disabled={saveState==='PENDING' || remoteConflict} value={paymentInput} onChange={value=>{setPaymentInput(value);setReviewConfirmed(false);}}/></div>
               {requirements.data?.requireExplicitReview && <label id="scale-purchase-review" className="flex items-start gap-2 rounded-xl border border-slate-700 p-3 text-xs leading-relaxed"><input type="checkbox" disabled={saveState==='PENDING' || remoteConflict} checked={reviewConfirmed} onChange={(event) => setReviewConfirmed(event.target.checked)} className="mt-0.5 accent-emerald-500" />I reviewed the seller information, confirmed weights, material grades and deductions for this purchase.</label>}
               <p className="rounded-xl border border-emerald-700 bg-emerald-950 p-3 text-xs text-emerald-100">By completing, you confirm the cash was handed over or the check was issued. The purchase and payment are saved together, and both receipt copies say PAID.</p>

@@ -9,7 +9,7 @@ export function BinReviewEvidence({ review }: { review: BinReview }) {
 }
 export function BinInspectionSummary({ review, unconfirmed, acknowledge, onAcknowledge }: { review?: BinReview | null; unconfirmed: boolean; acknowledge: boolean; onAcknowledge: (value: boolean) => void }) {
   const confirmed = !!review && !unconfirmed;
-  return <section className="rounded-2xl border border-teal-700 bg-teal-950 p-4 text-teal-50" aria-label="Bin Review">
+  return <section id="scale-inspection" tabIndex={-1} className="scroll-mt-6 rounded-2xl border border-teal-700 bg-teal-950 p-4 text-teal-50" aria-label="Bin Review">
     <h3 className="mb-2 flex items-center gap-2 font-bold"><ClipboardCheck className="h-5 w-5" />Bin Review</h3>
     {confirmed ? <><p className="mb-2 font-semibold text-teal-200">Saved on server</p><BinReviewEvidence review={review} /></> : <>
       <p role="alert" className="flex gap-2 text-amber-200"><AlertTriangle className="h-5 w-5 shrink-0" />{unconfirmed ? 'Bin review could not be confirmed on server.' : 'Awaiting bin review.'} OUT capture is allowed; no offline draft is synced.</p>

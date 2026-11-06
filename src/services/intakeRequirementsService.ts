@@ -11,5 +11,5 @@ export const intakeRequirementsService = {
 };
 
 export function useIntakeRequirements() {
-  return useQuery({ queryKey: ['intake-requirements'], queryFn: intakeRequirementsService.get, refetchInterval: 10000 });
+  return useQuery({ queryKey: ['intake-requirements'], queryFn: intakeRequirementsService.get, refetchInterval: 10000, staleTime: 20000 });
 }

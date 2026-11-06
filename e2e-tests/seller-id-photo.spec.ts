@@ -50,7 +50,7 @@ for (const savedPhoto of [true, false]) {
       await route.fulfill({ json: response });
     });
     await page.goto('/intake');
-    await page.getByText('Start Metal Scrap Ticket', { exact: true }).click();
+    await page.getByText('New scrap load', { exact: true }).click();
     await page.getByRole('combobox', { name: 'Find Registered Customer', exact: true }).click();
     await page.getByRole('option', { name: /ID Photo Seller/ }).click();
     await page.getByRole('button', { name: 'Confirm & reuse seller details', exact: true }).click();
@@ -101,7 +101,7 @@ test('Switching car sellers clears the previous seller ID and photo', async ({ p
     await route.fulfill({ json: response });
   });
   await page.goto('/intake');
-  await page.getByText('Start Junk Car Intake', { exact: true }).click();
+  await page.getByText('New vehicle', { exact: true }).click();
   const sellers = page.getByRole('combobox', { name: 'Find Returning Seller', exact: true });
   await sellers.click();
   await page.getByRole('option', { name: /First Seller/ }).click();

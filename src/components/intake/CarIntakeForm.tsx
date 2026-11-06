@@ -612,7 +612,7 @@ const compressVehiclePhoto = (file: File): Promise<string> => new Promise((resol
           <Button
             variant="ghost"
             size="sm"
-            onClick={onBack}
+            onClick={() => { void beforeLeave().then(allowed => { if (allowed) onBack(); }); }}
             className="text-slate-400 hover:text-white hover:bg-slate-800"
           >
             <ArrowLeft className="w-4 h-4 mr-1" /> Back

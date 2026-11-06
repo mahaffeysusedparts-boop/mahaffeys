@@ -12,7 +12,7 @@ export interface SellerEvidence {
 export const PHOTO_LABELS: Record<typeof INTAKE_PHOTO_FIELDS[number], string> = {
   personPhotoUrl: 'Seller photo', idPhotoUrl: 'ID photo', vehiclePhotoUrl: 'Vehicle photo', licensePlatePhotoUrl: 'Plate photo', loadPhotoUrl: 'Load photo',
 };
-export function assessScrapEvidence(evidence: SellerEvidence, requirements?: IntakeRequirementFlags, options: {
+export function assessScrapEvidence(evidence: SellerEvidence, requirements: IntakeRequirementFlags | undefined, options: {
   verified: boolean; identity?: boolean; collection?: boolean; addressVerified?: boolean;
 }) {
   const prefix = options.collection ? 'collection' : 'scale-seller';
@@ -102,6 +102,8 @@ export function scrapIntakeProgress(input: ScrapProgressInput) {
   }
   if (input.unsaved) blockers.unshift({ label: 'Unsaved corrections / inputs — saved evidence has not changed', target: input.collection ? 'collection-handoff' : 'scale-seller-editor' });
   if (input.saveFailed) blockers.unshift({ label: 'Save not confirmed — retained inputs require review', target: input.collection ? 'collection-handoff' : 'scale-seller-editor' });
+  if (!input.collection && (batch || hasOut)) nextTarget = 'scale-material-review';
+  if (!input.collection && lines && !unresolved && !(input.requirements?.requireExplicitReview && !input.reviewed)) nextTarget = 'scale-final-review';
   steps.push({ label: 'Payment', state: input.collection ? 'pending' : !input.paymentVerified ? 'unverified' : blockers.length ? 'needs attention' : 'current', target: input.collection ? 'collection-handoff' : 'scale-payment' });
   return { steps, nextAction, nextTarget, blockers, assessment, source: input.collection ? 'Collection draft evidence' : 'Acknowledged saved evidence' };
 }

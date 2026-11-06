@@ -6,10 +6,10 @@ import type { IntakeRequirements } from '@/types/intakeRequirements';
 import type { Ticket } from '@/types/scrap';
 import type { BuyingPaymentInput } from './BuyingPaymentFields';
 import { IntakeFieldGuidance, type IntakeIssue } from './IntakeFieldGuidance';
-import { INTAKE_PHOTO_FIELDS } from '@/utils/intakeRequirements';
+import { assessScrapEvidence } from '@/utils/scrapIntakeProgress';
 import { ShieldCheck, AlertTriangle } from 'lucide-react';
 
-export function IntakeCompletionGuidance({ ticket, requirements, eligibility, eligibilityError, reviewed, paymentInput, sellerDirty = false }: {
+export function IntakeCompletionGuidance({ ticket, requirements, eligibility, eligibilityError, reviewed, paymentInput, sellerDirty = false, identityVerified, profileAddress }: {
   ticket: Ticket;
   requirements?: IntakeRequirements;
   eligibility?: PaymentEligibility;
@@ -17,16 +17,15 @@ export function IntakeCompletionGuidance({ ticket, requirements, eligibility, el
   reviewed: boolean;
   paymentInput?: BuyingPaymentInput;
   sellerDirty?: boolean;
+  identityVerified?: boolean;
+  profileAddress?: string;
 }) {
   const { isAdmin } = useAuth();
   const unfinished = !!ticket.pendingPlatformCapture || ticket.scaleGrossInWeight != null || !!ticket.buying?.activeCycleId;
+  const evidence = assessScrapEvidence({ ...ticket, customerAddress: ticket.customerAddress || profileAddress }, requirements, { verified: !!requirements, identity: identityVerified, addressVerified: profileAddress !== undefined });
   const issues: IntakeIssue[] = [
     ...(sellerDirty ? [{ target: 'scale-seller-editor', message: 'Save the seller corrections before completing.' }] : []),
-    ...(!ticket.customerPhone?.trim() && requirements?.requirePhone ? [{ target: 'scale-seller-phone', message: 'Enter and save the seller phone.' }] : []),
-    ...(!ticket.customerAddress?.trim() && requirements?.requireAddress ? [{ target: 'scale-seller-address', message: 'Confirm and save the seller address.' }] : []),
-    ...(!ticket.customerIdNumber?.trim() && requirements?.requireSellerId ? [{ target: 'scale-seller-id', message: 'Confirm and save seller ID details.' }] : []),
-    ...(!ticket.vehicleLicensePlate?.trim() && requirements?.requireVehiclePlate ? [{ target: 'scale-seller-plate', message: 'Enter and save today’s vehicle plate.' }] : []),
-    ...(requirements?.requirePhotos && INTAKE_PHOTO_FIELDS.some(field => !ticket.complianceCaptures?.[field]) ? [{ target: 'scale-seller-photos', message: 'Capture and save the missing intake photos.' }] : []),
+    ...evidence.attention.map(issue => ({ target: issue.target, message: `${issue.label}${issue.unknown ? ' — verification needed.' : ' — correct and save before completion.'}` })),
     ...(unfinished ? [{ target: 'scale-weighing', message: 'Finish or explicitly cancel the unfinished weighing cycle.' }] : []),
     ...(!ticket.scrapLines?.length ? [{ target: 'scale-weighing', message: 'Add at least one confirmed weighed material line.' }] : []),
     ...(requirements?.requireExplicitReview && !reviewed ? [{ target: 'scale-purchase-review', message: 'Acknowledge your review of this purchase.' }] : []),

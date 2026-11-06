@@ -37,7 +37,7 @@ test('Saving a scrap intake without an ID creates a customer profile', async ({ 
   });
 
   await page.goto('/intake');
-  await page.getByText('Start Metal Scrap Ticket', { exact: true }).click();
+  await page.getByRole('region', { name: 'Intake home', exact: true }).getByRole('button', { name: /^New scrap load / }).click();
   await page.getByPlaceholder('e.g. Marcus Vance').fill('Jamie No-ID Seller');
   await page.getByPlaceholder('(555) 000-0000').fill('5559876543');
   await page.getByRole('button', { name: 'Save Intake & Continue to Scale', exact: true }).click();

@@ -40,7 +40,7 @@ test('Compliance camera captures request a main-server snapshot, not the camera'
     await route.fulfill({ json: response });
   });
   await page.goto('/intake');
-  await page.getByText('Start Metal Scrap Ticket', { exact: true }).click();
+  await page.getByText('New scrap load', { exact: true }).click();
   await page.getByRole('button', { name: 'Open Photo Compliance Studio', exact: true }).click();
   const studio = page.getByRole('dialog');
   const cameraButton = studio.getByRole('button', { name: 'Server Capture Camera (192.168.1.150)', exact: true });

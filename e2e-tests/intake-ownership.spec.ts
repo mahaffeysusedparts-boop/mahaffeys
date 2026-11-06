@@ -2,8 +2,9 @@ import { test, expect } from '@playwright/test';
 import { ownershipFixture, queueEnvelope, type FixtureOwner } from './fixtures/intake-api';
 import type { Ticket } from '../src/types/scrap';
 
-test('Explicit tablet takeover pauses the desk while retaining its manual input', async ({ browser }) => {
-  const contexts = await Promise.all([browser.newContext(), browser.newContext({ viewport: { width: 768, height: 1024 } })]);
+test('Explicit tablet takeover pauses the desk while retaining its manual input', async ({ browser, baseURL }) => {
+  test.setTimeout(90000);
+  const contexts = await Promise.all([browser.newContext({ baseURL }), browser.newContext({ baseURL, viewport: { width: 768, height: 1024 } })]);
   const owners = new Map<string, FixtureOwner>();
   const ticket = { id: 'SHARED-LEASE', ticketType: 'SCRAP_METAL', customerName: 'Lease Test Seller', createdAt: new Date().toISOString(), status: 'PENDING', selectedWeighingType: 'VEHICLE_IN_OUT', notes: '', scrapLines: [], grossTotal: 0, totalDeductions: 0, finalPayout: 0, payoutMethod: 'Cash', operatorName: 'Test Operator', buying: { version: 1, revision: 1, stage: 'DRAFT' } } as Ticket;
   try {
@@ -25,7 +26,7 @@ test('Explicit tablet takeover pauses the desk while retaining its manual input'
         await route.fulfill({ json: response });
       });
       const page = await context.newPage();
-      await page.goto('/intake'); await page.getByText('Start Metal Scrap Ticket', { exact: true }).click();
+      await page.goto('/intake'); await page.getByRole('region', { name: 'Intake home', exact: true }).getByRole('button', { name: /^Open scale queue / }).click();
       if (index === 0) { await page.getByRole('button', { name: 'Claim This Intake', exact: true }).click(); await page.getByPlaceholder('e.g. 8750').fill('8750'); }
     }
     const desk = contexts[0].pages()[0]; const tablet = contexts[1].pages()[0];

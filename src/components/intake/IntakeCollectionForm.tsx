@@ -294,7 +294,7 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
           <Button
             variant="ghost"
             size="sm"
-            onClick={onBack}
+            onClick={() => { void beforeLeave().then(allowed => { if (allowed) onBack(); }); }}
             className="text-slate-400 hover:bg-slate-800 hover:text-white"
           >
             <ArrowLeft className="h-4 w-4 mr-1" /> Back
@@ -595,8 +595,9 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
                 </div>
               </div>
 
-              {activeLoadCount >= MAX_ACTIVE_LOADS && <div id="collection-capacity" className="rounded-xl border border-amber-700 bg-amber-950 p-3 text-xs text-amber-100"><p>All {MAX_ACTIVE_LOADS} intake slots are occupied. Your draft is kept while you clear a slot.</p><Button onClick={onOpenQueue} variant="link" className="px-0 text-amber-100">Open scale queue</Button></div>}
+              {activeLoadCount >= MAX_ACTIVE_LOADS && <div id="collection-capacity" className="rounded-xl border border-amber-700 bg-amber-950 p-3 text-xs text-amber-100"><p>All {MAX_ACTIVE_LOADS} intake slots are occupied. Your draft is kept while you clear a slot.</p><Button onClick={() => { void beforeLeave().then(allowed => { if (allowed) onOpenQueue(); }); }} variant="link" className="px-0 text-amber-100">Open scale queue</Button></div>}
               <Button
+                id="collection-handoff"
                 onClick={() => void handleSave()}
                 disabled={saving || activeLoadCount >= MAX_ACTIVE_LOADS}
                 className="h-12 w-full gap-2 bg-emerald-600 text-sm font-extrabold text-white shadow-lg shadow-emerald-950 hover:bg-emerald-500"
