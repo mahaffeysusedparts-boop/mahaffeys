@@ -144,13 +144,14 @@
     border-color: #000000 !important;
   }
 
-  /* ── Vehicle sticker (4×6) ─────────────────────────────────────────── */
-
-  body {
+  /* The HTML canvas also paints page margins and overflow sheets. */
+  html, body {
     margin: 0 !important;
     background: #ffffff !important;
+    color-scheme: light !important;
   }
 
+  /* ── Vehicle sticker (4×6) ─────────────────────────────────────────── */
   .vehicle-sticker-dialog {
     position: static !important;
     display: block !important;

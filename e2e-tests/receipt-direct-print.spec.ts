@@ -7,6 +7,7 @@ for (const { missingPhoto, savedProfile } of [
   { missingPhoto: false, savedProfile: true },
 ]) {
   test(missingPhoto ? 'Direct printing stops when an attached photo is unavailable' : savedProfile ? 'Receipt loads a saved seller ID and embeds it in direct and browser printing' : 'Direct printing embeds all five photos in both receipt copies', async ({ page }) => {
+    test.setTimeout(60000);
     const user = { id: 'print-test', fullName: 'Print Tester', username: 'print-test', role: 'admin', status: 'approved' };
     const photos = ['id', 'person', 'vehicle', 'plate', 'load'];
     const ticket = {
@@ -87,6 +88,8 @@ for (const { missingPhoto, savedProfile } of [
       }
       const pdf = await rendered.pdf({ printBackground: true, preferCSSPageSize: true });
       expect((pdf.toString('latin1').match(/\/Subtype\s*\/Image\b/g) ?? []).length).toBeGreaterThanOrEqual(5);
+      expect((pdf.toString('latin1').match(/\/Type\s*\/Page\b/g) ?? []).length, 'One page per receipt copy, with no trailing sheet').toBe(2);
+      expect(await rendered.evaluate(() => getComputedStyle(document.documentElement).backgroundColor), 'The page canvas must stay white outside receipt content').toBe('rgb(255, 255, 255)');
       await rendered.close();
       if (savedProfile) {
         await page.evaluate(() => {

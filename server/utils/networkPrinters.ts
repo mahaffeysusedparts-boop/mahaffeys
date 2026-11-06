@@ -144,7 +144,7 @@ export async function submitPrintJob(printerId: string, html: string) {
   const htmlPath = join(directory, "document.html");
   const pdfPath = join(directory, "document.pdf");
   try {
-    const document = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>body{margin:0;background:#fff!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}@page{margin:0.35in}*{box-sizing:border-box}</style></head><body>${cleanHtml(html)}</body></html>`;
+    const document = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>body{margin:0;-webkit-print-color-adjust:exact;print-color-adjust:exact}@page{margin:0.35in}*{box-sizing:border-box}</style></head><body>${cleanHtml(html)}<style>html,body{background:#fff!important;color-scheme:light!important}</style></body></html>`;
     await writeFile(htmlPath, document, { mode: 0o600 });
     try {
       await execFileAsync("/usr/bin/chromium", [
