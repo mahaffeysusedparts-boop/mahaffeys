@@ -384,10 +384,12 @@ export async function executeBuyingCommand(command: z.infer<typeof buyingCommand
         if (command.action === 'FINALIZE_AND_PAY') next = await pay(client,next,command,user);
       } else if (command.action === 'PAY') next = await pay(client,previous,command,user);
       else if (command.action === 'VOID') {
-        if (previous.buying.stage === 'PAID') fail('A paid ticket cannot be voided through draft cancellation; reconcile payment evidence separately');
+        if (previous.buying.stage === 'VOIDED') fail('This ticket is already voided');
+        if (previous.buying.stage === 'PAID' && !['admin','yard_manager'].includes(user.role)) fail('Only a yard manager or administrator can void a paid purchase',403);
         if (previous.buying.stage==='FINALIZED' && !['admin','yard_manager'].includes(user.role)) fail('Only a manager can cancel a finalized unpaid purchase',403);
-        if (!command.reason) fail('Void reason required');
-        next = {...previous,status:'VOIDED',voidedAt:new Date().toISOString(),voidedBy:user.fullName,voidReason:command.reason,buying:{...previous.buying,stage:'VOIDED'}};
+        if (!command.reason?.trim()) fail('Void reason required');
+        // Voiding the purchase does not undo actual cash handover or check issuance.
+        next = {...previous,status:'VOIDED',voidedAt:new Date().toISOString(),voidedBy:user.fullName,voidReason:command.reason.trim(),buying:{...previous.buying,stage:'VOIDED'}};
       }
       next.buying = {...next.buying!,revision:previous.buying.revision+1};
       await client.query('UPDATE scrap_buying_tickets SET revision=$2,stage=$3,document=$4::jsonb,updated_at=NOW() WHERE ticket_id=$1',[next.id,next.buying.revision,next.buying.stage,JSON.stringify(next)]);

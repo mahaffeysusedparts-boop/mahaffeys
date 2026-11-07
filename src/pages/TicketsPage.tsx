@@ -513,7 +513,8 @@ export default function TicketsPage() {
                 <div>DL #: <strong className="text-amber-300">{inspectionTicket.customerIdNumber || 'N/A'}</strong></div>
                 <div>Plate: <strong className="text-sky-300">{inspectionTicket.vehicleLicensePlate || 'N/A'}</strong></div>
                 <div>Payout: <strong className="text-emerald-400">${inspectionTicket.finalPayout.toFixed(2)}</strong></div>
-                <div>Payment: <strong className="text-emerald-200">{inspectionTicket.buying ? inspectionTicket.buying.stage === 'PAID' ? inspectionTicket.buying.payment?.method : 'Not paid' : inspectionTicket.payoutMethod}</strong></div>
+                <div>Payment: <strong className="text-emerald-200">{inspectionTicket.buying ? inspectionTicket.buying.payment?.method ?? 'Not paid' : inspectionTicket.payoutMethod}</strong></div>
+                {inspectionTicket.status === 'VOIDED' && inspectionTicket.buying?.payment && <p className="col-span-2 text-amber-200">Original payment retained — voiding did not reverse the payout.</p>}
                 {(inspectionTicket.buying?.payment?.checkReference ?? inspectionTicket.checkNumber) && <div>Check Number: <strong className="text-emerald-200">{inspectionTicket.buying?.payment?.checkReference ?? inspectionTicket.checkNumber}</strong></div>}
                 {inspectionTicket.buying?.payment?.safeguardReview && <div className="col-span-2">Payment safeguards: <strong className="text-amber-200">{inspectionTicket.buying.payment.safeguardReview.enabled ? 'ON' : 'OFF · administrator override'} · revision {inspectionTicket.buying.payment.safeguardReview.revision}</strong>{!inspectionTicket.buying.payment.safeguardReview.enabled && <p className="mt-1 text-slate-200">{inspectionTicket.buying.payment.safeguardReview.updatedBy}: {inspectionTicket.buying.payment.safeguardReview.reason}</p>}</div>}
               </div>

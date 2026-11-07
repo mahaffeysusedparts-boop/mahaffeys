@@ -124,9 +124,14 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ ticket, open, onOpen
               {ticket.buying ? ticket.buying.stage === 'PAID' ? 'PAID — PAYMENT RECEIPT' : ticket.buying.stage === 'VOIDED' ? 'VOIDED — NOT PAYABLE' : 'UNPAID VOUCHER — COPY, NOT A PAYMENT' : ticket.ticketType === 'CAR_SALVAGE' ? 'AUTO SALVAGE INTAKE VOUCHER' : 'LEGACY SCRAP VOUCHER — PAYMENT STATUS NOT RECONCILED'}
             </span>
             <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-950 border border-emerald-400 font-bold text-[10px] uppercase rounded">
-              <ShieldCheck className="w-3 h-3 text-emerald-700 inline" /> {ticket.buying ? ticket.buying.stage === 'PAID' ? 'PAID IN FULL' : 'PAYMENT NOT RECORDED' : 'LEGACY COMPLIANCE RECORD'}
+              <ShieldCheck className="w-3 h-3 text-emerald-700 inline" /> {ticket.buying ? ticket.buying.payment ? ticket.status === 'VOIDED' ? 'ORIGINAL PAYMENT NOT REVERSED' : 'PAID IN FULL' : 'PAYMENT NOT RECORDED' : 'LEGACY COMPLIANCE RECORD'}
             </span>
           </div>
+          {ticket.status === 'VOIDED' && <div className="rounded border border-red-700 bg-red-50 p-2 text-left text-[11px] text-red-950">
+            <p className="font-bold">Voided by {ticket.voidedBy || 'Unknown operator'}{ticket.voidedAt ? ` · ${new Date(ticket.voidedAt).toLocaleString()}` : ''}</p>
+            <p>Reason: {ticket.voidReason || 'Not recorded'}</p>
+            {ticket.buying?.payment && <p>Original {ticket.buying.payment.method} payout: ${ticket.buying.payment.amount.toFixed(2)}. Voiding does not confirm a refund or check cancellation.</p>}
+          </div>}
         </div>
 
         {/* Ticket Metadata Bar with Customer Phone */}

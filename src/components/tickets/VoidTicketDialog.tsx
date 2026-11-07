@@ -36,6 +36,7 @@ export const VoidTicketDialog: React.FC<VoidTicketDialogProps> = ({ ticket, open
   const { user } = useAuth();
   const [reason, setReason] = useState<string>('');
   const [note, setNote] = useState('');
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (open) {
@@ -46,17 +47,18 @@ export const VoidTicketDialog: React.FC<VoidTicketDialogProps> = ({ ticket, open
 
   if (!ticket) return null;
 
-  const isPaid = ticket.buying ? ticket.buying.stage === 'PAID' : ticket.status === 'COMPLETED';
+  const isPaid = ticket.buying ? !!ticket.buying.payment : ticket.status === 'COMPLETED';
   const canVoidPaid = user?.role === 'admin' || user?.role === 'yard_manager';
-  const locked = isPaid && (!!ticket.buying || !canVoidPaid);
+  const locked = (isPaid || ticket.buying?.stage === 'FINALIZED') && !canVoidPaid;
   const hasWeighData = ticket.scaleGrossInWeight != null || (ticket.scrapLines?.length ?? 0) > 0;
   const isOther = reason === 'Other';
   const noteRequiredMissing = isOther && !note.trim();
-  const canConfirm = Boolean(reason) && !noteRequiredMissing && !locked;
+  const canConfirm = Boolean(reason) && !noteRequiredMissing && !locked && !saving && ticket.status !== 'VOIDED';
 
   const handleConfirm = async () => {
     if (!canConfirm) return;
     const fullReason = note.trim() ? `${reason} — ${note.trim()}` : reason;
+    setSaving(true);
     try {
       const canonical = ticket.ticketType==='SCRAP_METAL' && ticket.status==='PENDING' && !ticket.buying ? await scrapBuyingService.adopt(ticket.id) : ticket;
       const voided = canonical.buying ? await scrapBuyingService.void(canonical,fullReason) : storageService.voidTicket(ticket.id, {
@@ -66,17 +68,18 @@ export const VoidTicketDialog: React.FC<VoidTicketDialogProps> = ({ ticket, open
       toast.success(`Ticket #${ticket.id} voided`, { description: fullReason });
       onVoided?.(ticket.id); onOpenChange(false);
     } catch (error) { toast.error(error instanceof Error ? error.message : 'Cancellation was not confirmed'); }
+    finally { setSaving(false); }
   };
 
   return (
-    <Dialog open={open} onOpenChange={(busy) => !busy && onOpenChange(false)}>
-      <DialogContent className="border-red-500/30 bg-slate-950 text-slate-100 sm:max-w-md">
+    <Dialog open={open} onOpenChange={(nextOpen) => { if (!nextOpen && !saving) onOpenChange(false); }}>
+      <DialogContent className="rounded-2xl border-red-500/30 bg-slate-950 text-slate-100 sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-white">
             <Ban className="h-5 w-5 text-red-400" /> Void Transaction #{ticket.id}
           </DialogTitle>
-          <DialogDescription className="text-xs text-slate-400">
-            The ticket is kept in the ledger for audit — it is excluded from payouts, reports, and metrics.
+          <DialogDescription className="text-xs text-slate-300">
+            The ticket stays in the ledger for audit and is no longer payable. Any recorded payout remains in the payment history.
           </DialogDescription>
         </DialogHeader>
 
@@ -99,16 +102,16 @@ export const VoidTicketDialog: React.FC<VoidTicketDialogProps> = ({ ticket, open
           <div className="flex items-start gap-2.5 rounded-xl border border-amber-500/40 bg-amber-950/30 px-3 py-2.5 text-xs text-amber-200">
             <Lock className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
             <p>
-              This ticket was already paid out — a <strong>yard manager or administrator</strong> must void it.
+              This ticket was {isPaid ? 'already paid out' : 'finalized'} — a <strong>yard manager or administrator</strong> must void it.
               Ask a supervisor to complete this void.
             </p>
           </div>
         ) : isPaid ? (
-          <div className="flex items-start gap-2.5 rounded-xl border border-amber-500/40 bg-amber-950/30 px-3 py-2.5 text-xs text-amber-200">
+          <div role="alert" className="flex items-start gap-2.5 rounded-xl border border-amber-500/40 bg-amber-950/30 px-3 py-2.5 text-xs text-amber-200">
             <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
             <p>
-              <strong>This ticket was already paid out.</strong> Voiding does not reverse the payment — record a
-              cash drawer adjustment if money was handed out.
+              <strong>This ticket was already paid out.</strong> Voiding does not reverse the payment or return money to the drawer.
+              The original payout and check number stay on record. Record a separate cash adjustment only if money is actually returned; handle check cancellation separately.
             </p>
           </div>
         ) : hasWeighData ? (
@@ -147,15 +150,15 @@ export const VoidTicketDialog: React.FC<VoidTicketDialogProps> = ({ ticket, open
         </div>
 
         <DialogFooter className="gap-2 border-t border-slate-800 pt-3">
-          <Button variant="ghost" onClick={() => onOpenChange(false)} className="text-xs text-slate-400 hover:text-white">
+          <Button variant="ghost" disabled={saving} onClick={() => onOpenChange(false)} className="text-xs text-slate-400 hover:text-white">
             Cancel
           </Button>
           <Button
             onClick={handleConfirm}
             disabled={!canConfirm}
-            className="gap-1.5 bg-red-600 text-xs font-bold text-white hover:bg-red-500 disabled:opacity-40"
+            className="gap-1.5 rounded-xl bg-red-600 text-xs font-bold text-white hover:bg-red-500 disabled:opacity-40"
           >
-            <Ban className="h-4 w-4" /> Void Transaction
+            <Ban className="h-4 w-4" /> {saving ? 'Voiding…' : 'Void Transaction'}
           </Button>
         </DialogFooter>
       </DialogContent>
