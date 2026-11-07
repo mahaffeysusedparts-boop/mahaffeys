@@ -1,6 +1,9 @@
 import { ownershipFixture, queueEnvelope } from './fixtures/intake-api';
 import { test, expect } from '@playwright/test';
 import { evaluateBuyingPaymentRules } from '../src/utils/buyingPaymentRules';
+import { mockLicenseOcr } from './fixtures/license-ocr';
+
+test.beforeEach(async ({ page }) => { await mockLicenseOcr(page); });
 
 // Synthetic sellers, uploads and print-independent intake APIs never touch yard data.
 for (const savedPhoto of [true, false]) {

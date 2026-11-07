@@ -3,11 +3,12 @@ import { useIntakeDraft } from '@/hooks/useIntakeDraft';
 import { DraftRecoveryBanner } from './DraftRecoveryBanner';
 import { RepeatCustomerReview } from './RepeatCustomerReview';
 import { IntakeFieldGuidance, IntakeFieldError, goToIntakeField, type IntakeIssue } from './IntakeFieldGuidance';
-import { CarIntakeRecord, Customer, Ticket } from '@/types/scrap';
+import { CarIntakeRecord, Customer, Ticket, type ComplianceCaptures } from '@/types/scrap';
 import { storageService } from '@/services/storageService';
 import { apiRequest } from '@/services/apiClient';
 import { customerService, type CustomerInput } from '@/services/customerService';
 import { uploadDataUrl } from '@/services/mediaService';
+import { LicensePhotoReader } from '@/components/compliance/LicensePhotoReader';
 import { PrintStickerModal } from '@/components/vehicle/PrintStickerModal';
 import { VehicleStickerData } from '@/components/vehicle/VehicleSticker';
 import { VinScannerModal } from '@/components/intake/VinScannerModal';
@@ -107,6 +108,10 @@ const compressVehiclePhoto = (file: File): Promise<string> => new Promise((resol
   // Who the vehicle came from (Seller)
   const [sellerName, setSellerName] = useState<string>('');
   const [sellerIdNumber, setSellerIdNumber] = useState<string>('');
+  const [sellerIdState, setSellerIdState] = useState('');
+  const [idPhotoForReading, setIdPhotoForReading] = useState('');
+  const [idReadStatus, setIdReadStatus] = useState<ComplianceCaptures['idReadStatus']>();
+  const [idReadWarning, setIdReadWarning] = useState('');
   const [sellerPhone, setSellerPhone] = useState<string>('');
   const [sellerAddress, setSellerAddress] = useState<string>('');
   const [licensePlate, setLicensePlate] = useState('');
@@ -165,9 +170,13 @@ const compressVehiclePhoto = (file: File): Promise<string> => new Promise((resol
     customReceiptNumber: { value: customReceiptNumber, restore: setCustomReceiptNumber },
     sellerName: { value: sellerName, restore: setSellerName },
     sellerIdNumber: { value: sellerIdNumber, restore: setSellerIdNumber },
+    sellerIdState: { value: sellerIdState, restore: setSellerIdState },
+    idReadStatus: { value: idReadStatus, restore: setIdReadStatus },
+    idReadWarning: { value: idReadWarning, restore: setIdReadWarning },
     sellerPhone: { value: sellerPhone, restore: setSellerPhone },
     sellerAddress: { value: sellerAddress, restore: setSellerAddress },
     selectedCustomer: { value: selectedCustomer, restore: setSelectedCustomer },
+
     sellerIdPhotoUrl: { value: sellerIdPhotoUrl, restore: setSellerIdPhotoUrl },
     licensePlate: { value: licensePlate, restore: setLicensePlate },
     photoUrl: { value: photoUrl, restore: setPhotoUrl },
@@ -199,6 +208,7 @@ const compressVehiclePhoto = (file: File): Promise<string> => new Promise((resol
     ...(storageService.getTickets().some(ticket => ticket.id === customReceiptNumber.trim()) ? [{ target: 'car-receipt', message: 'Receipt number is already used. Generate a new number before saving.' }] : []),
     ...(!sellerName.trim() ? [{ target: 'car-seller-name', message: 'Enter the seller name.' }] : []),
     ...(sellerIdPhotoUrl && !sellerIdNumber.trim() ? [{ target: 'car-seller-id', message: 'Enter the ID number for the captured seller ID.' }] : []),
+    ...(sellerIdNumber.trim() && !sellerIdState.trim() ? [{ target: 'car-seller-state', message: 'Enter the issuing state shown on the ID.' }] : []),
     ...(!Number.isFinite(purchasePrice) || purchasePrice < 0 ? [{ target: 'car-price', message: 'Enter a valid nonnegative purchase price.' }] : []),
   ] : [];
   const fieldError = (target: string) => issues.find(issue => issue.target === target)?.message;
@@ -253,6 +263,8 @@ const compressVehiclePhoto = (file: File): Promise<string> => new Promise((resol
     setSelectedCustomer(customer);
     setSellerName(customer.fullName);
     setSellerIdNumber(customer.idNumber);
+    setSellerIdState(customer.idState);
+    setIdPhotoForReading(''); setIdReadStatus(undefined); setIdReadWarning('');
     setSellerPhone(customer.phone || '');
     setSellerAddress(customer.address || '');
     setLicensePlate(plate);
@@ -275,6 +287,7 @@ const compressVehiclePhoto = (file: File): Promise<string> => new Promise((resol
       const dataUrl = await compressVehiclePhoto(file);
       const url = await uploadDataUrl(dataUrl, `seller-id-${Date.now()}.jpg`);
       setSellerIdPhotoUrl(url);
+      setIdPhotoForReading(dataUrl);
       toast.success('ID photo captured', {
         description: selectedCustomer
           ? 'It will be saved to this seller\'s customer record.'
@@ -393,6 +406,7 @@ const compressVehiclePhoto = (file: File): Promise<string> => new Promise((resol
     const invalidTarget = !customReceiptNumber.trim() || storageService.getTickets().some(ticket => ticket.id === customReceiptNumber.trim()) ? 'car-receipt'
       : !sellerName.trim() ? 'car-seller-name'
       : sellerIdPhotoUrl && !sellerIdNumber.trim() ? 'car-seller-id'
+      : sellerIdNumber.trim() && !sellerIdState.trim() ? 'car-seller-state'
       : !Number.isFinite(purchasePrice) || purchasePrice < 0 ? 'car-price' : null;
     if (invalidTarget) { goToIntakeField(invalidTarget); return; }
 
@@ -473,7 +487,7 @@ const compressVehiclePhoto = (file: File): Promise<string> => new Promise((resol
       complianceCaptures: {
         vehiclePhotoUrl: photoUrl,
         ...(doorJambPhotoUrl ? { doorJambVinPhotoUrl: doorJambPhotoUrl } : {}),
-        ...(sellerIdPhotoUrl ? { idPhotoUrl: sellerIdPhotoUrl } : {}),
+        ...(sellerIdPhotoUrl ? { idPhotoUrl: sellerIdPhotoUrl, idReadStatus, idReadWarning } : {}),
       },
 
       grossTotal: purchasePrice,
@@ -492,7 +506,7 @@ const compressVehiclePhoto = (file: File): Promise<string> => new Promise((resol
         phone: sellerPhone.trim(),
         idType: selectedCustomer?.idType ?? 'Driver License',
         idNumber: sellerIdNumber.trim(),
-        idState: selectedCustomer?.idState ?? 'GA',
+        idState: sellerIdState.trim(),
         address: sellerAddress.trim(),
         vehicleLicensePlate: licensePlate.trim().toUpperCase() || undefined,
         vehicleState: selectedCustomer?.vehicleState,
@@ -533,6 +547,7 @@ const compressVehiclePhoto = (file: File): Promise<string> => new Promise((resol
       setTrim('');
       setSellerName('');
       setSellerIdNumber('');
+      setSellerIdState(''); setIdPhotoForReading(''); setIdReadStatus(undefined); setIdReadWarning('');
       setSellerPhone('');
       setSellerAddress('');
       setLicensePlate('');
@@ -1102,6 +1117,7 @@ const compressVehiclePhoto = (file: File): Promise<string> => new Promise((resol
                   type="file"
                   accept="image/*"
                   capture="environment"
+                  data-testid="car-seller-id-upload"
                   className="hidden"
                   onChange={(e) => void handleIdPhotoUpload(e)}
                 />
@@ -1133,6 +1149,12 @@ const compressVehiclePhoto = (file: File): Promise<string> => new Promise((resol
                   </Button>
                 </div>
               </div>
+              <div><Label htmlFor="car-seller-state" className="text-xs text-slate-200">ID issuing state</Label><Input id="car-seller-state" value={sellerIdState} onChange={event => setSellerIdState(event.target.value.toUpperCase())} maxLength={40} placeholder="State shown on the ID" className="mt-1 h-11 rounded-xl border-slate-700 bg-slate-950 text-white"/></div>
+              {idPhotoForReading && <LicensePhotoReader imageUrl={idPhotoForReading}
+                initialFields={{ fullName: sellerName, idNumber: sellerIdNumber, idState: sellerIdState, address: sellerAddress }}
+                onApply={fields => { setSellerName(fields.fullName); setSellerIdNumber(fields.idNumber); setSellerIdState(fields.idState); setSellerAddress(fields.address); draft.markEdited(); }}
+                onStatus={(status, warning) => { setIdReadStatus(status); setIdReadWarning(warning); }}/>}
+              {idReadWarning && <p role="alert" className="rounded-xl border border-amber-700 bg-amber-950 p-3 text-xs text-amber-100">{idReadWarning}</p>}
             </CardContent>
           </Card>
 

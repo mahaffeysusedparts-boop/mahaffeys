@@ -1,11 +1,7 @@
 import { createWorker } from "tesseract.js";
-import { DLScanResult } from "@/utils/complianceUtils";
+import { parseDriverLicenseText, type LicenseReadResult } from '@/utils/licenseOcr';
 
-export interface AILicenseAnalysisResult extends DLScanResult {
-  confidence: number;
-  extractedRawText: string;
-  fieldsExtractedCount: number;
-}
+export type AILicenseAnalysisResult = LicenseReadResult;
 
 export interface AILicensePlateResult {
   plateNumber: string;
@@ -36,7 +32,7 @@ async function getWorker(): Promise<Tesseract.Worker> {
     workerPromise = (async () => {
       const worker = await createWorker("eng");
       return worker;
-    })();
+    })().catch(error => { workerPromise = null; throw error; });
   }
   return workerPromise;
 }
@@ -45,146 +41,23 @@ async function getWorker(): Promise<Tesseract.Worker> {
  * Uses Tesseract OCR and intelligent regex parsing to analyze Driver's License and State ID photos.
  */
 export async function analyzeDriverLicenseImage(imageDataUrl: string): Promise<AILicenseAnalysisResult> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
   try {
-    const worker = await getWorker();
-    const ret = await worker.recognize(imageDataUrl);
-    const rawText = ret.data.text || "";
-    const confidence = Math.round(ret.data.confidence || 0);
-
-    const lines = rawText
-      .split("\n")
-      .map((l) => l.trim())
-      .filter((l) => l.length > 0);
-
-    let fullName = "";
-    let idNumber = "";
-    let idState = "GA";
-    let address = "";
-    let dob = "";
-    let expDate = "";
-    let fieldsExtractedCount = 0;
-
-    // 1. Extract State
-    for (const state of US_STATES) {
-      const stateRegex = new RegExp(`\\b${state}\\b`, "i");
-      if (stateRegex.test(rawText)) {
-        idState = state;
-        fieldsExtractedCount++;
-        break;
-      }
-    }
-
-    // 2. Extract Driver License / ID Number
-    const dlNumberRegexes = [
-      /(?:DL|LIC|NO|ID|4b|4d|3)\s*[:#\.\-]?\s*([A-Z0-9]{6,14})\b/i,
-      /\b([A-Z]\d{7,12})\b/, // E.g., S12345678 or D98120391
-      /\b(\d{7,10})\b/,     // E.g., 9823145 or 01928301
-    ];
-
-    for (const regex of dlNumberRegexes) {
-      const match = rawText.match(regex);
-      if (match && match[1]) {
-        const candidate = match[1].toUpperCase().replace(/[^A-Z0-9]/g, "");
-        if (candidate.length >= 6 && !/^(19|20)\d{2}$/.test(candidate) && !/^\d{5}$/.test(candidate)) {
-          idNumber = candidate;
-          fieldsExtractedCount++;
-          break;
-        }
-      }
-    }
-
-    // 3. Extract DOB
-    const dobMatch = rawText.match(/(?:DOB|BIRTH|4d|DB)\s*[:#\.\-]?\s*(\d{2}[\/\-\.]\d{2}[\/\-\.]\d{2,4})\b/i) ||
-                     rawText.match(/\b(\d{2}\/\d{2}\/(?:19|20)\d{2})\b/);
-    if (dobMatch && dobMatch[1]) {
-      dob = dobMatch[1];
-      fieldsExtractedCount++;
-    }
-
-    // 4. Extract Expiration Date
-    const expMatch = rawText.match(/(?:EXP|EXPIRES|4a)\s*[:#\.\-]?\s*(\d{2}[\/\-\.]\d{2}[\/\-\.]\d{2,4})\b/i);
-    if (expMatch && expMatch[1]) {
-      expDate = expMatch[1];
-      fieldsExtractedCount++;
-    }
-
-    // 5. Extract Full Name (AAMVA DL/ID labels first, then printed-name heuristics)
-    const cleanName = (value: string) =>
-      value
-        .replace(/[^A-Za-z'\-\s,]/g, " ")
-        .replace(/,/g, " ")
-        .replace(/\s+/g, " ")
-        .trim();
-
-    const lastNameMatch = rawText.match(/(?:^|\n)\s*(?:LN|FAMILY\s+NAME|1)\s*[:#.\-]?\s*([A-Z][A-Z'\-\s]{1,30})\s*(?:$|\n)/im);
-    const firstNameMatch = rawText.match(/(?:^|\n)\s*(?:FN|GIVEN\s+NAME|2)\s*[:#.\-]?\s*([A-Z][A-Z'\-\s]{1,30})\s*(?:$|\n)/im);
-    const labeledNameMatch = rawText.match(/(?:^|\n)\s*(?:NAME|NAM)\s*[:#.\-]?\s*([A-Z][A-Z'\-\s,]{3,50})\s*(?:$|\n)/im);
-
-    if (firstNameMatch?.[1] && lastNameMatch?.[1]) {
-      fullName = cleanName(`${firstNameMatch[1]} ${lastNameMatch[1]}`);
-    } else if (labeledNameMatch?.[1]) {
-      fullName = cleanName(labeledNameMatch[1]);
-    }
-
-    if (!fullName) {
-      const blockedWords =
-        /DRIVER|LICENSE|LICENCE|IDENTIFICATION|DEPARTMENT|EXPIRES|EXPIRATION|ADDRESS|CLASS|RESTRICTIONS|ENDORSEMENTS|DONOR|VETERAN|ISSUE|DOB|BIRTH/i;
-      for (const line of lines) {
-        const candidate = cleanName(line);
-        const words = candidate.split(" ").filter(Boolean);
-        if (
-          words.length >= 2 &&
-          words.length <= 4 &&
-          candidate.length <= 45 &&
-          !blockedWords.test(candidate) &&
-          !/\d/.test(line)
-        ) {
-          fullName = candidate;
-          break;
-        }
-      }
-    }
-    if (fullName) fieldsExtractedCount++;
-
-    // 6. Extract Address
-    const streetMatch = rawText.match(/\b\d{1,5}\s+[A-Za-z0-9\s\.,]{4,30}(?:ST|STREET|AVE|AVENUE|RD|ROAD|BLVD|DR|DRIVE|LN|WAY|CT|HWY|PKWY)\b/i);
-    const zipMatch = rawText.match(/\b\d{5}(?:-\d{4})?\b/);
-
-    if (streetMatch && streetMatch[0]) {
-      address = streetMatch[0].trim();
-      if (zipMatch) {
-        address += `, ${idState} ${zipMatch[0]}`;
-      }
-      fieldsExtractedCount++;
-    }
-
-    // Return only fields that were actually read. Fabricating placeholder
-    // names/ID numbers here previously caused intake forms to autofill with
-    // fake data whenever OCR failed to read the card.
-    return {
-      fullName,
-      idNumber,
-      idState,
-      idType: "Driver License",
-      address,
-      dob,
-      expDate,
-      confidence,
-      extractedRawText: rawText,
-      fieldsExtractedCount,
-    };
-  } catch (error) {
-    console.warn("AI Driver's License OCR error:", error);
-    return {
-      fullName: "",
-      idNumber: "",
-      idState: "GA",
-      idType: "Driver License",
-      address: "",
-      confidence: 0,
-      extractedRawText: "",
-      fieldsExtractedCount: 0,
-    };
+    const recognition = (async () => {
+      const worker = await getWorker();
+      return worker.recognize(imageDataUrl);
+    })();
+    const ret = await Promise.race([
+      recognition,
+      new Promise<never>((_, reject) => {
+        timeout = setTimeout(() => reject(new Error('License reading timed out')), 30000);
+      }),
+    ]);
+    return parseDriverLicenseText(ret.data.text || '', Math.round(ret.data.confidence || 0));
+  } catch {
+    return parseDriverLicenseText('', 0);
+  } finally {
+    if (timeout) clearTimeout(timeout);
   }
 }
 

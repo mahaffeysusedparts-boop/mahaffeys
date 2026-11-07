@@ -87,7 +87,10 @@ export function ScaleSellerEditor({ ticket, requirements, onSave, onDirtyChange 
       <Button disabled={!dirty || saving} onClick={() => void save()} className="rounded-xl bg-sky-700 text-white hover:bg-sky-600"><Save className="mr-2 h-4 w-4"/>{saving ? 'Saving seller details…' : 'Save seller corrections'}</Button>
     </fieldset>
     {dirty && <p className="text-xs text-amber-200">Unsaved seller corrections: save them before completing payment.</p>}
+    {captures.idReadWarning && <p role="alert" className="text-xs text-amber-200">{captures.idReadWarning}</p>}
     {error && <p role="alert" className="text-sm text-amber-200">{error}</p>}
-    <ComplianceCaptureModal isOpen={photosOpen} onClose={() => setPhotosOpen(false)} initialCaptures={captures} intakeType="SCRAP_METAL" onSaveCaptures={value => { setCaptures(value); markDirty(); }}/>
+    <ComplianceCaptureModal isOpen={photosOpen} onClose={() => setPhotosOpen(false)} initialCaptures={captures} intakeType="SCRAP_METAL" onSaveCaptures={value => { setCaptures(value); markDirty(); }}
+      licenseFields={{ fullName: ticket.customerName, idNumber, idState, idType: idType || 'Driver License', address }}
+      onLicenseRead={fields => { setAddress(fields.address); setIdNumber(fields.idNumber); setIdState(fields.idState); setIdType(fields.idType); markDirty(); }}/>
   </section>;
 }

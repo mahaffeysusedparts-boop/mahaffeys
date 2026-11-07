@@ -172,7 +172,7 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
     if (materials.length) setNotes(previous => [previous, `Expected materials (unweighed): ${materials.join(', ')}`].filter(Boolean).join('; '));
     // The selected customer's registry photo always wins — freshly retaking it
     // in the compliance studio below will overwrite this again.
-    setCaptures((prev) => ({ ...prev, idPhotoUrl: customer.idPhotoUrl }));
+    setCaptures((prev) => ({ ...prev, idPhotoUrl: customer.idPhotoUrl, idReadStatus: undefined, idReadWarning: undefined }));
     if (customer.idPhotoUrl) {
       toast.success('ID photo pulled from their customer record');
     }
@@ -557,6 +557,7 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
               >
                 <Camera className="h-4 w-4" /> Open Photo Compliance Studio
               </Button>
+              {captures.idReadWarning && <p role="alert" className="rounded-xl border border-amber-700 bg-amber-950 p-3 text-xs text-amber-100">{captures.idReadWarning}</p>}
             </CardContent>
           </Card>
         </div>
@@ -633,6 +634,12 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
         onClose={() => setCaptureOpen(false)}
         initialCaptures={captures}
         onSaveCaptures={(next) => setCaptures(next)}
+        licenseFields={{ fullName: customerName, idNumber: customerIdNumber, idState: customerIdState, idType: customerIdType || 'Driver License', address: customerAddress }}
+        onLicenseRead={fields => {
+          setCustomerName(fields.fullName); setCustomerIdNumber(fields.idNumber);
+          setCustomerIdState(fields.idState); setCustomerIdType(fields.idType); setCustomerAddress(fields.address);
+          draft.markEdited();
+        }}
         intakeType="SCRAP_METAL"
       />
     </div>

@@ -269,6 +269,8 @@ export interface Customer {
 export interface ComplianceCaptures {
   personPhotoUrl?: string;
   idPhotoUrl?: string;
+  idReadStatus?: 'READ' | 'PARTIAL' | 'UNREADABLE' | 'REVIEWED' | 'MANUAL';
+  idReadWarning?: string;
   vehiclePhotoUrl?: string;
   doorJambVinPhotoUrl?: string;
   licensePlatePhotoUrl?: string;

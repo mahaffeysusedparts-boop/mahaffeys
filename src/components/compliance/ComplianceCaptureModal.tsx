@@ -32,6 +32,8 @@ import { ComplianceCaptures, IpCamera } from "@/types/scrap";
 import { storageService } from "@/services/storageService";
 import { alarmComService } from "@/services/alarmComService";
 import { optimizeImageDataUrl, uploadDataUrl } from "@/services/mediaService";
+import { LicensePhotoReader } from './LicensePhotoReader';
+import type { DLScanResult } from '@/utils/complianceUtils';
 import { toast } from "sonner";
 
 interface ComplianceCaptureModalProps {
@@ -39,6 +41,8 @@ interface ComplianceCaptureModalProps {
   onClose: () => void;
   initialCaptures?: ComplianceCaptures;
   onSaveCaptures: (captures: ComplianceCaptures) => void | Promise<void>;
+  onLicenseRead?: (fields: DLScanResult) => void;
+  licenseFields?: Partial<DLScanResult>;
   intakeType?: 'CAR_SALVAGE' | 'SCRAP_METAL';
 }
 
@@ -47,6 +51,8 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
   onClose,
   initialCaptures,
   onSaveCaptures,
+  onLicenseRead,
+  licenseFields,
   intakeType,
 }) => {
   const isCarSalvage = intakeType === 'CAR_SALVAGE';
@@ -258,6 +264,7 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
     setCaptures((prev) => {
       const updated = { ...prev };
       delete updated[key];
+      if (key === 'idPhotoUrl') { delete updated.idReadStatus; delete updated.idReadWarning; }
       return updated;
     });
   };
@@ -416,18 +423,14 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
           })}
         </div>
 
-        {/* Manual Entry Info Banner */}
-        <Card className="bg-gradient-to-r from-blue-950/70 via-slate-900 to-slate-900 border-2 border-blue-500/50 text-white shadow-xl">
-          <CardHeader className="py-2.5 px-4 bg-slate-950/60 border-b border-blue-500/30 flex flex-row items-center justify-between">
-            <CardTitle className="text-xs font-extrabold text-blue-300 flex items-center gap-2 uppercase tracking-wider">
-              <Hand className="w-4 h-4 text-blue-400" /> Manual Entry Mode
+        <Card className="rounded-2xl bg-slate-900 border-2 border-blue-500/50 text-white shadow-xl">
+          <CardHeader className="py-2.5 px-4 bg-slate-950/60 border-b border-blue-500/30">
+            <CardTitle className="text-xs font-extrabold text-blue-200 flex items-center gap-2 uppercase tracking-wider">
+              <Hand className="w-4 h-4" /> ID Photo Reading &amp; Review
             </CardTitle>
-            <Badge className="bg-blue-900/80 text-blue-200 border-blue-500/40 text-[10px] font-mono">
-              NO AI OCR
-            </Badge>
           </CardHeader>
-          <CardContent className="p-3.5 text-xs text-slate-300">
-            <p>Enter customer and vehicle information manually in the intake form. Capture photos for compliance verification without automatic field extraction.</p>
+          <CardContent className="p-3.5 text-xs text-slate-200">
+            <p>New license photos are read automatically. Review extracted details before using them. Unreadable or missing fields are flagged and can be entered manually. Other photo types do not change seller details.</p>
           </CardContent>
         </Card>
 
@@ -543,6 +546,13 @@ export const ComplianceCaptureModal: React.FC<ComplianceCaptureModalProps> = ({
                   </div>
                 </CardContent>
               </Card>
+              {captures.idPhotoUrl && captures.idPhotoUrl !== initialCaptures?.idPhotoUrl && onLicenseRead && <LicensePhotoReader
+                imageUrl={captures.idPhotoUrl}
+                initialFields={licenseFields}
+                onApply={onLicenseRead}
+                onStatus={(status, warning) => setCaptures(previous => ({ ...previous, idReadStatus: status, idReadWarning: warning }))}
+              />}
+              {captures.idReadWarning && <p role="alert" className="rounded-xl border border-amber-700 bg-amber-950 p-3 text-xs text-amber-100">{captures.idReadWarning}</p>}
             </TabsContent>
           )}
 
