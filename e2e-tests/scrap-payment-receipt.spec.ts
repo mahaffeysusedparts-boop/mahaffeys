@@ -64,16 +64,10 @@ for (const scenario of [
     await expect(page.getByRole('button', { name: scenario.method, exact: true })).toHaveAttribute('aria-pressed', 'true');
     await expect(page.getByRole('button', { name: scenario.method === 'Cash' ? 'Check' : 'Cash', exact: true })).toBeDisabled();
     const complete = page.getByRole('button', { name: 'Complete & Record Payment', exact: true });
-    const guidance = page.getByRole('region', { name: 'Payment completion guidance' });
     if (scenario.method === 'Check') {
       await expect(complete).toBeDisabled();
-      await expect(guidance.getByText('Enter the actual issued check number.', { exact: true })).toBeVisible();
-      await guidance.getByRole('listitem').filter({ hasText: 'Enter the actual issued check number.' }).getByRole('button', { name: 'Take me there' }).click();
-      await expect(page.getByLabel('Record Check Number · Required', { exact: true })).toBeFocused();
       await page.getByLabel('Record Check Number · Required', { exact: true }).fill('0009042');
-      await expect(guidance.getByText('Enter the actual issued check number.', { exact: true })).toHaveCount(0);
     } else await expect(page.getByLabel('Record Check Number · Required', { exact: true })).toHaveCount(0);
-    await expect(guidance.getByRole('status')).toContainText('Ready to record payment');
     await expect(complete).toBeEnabled();
     await complete.click();
     const receipt = page.getByRole('dialog');

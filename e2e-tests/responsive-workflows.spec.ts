@@ -1,5 +1,5 @@
-import { test, expect } from '@playwright/test';
-import { mockApi, noPageOverflow } from './fixtures/navigation';
+import { test, expect, type Page } from '@playwright/test';
+import { queueEnvelope } from './fixtures/intake-api';
 
 const sizes = [
   { name: 'small phone', width: 320, height: 740 },
@@ -7,6 +7,29 @@ const sizes = [
   { name: 'iPad portrait', width: 820, height: 1180 },
   { name: 'iPad landscape', width: 1180, height: 820 },
 ];
+
+async function mockApi(page: Page, authenticated: boolean) {
+  // Synthetic responses keep responsive checks away from yard data and hardware.
+  const user = { id: 'responsive-admin', username: 'responsive', fullName: 'A Very Long Workstation Operator Name', role: 'admin', status: 'approved' };
+  await page.route('**/api/**', async route => {
+    const path = new URL(route.request().url()).pathname;
+    let response: unknown = { ok: true };
+    if (path === '/api/auth/status') response = { user: authenticated ? user : null, hasAdmin: true };
+    else if (path === '/api/users') response = { users: [user] };
+    else if (path === '/api/printers' || path === '/api/scrap-buying/ownership') response = [];
+    else if (path === '/api/state') response = { state: { mahaffeys_tickets: [], mahaffeys_metals: [], mahaffeys_settings: { operatorName: user.fullName, yardName: 'Mahaffeys Test Yard', scales: [] } } };
+    else if (path === '/api/scrap-buying/queue') response = queueEnvelope([]);
+    else if (path === '/api/scrap-buying/bin-inspections') response = { cycles: [] };
+    else if (path === '/api/scrap-buying/requirements') response = { revision: 1, requirePhotos: false, requirePhone: false, requireAddress: false, requireSellerId: false, requireVehiclePlate: false, requireExplicitReview: false };
+    else if (path === '/api/scale/status') response = { connected: false, weight: 0, unit: 'LBS', isStable: false, isZero: true, registry: [] };
+    else if (path === '/api/inventory') response = { items: [], total: 0, page: 1, limit: 24, totalPages: 1, counts: { available: 0, pending: 0, crushed: 0 }, updatedAt: new Date().toISOString() };
+    await route.fulfill({ json: response });
+  });
+}
+
+async function noPageOverflow(page: Page) {
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(1);
+}
 
 for (const size of sizes) {
   test(`${size.name}: navigate and use intake without overflow or obstructed fields`, async ({ page }) => {
@@ -22,13 +45,13 @@ for (const size of sizes) {
     await menu.click();
     const drawer = page.getByRole('dialog', { name: 'Main Menu' });
     await expect(drawer).toBeVisible();
-    await page.getByRole('searchbox', { name: 'Search menu pages' }).fill('Dashboard');
+    await page.getByRole('textbox', { name: 'Search menu pages' }).fill('Dashboard');
     await drawer.getByRole('link', { name: 'Dashboard', exact: true }).click();
     await expect(page).toHaveURL(/\/$/);
     await expect(drawer).not.toBeVisible();
     await noPageOverflow(page);
     await menu.click();
-    await page.getByRole('searchbox', { name: 'Search menu pages' }).fill('Scrap Metal Scale');
+    await page.getByRole('textbox', { name: 'Search menu pages' }).fill('Scrap Metal Scale');
     await page.getByRole('navigation', { name: 'Mobile navigation' }).getByRole('link', { name: 'Scrap Metal Scale', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'What are you starting?' })).toBeVisible();
     if (size.width >= 768) {
@@ -50,7 +73,6 @@ for (const size of sizes) {
     await noPageOverflow(page);
     await page.getByRole('heading', { name: 'New scrap load', exact: true }).click();
     await expect(shortcuts).toBeVisible();
-    await page.locator('summary').filter({ hasText: 'Switch workspace' }).click();
     await page.getByRole('navigation', { name: 'Intake workspaces' }).getByRole('button', { name: 'Open scale queue', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Weigh & pay', exact: true })).toBeVisible();
     await expect(page.getByText('No active scrap loads.', { exact: true })).toBeVisible();

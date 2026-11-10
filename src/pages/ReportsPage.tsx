@@ -22,8 +22,7 @@ const deltaPct = (current: number, previous: number) => {
   return Math.round(((current - previous) / previous) * 100);
 };
 
-export default function ReportsPage({ embedded = false }: { embedded?: boolean } = {}) {
-  const ContentTag = embedded ? 'section' : 'main';
+export default function ReportsPage() {
   const [range, setRange] = useState('30');
   const [customReportOpen, setCustomReportOpen] = useState(false);
   const days = Number(range);
@@ -171,9 +170,9 @@ export default function ReportsPage({ embedded = false }: { embedded?: boolean }
   };
 
   return (
-    <div className={`${embedded ? '' : 'min-h-screen'} bg-slate-950 text-slate-100`}>
-      {!embedded && <Navbar />}
-      <ContentTag className="max-w-7xl mx-auto p-3 sm:p-6 space-y-6">
+    <div className="min-h-screen bg-slate-950 text-slate-100">
+      <Navbar />
+      <main className="max-w-7xl mx-auto p-3 sm:p-6 space-y-6">
         <section className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <p className="font-mono text-xs tracking-widest text-emerald-400">BUSINESS INTELLIGENCE</p>
@@ -426,7 +425,7 @@ export default function ReportsPage({ embedded = false }: { embedded?: boolean }
             </Card>
           </TabsContent>
         </Tabs>
-      </ContentTag>
+      </main>
 
       <CustomReportModal open={customReportOpen} onOpenChange={setCustomReportOpen} />
     </div>

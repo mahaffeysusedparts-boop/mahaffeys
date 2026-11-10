@@ -23,7 +23,7 @@ const PublicPartsPricesPage = lazy(() => import('./pages/PublicPartsPricesPage')
 const TicketsPage = lazy(() => import("./pages/TicketsPage"));
 const PricingPage = lazy(() => import("./pages/PricingPage"));
 const CustomersPage = lazy(() => import("./pages/CustomersPage"));
-const SettingsPage = lazy(() => import("./pages/SettingsHubPage"));
+const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 const CompliancePage = lazy(() =>
   import("./pages/CompliancePage").then((module) => ({ default: module.CompliancePage })),
 );
@@ -33,12 +33,17 @@ const YardMapPage = lazy(() => import("./pages/YardMapPage"));
 const PullAPartPage = lazy(() => import("./pages/PullAPartPage"));
 const VehicleRecordPage = lazy(() => import("./pages/VehicleRecordPage"));
 const CamerasPage = lazy(() => import("./pages/CamerasPage"));
+const SystemHealthPage = lazy(() => import("./pages/SystemHealthPage"));
+const ServerAdminPage = lazy(() => import("./pages/ServerAdminPage"));
+const UserManagementPage = lazy(() => import("./pages/UserManagementPage"));
 const LoginPage = lazy(() => import("./pages/LoginPage"));
 const PendingApprovalPage = lazy(() => import("./pages/PendingApprovalPage"));
-const ReportsPage = lazy(() => import("./pages/AnalyticsPage"));
+const ReportsPage = lazy(() => import("./pages/ReportsPage"));
+const ScaleLogPage = lazy(() => import("./pages/ScaleLogPage"));
 const ShipmentsPage = lazy(() => import("./pages/ShipmentsPage"));
 const TeamOpsPage = lazy(() => import("./pages/TeamOpsPage"));
 const OperationsPage = lazy(() => import("./pages/OperationsPage"));
+const OperationsReviewPage = lazy(() => import("./pages/OperationsReviewPage"));
 const FleetPage = lazy(() => import("./pages/FleetPage"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
@@ -92,13 +97,13 @@ const App = () => (
               <Route path="/cash-drawer" element={guarded(<CashDrawerPage />, "cash-drawer")} />
               <Route path="/yard-map" element={guarded(<YardMapPage />, "yard-map")} />
               <Route path="/customers" element={guarded(<CustomersPage />, "customers")} />
-              <Route path="/users" element={guarded(<SettingsPage />, "users", true)} />
-              <Route path="/system-status" element={guarded(<ReportsPage />, "system-status")} />
-              <Route path="/server-admin" element={guarded(<SettingsPage />, "server-admin", true)} />
+              <Route path="/users" element={guarded(<UserManagementPage />, "users", true)} />
+              <Route path="/system-status" element={guarded(<SystemHealthPage />, "system-status")} />
+              <Route path="/server-admin" element={guarded(<ServerAdminPage />, "server-admin", true)} />
               <Route path="/reports" element={guarded(<ReportsPage />, "reports")} />
-              <Route path="/scale-log" element={guarded(<ReportsPage />, "scale-log")} />
+              <Route path="/scale-log" element={guarded(<ScaleLogPage />, "scale-log")} />
               <Route path="/operations" element={guarded(<OperationsPage />, "operations")} />
-              <Route path="/operations-review" element={guarded(<ReportsPage />, "operations-review")} />
+              <Route path="/operations-review" element={guarded(<OperationsReviewPage />, "operations-review")} />
               <Route path="/shipments" element={guarded(<ShipmentsPage />, "shipments")} />
               <Route path="/team" element={guarded(<TeamOpsPage />, "team")} />
                             <Route path="/fleet" element={guarded(<FleetPage />, "fleet")} />

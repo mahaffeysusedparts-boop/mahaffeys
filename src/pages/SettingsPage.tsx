@@ -116,8 +116,7 @@ async function fetchBackupMedia(data: unknown): Promise<{ media: BackupMediaEntr
   return { media, failed };
 }
 
-export default function SettingsPage({ embedded = false }: { embedded?: boolean } = {}) {
-  const ContentTag = embedded ? 'section' : 'main';
+export default function SettingsPage() {
   const [settings, setSettings] = useState<YardSettings>(storageService.getSettings());
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>(sharedStorage.getStatus());
   const [copiedField, setCopiedField] = useState<string | null>(null);
@@ -363,10 +362,10 @@ export default function SettingsPage({ embedded = false }: { embedded?: boolean 
   };
 
   return (
-    <div className={`${embedded ? '' : 'min-h-screen'} bg-slate-950 text-slate-100 flex flex-col font-sans`}>
-      {!embedded && <Navbar />}
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
+      <Navbar />
 
-      <ContentTag className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+      <main className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
         <IntakeRequirementsSettings />
         {authService.getCurrentUser()?.role === 'admin' && <PaymentSafeguardsSettings />}
         {authService.getCurrentUser()?.role === 'admin' && <BinDeductionSettings />}
@@ -554,12 +553,11 @@ export default function SettingsPage({ embedded = false }: { embedded?: boolean 
           <CardContent className="p-4 space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <Label htmlFor="yard-business-name" className="text-xs text-slate-300">Recycling Yard Business Name</Label>
+                <Label className="text-xs text-slate-300">Recycling Yard Business Name</Label>
                 <Input
-                  id="yard-business-name"
                   value={settings.yardName}
                   onChange={(e) => handleChange('yardName', e.target.value)}
-                  className="bg-slate-950 border-slate-800 text-white text-base sm:text-xs mt-1"
+                  className="bg-slate-950 border-slate-800 text-white text-xs mt-1"
                 />
               </div>
 
@@ -1336,7 +1334,7 @@ export default function SettingsPage({ embedded = false }: { embedded?: boolean 
           </Card>
         )}
 
-      </ContentTag>
+      </main>
     </div>
   );
 }
