@@ -271,10 +271,18 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
   const beforeLeave = async () => !navigationBlocked && await draft.flush();
   return (
     <div className="mx-auto max-w-5xl space-y-6 pb-24 sm:pb-12">
-      {workspaceNavigation?.(navigationBlocked, beforeLeave)}
+      <details className="rounded-2xl border border-slate-700 bg-slate-900 p-3">
+        <summary className="cursor-pointer text-sm font-semibold text-sky-100">Switch workspace</summary>
+        <div className="mt-3">{workspaceNavigation?.(navigationBlocked, beforeLeave)}</div>
+      </details>
       <DraftRecoveryBanner draft={draft}/>
-      <IntakeProgressStrip input={{ collection: true, evidence: { customerName, customerPhone, customerAddress, customerIdNumber, vehicleLicensePlate, complianceCaptures: captures }, requirements: requirements.data, verified: !requirements.isError && !!requirements.data && !draft.loading && !draft.recovery, identity: !!customerIdNumber.trim() && !!customerIdType && !!customerIdState.trim(), saveFailed: !!operationError || !!pendingOperation || !!draft.error }}/>
-      <p role="status" className="text-sm text-sky-100">{authoritativeCount === null ? `Queue capacity unverified · cached ${activeLoadCount}/${MAX_ACTIVE_LOADS}` : `Confirmed queue capacity: ${authoritativeCount}/${MAX_ACTIVE_LOADS}`}</p>
+      <details className="rounded-2xl border border-slate-700 bg-slate-900 p-3" open={operationError || pendingOperation || draft.error ? true : undefined}>
+        <summary className="cursor-pointer text-sm font-semibold text-sky-100">Load progress &amp; queue status</summary>
+        <div className="mt-3 space-y-3">
+          <IntakeProgressStrip input={{ collection: true, evidence: { customerName, customerPhone, customerAddress, customerIdNumber, vehicleLicensePlate, complianceCaptures: captures }, requirements: requirements.data, verified: !requirements.isError && !!requirements.data && !draft.loading && !draft.recovery, identity: !!customerIdNumber.trim() && !!customerIdType && !!customerIdState.trim(), saveFailed: !!operationError || !!pendingOperation || !!draft.error }}/>
+          <p role="status" className="text-sm text-sky-100">{authoritativeCount === null ? `Queue capacity unverified · cached ${activeLoadCount}/${MAX_ACTIVE_LOADS}` : `Confirmed queue capacity: ${authoritativeCount}/${MAX_ACTIVE_LOADS}`}</p>
+        </div>
+      </details>
       {operationError && <div role="alert" className="rounded-xl border border-amber-700 bg-amber-950 p-4 text-amber-100">{operationError}{!pendingOperation && <Button variant="link" className="text-amber-100" onClick={() => setOperationError('')}>Review retained inputs</Button>}</div>}
       {pendingOperation && <div role="alert" className="rounded-xl border border-amber-700 bg-amber-950 p-4 text-amber-100">Interrupted submission retained separately from this form. Reconcile its original values before starting another intake.
         <Button disabled={saving} className="mt-3 rounded-xl bg-sky-700 text-white" onClick={async () => {
@@ -411,70 +419,62 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                <div>
-                  <Label className="flex items-center gap-1 text-xs text-slate-300">
-                    <Phone className="h-3 w-3 text-emerald-400" /> Phone Number
-                  </Label>
-                  <Input
-                    id="collection-phone" aria-invalid={!!fieldError('collection-phone')}
-                    value={customerPhone}
-                    onChange={(e) => setCustomerPhone(e.target.value)}
-                    placeholder="(555) 000-0000"
-                    className="mt-1 h-11 border-slate-800 bg-slate-950 font-mono text-xs font-bold text-emerald-400"
-                  />
-                  <IntakeFieldError message={fieldError('collection-phone')}/>
-                </div>
-                <div>
-                  <Label className="text-xs text-slate-300">Driver License / ID # · {requirements.data?.requireSellerId === false ? 'Optional' : 'Required before completion'}</Label>
-                  <Input
-                    id="collection-id" aria-invalid={!!fieldError('collection-id')}
-                    value={customerIdNumber}
-                    onChange={(e) => setCustomerIdNumber(e.target.value)}
-                    placeholder="e.g. DL-4481029-GA"
-                    className="mt-1 h-11 border-slate-800 bg-slate-950 font-mono text-xs text-amber-300"
-                  />
-                  <IntakeFieldError message={fieldError('collection-id')}/>
-                </div>
-                <div>
-                  <Label className="text-xs text-slate-300">Vehicle License Plate · {requirements.data?.requireVehiclePlate === false ? 'Optional' : 'Required before completion'}</Label>
-                  <Input
-                    id="collection-plate" aria-invalid={!!fieldError('collection-plate')}
-                    value={vehicleLicensePlate}
-                    onChange={(e) => setVehicleLicensePlate(e.target.value.toUpperCase())}
-                    placeholder="e.g. TOW-912 (GA)"
-                    className="mt-1 h-11 border-slate-800 bg-slate-950 font-mono text-xs uppercase text-slate-200"
-                  />
-                  <IntakeFieldError message={fieldError('collection-plate')}/>
-                </div>
-              </div>
-
-              <div className="space-y-1">
-                <Label htmlFor="seller-address" className="text-xs text-slate-300">Seller address · {requirements.data?.requireAddress === false ? 'Optional' : 'Required before completion'}</Label>
-                <Input id="seller-address" aria-invalid={!!fieldError('seller-address')} value={customerAddress} onChange={(event) => setCustomerAddress(event.target.value)} maxLength={500} placeholder="Actual seller address" className="h-11 rounded-xl border-slate-700 bg-slate-950 text-white" />
-                <IntakeFieldError message={fieldError('seller-address')}/>
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor="seller-id-state" className="text-xs text-slate-300">Actual ID issuing state / jurisdiction</Label>
-                <Input id="seller-id-state" aria-invalid={!!fieldError('seller-id-state')} value={customerIdState} onChange={(event) => setCustomerIdState(event.target.value.toUpperCase())} maxLength={40} className="h-11 max-w-xs rounded-xl border-slate-700 bg-slate-950 text-white" />
-                <IntakeFieldError message={fieldError('seller-id-state')}/>
-                <p className="text-xs text-slate-300">Confirm against the actual ID; returning sellers keep their reviewed jurisdiction. A customer profile can be saved with no ID, but missing identity is not verified.</p>
-              </div>
-
-              <div>
-                <Label htmlFor="collection-id-type" className="text-xs text-slate-300">Actual ID type</Label>
-                <Select value={customerIdType} onValueChange={value => setCustomerIdType(value as Customer['idType'])}><SelectTrigger id="collection-id-type" className="mt-1 h-11 max-w-xs rounded-xl border-slate-700 bg-slate-950 text-white"><SelectValue placeholder="Confirm the ID type"/></SelectTrigger><SelectContent>{(['Driver License','State ID','Passport','Military ID'] as const).map(type => <SelectItem key={type} value={type}>{type}</SelectItem>)}</SelectContent></Select>
-                <IntakeFieldError message={fieldError('collection-id-type')}/>
-              </div>
-              <div>
-                <Label className="text-xs text-slate-300">Intake Notes</Label>
-                <Input
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  placeholder="Optional — material description, directions, etc."
-                  className="mt-1 h-11 border-slate-800 bg-slate-950 text-xs text-white"
-                />
-              </div>
+              <p className="text-sm text-slate-200">Choose a returning seller above, or enter a new seller’s name. Required details can be finished at the scale before payment.</p>
+              {(() => {
+                const fields = [
+                  { key: 'phone', required: requirements.data?.requirePhone !== false, content: <div>
+                    <Label htmlFor="collection-phone" className="flex items-center gap-1 text-xs text-slate-300"><Phone className="h-3 w-3 text-emerald-400" /> Phone Number</Label>
+                    <Input id="collection-phone" aria-invalid={!!fieldError('collection-phone')} value={customerPhone} onChange={e => setCustomerPhone(e.target.value)} placeholder="(555) 000-0000" className="mt-1 h-11 rounded-xl border-slate-700 bg-slate-950 text-white" />
+                    <IntakeFieldError message={fieldError('collection-phone')}/>
+                  </div> },
+                  { key: 'identity', required: requirements.data?.requireSellerId !== false, content: <div className="space-y-3 sm:col-span-2">
+                    <div>
+                      <Label htmlFor="collection-id" className="text-xs text-slate-300">Driver License / ID #</Label>
+                      <Input id="collection-id" aria-invalid={!!fieldError('collection-id')} value={customerIdNumber} onChange={e => setCustomerIdNumber(e.target.value)} placeholder="e.g. DL-4481029-GA" className="mt-1 h-11 rounded-xl border-slate-700 bg-slate-950 text-white" />
+                      <IntakeFieldError message={fieldError('collection-id')}/>
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div>
+                        <Label htmlFor="collection-id-type" className="text-xs text-slate-300">Actual ID type</Label>
+                        <Select value={customerIdType} onValueChange={value => setCustomerIdType(value as Customer['idType'])}><SelectTrigger id="collection-id-type" className="mt-1 h-11 rounded-xl border-slate-700 bg-slate-950 text-white"><SelectValue placeholder="Confirm the ID type"/></SelectTrigger><SelectContent>{(['Driver License','State ID','Passport','Military ID'] as const).map(type => <SelectItem key={type} value={type}>{type}</SelectItem>)}</SelectContent></Select>
+                        <IntakeFieldError message={fieldError('collection-id-type')}/>
+                      </div>
+                      <div>
+                        <Label htmlFor="seller-id-state" className="text-xs text-slate-300">Actual ID issuing state / jurisdiction</Label>
+                        <Input id="seller-id-state" aria-invalid={!!fieldError('seller-id-state')} value={customerIdState} onChange={e => setCustomerIdState(e.target.value.toUpperCase())} maxLength={40} className="mt-1 h-11 rounded-xl border-slate-700 bg-slate-950 text-white" />
+                        <IntakeFieldError message={fieldError('seller-id-state')}/>
+                      </div>
+                    </div>
+                    <p className="text-xs text-slate-300">Check the type and issuing state against the actual ID.</p>
+                  </div> },
+                  { key: 'plate', required: requirements.data?.requireVehiclePlate !== false, content: <div>
+                    <Label htmlFor="collection-plate" className="text-xs text-slate-300">Vehicle License Plate</Label>
+                    <Input id="collection-plate" aria-invalid={!!fieldError('collection-plate')} value={vehicleLicensePlate} onChange={e => setVehicleLicensePlate(e.target.value.toUpperCase())} placeholder="e.g. TOW-912 (GA)" className="mt-1 h-11 rounded-xl border-slate-700 bg-slate-950 text-white" />
+                    <IntakeFieldError message={fieldError('collection-plate')}/>
+                  </div> },
+                  { key: 'address', required: requirements.data?.requireAddress !== false, content: <div className="sm:col-span-2">
+                    <Label htmlFor="seller-address" className="text-xs text-slate-300">Seller address</Label>
+                    <Input id="seller-address" aria-invalid={!!fieldError('seller-address')} value={customerAddress} onChange={e => setCustomerAddress(e.target.value)} maxLength={500} placeholder="Actual seller address" className="mt-1 h-11 rounded-xl border-slate-700 bg-slate-950 text-white" />
+                    <IntakeFieldError message={fieldError('seller-address')}/>
+                  </div> },
+                ];
+                return <>
+                  {fields.some(field => field.required) && <section aria-label="Required seller details" className="space-y-3">
+                    <h3 className="text-sm font-semibold text-emerald-200">Required before payment</h3>
+                    <div className="grid gap-4 sm:grid-cols-2">{fields.filter(field => field.required).map(field => <React.Fragment key={field.key}>{field.content}</React.Fragment>)}</div>
+                  </section>}
+                  <details className="rounded-xl border border-slate-700 bg-slate-950 p-3">
+                    <summary className="cursor-pointer text-sm font-semibold text-sky-100">Optional seller details &amp; notes</summary>
+                    <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                      {fields.filter(field => !field.required).map(field => <React.Fragment key={field.key}>{field.content}</React.Fragment>)}
+                      <div className="sm:col-span-2">
+                        <Label htmlFor="collection-notes" className="text-xs text-slate-300">Intake Notes</Label>
+                        <Input id="collection-notes" value={notes} onChange={e => setNotes(e.target.value)} placeholder="Optional — material description, directions, etc." className="mt-1 h-11 rounded-xl border-slate-700 bg-slate-900 text-white" />
+                      </div>
+                    </div>
+                  </details>
+                </>;
+              })()}
             </CardContent>
           </Card>
 

@@ -39,7 +39,15 @@ test('Saving a scrap intake without an ID creates a customer profile', async ({ 
   await page.goto('/intake');
   await page.getByRole('region', { name: 'Intake home', exact: true }).getByRole('button', { name: /^New scrap load / }).click();
   await page.getByPlaceholder('e.g. Marcus Vance').fill('Jamie No-ID Seller');
+  await expect(page.getByLabel('Phone Number', { exact: true })).not.toBeVisible();
+  await expect(page.getByLabel('Driver License / ID #', { exact: true })).not.toBeVisible();
+  await expect(page.getByLabel('Seller address', { exact: true })).not.toBeVisible();
+  await expect(page.getByLabel('Vehicle License Plate', { exact: true })).not.toBeVisible();
+  await page.locator('summary').filter({ hasText: 'Optional seller details & notes' }).click();
   await page.getByPlaceholder('(555) 000-0000').fill('5559876543');
+  await page.getByLabel('Intake Notes', { exact: true }).fill('Loose mixed scrap');
+  await page.locator('summary').filter({ hasText: 'Optional seller details & notes' }).click();
+  await expect(page.getByLabel('Phone Number', { exact: true })).not.toBeVisible();
   await page.getByRole('button', { name: 'Save Intake & Continue to Scale', exact: true }).click();
 
   await expect(page.getByText('Customer profile updated', { exact: true })).not.toBeVisible();
@@ -48,4 +56,5 @@ test('Saving a scrap intake without an ID creates a customer profile', async ({ 
   expect(customerRows[0]).toMatchObject({ fullName: 'Jamie No-ID Seller', phone: '5559876543', idNumber: '' });
   await expect.poll(() => savedTicket?.customerId).toBe('new-profile-1');
   expect(savedTicket.customerIdNumber).toBeUndefined();
+  expect(savedTicket.notes).toBe('Loose mixed scrap');
 });

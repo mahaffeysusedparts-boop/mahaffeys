@@ -1,4 +1,11 @@
 import { test, expect } from '@playwright/test';
+import { gunzipSync } from 'node:zlib';
+
+function printHtmlFromPayload(payload: { html?: string; htmlGzipBase64?: string }) {
+  if (payload.html) return payload.html;
+  if (payload.htmlGzipBase64) return gunzipSync(Buffer.from(payload.htmlGzipBase64, 'base64')).toString('utf8');
+  throw new Error('Print payload did not include HTML');
+}
 
 // All API calls, including printing, are mocked: no real printer or yard data is touched.
 for (const { missingPhoto, savedProfile } of [
@@ -13,7 +20,12 @@ for (const { missingPhoto, savedProfile } of [
     const ticket = {
       id: 'PHOTO-TEST', createdAt: '2026-01-03T12:00:00Z', ticketType: 'SCRAP_METAL',
       customerName: 'Photo Test Seller', customerId: savedProfile ? 'saved-seller' : undefined, payoutMethod: 'Cash', status: 'COMPLETED',
-      grossTotal: 10, totalDeductions: 0, finalPayout: 10, scrapLines: [],
+      grossTotal: 10, totalDeductions: 0, finalPayout: 10,
+      scrapLines: Array.from({ length: 8 }, (_, index) => ({
+        id: `line-${index}`, loadNumber: index + 1, metalName: `Mixed prepared scrap load ${index + 1}`, metalCategory: 'Prepared scrap',
+        grossWeight: 1000 + index, tareWeight: 900, netWeight: 100 + index, billableWeight: 100 + index,
+        deductionPercent: 0, deductionLbs: 0, ratePerLb: 0.01, lineTotal: 1,
+      })),
       complianceCaptures: {
         idPhotoUrl: savedProfile ? undefined : '/api/uploads/id', personPhotoUrl: '/api/uploads/person',
         vehiclePhotoUrl: '/api/uploads/vehicle', licensePlatePhotoUrl: '/api/uploads/plate',
@@ -22,6 +34,7 @@ for (const { missingPhoto, savedProfile } of [
     };
     let printCalls = 0;
     let printedHtml = '';
+    let postedPrintBody = '';
     await page.addInitScript(() => localStorage.setItem('mahaffeys_print_defaults', JSON.stringify({ standardPrinterId: 'test-printer' })));
     await page.route('**/api/**', async route => {
       const path = new URL(route.request().url()).pathname;
@@ -42,7 +55,8 @@ for (const { missingPhoto, savedProfile } of [
       else if (path === '/api/printers') response = [{ id: 'test-printer', name: 'Test Printer', host: '192.168.1.251', kind: 'standard' }];
       else if (path === '/api/printers/test-printer/print') {
         printCalls++;
-        printedHtml = route.request().postDataJSON().html;
+        postedPrintBody = route.request().postData() || '';
+        printedHtml = printHtmlFromPayload(route.request().postDataJSON());
         response = { queued: true, printer: 'Test Printer' };
       }
       await route.fulfill({ json: response });
@@ -61,6 +75,8 @@ for (const { missingPhoto, savedProfile } of [
     } else {
       await expect(page.getByText('Sent to Test Printer', { exact: true })).toBeVisible();
       expect(printCalls).toBe(1);
+      expect(postedPrintBody.length).toBeLessThan(printedHtml.length);
+      expect(printedHtml).toContain('--receipt-print-scale');
       const embedded = await page.evaluate(async html => {
         const document = new DOMParser().parseFromString(html, 'text/html');
         return Promise.all(Array.from(document.querySelectorAll('img')).map(async element => {

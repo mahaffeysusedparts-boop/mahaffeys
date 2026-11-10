@@ -304,17 +304,17 @@ export default function PublicInventoryPage() {
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
       <header className="sticky top-0 z-40 border-b border-slate-800 bg-slate-950/95 backdrop-blur">
-        <div className="mx-auto flex h-16 w-full max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center gap-3">
-            <div className="flex size-10 items-center justify-center rounded-2xl bg-amber-400 text-slate-950 shadow-lg shadow-amber-950/40">
+        <div className="mx-auto flex min-h-16 w-full max-w-7xl items-center justify-between gap-2 px-4 py-2 sm:px-6 lg:px-8">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-amber-400 text-slate-950 shadow-lg shadow-amber-950/40">
               <Scale className="size-5" />
             </div>
-            <div>
-              <p className="text-sm font-black uppercase tracking-[0.22em] text-amber-300">Public Inventory</p>
+            <div className="min-w-0">
+              <p className="text-xs font-black uppercase tracking-wider text-amber-300 sm:text-sm sm:tracking-[0.22em]">Public Inventory</p>
               <p className="max-w-[220px] truncate text-xs font-semibold text-slate-400 sm:max-w-md">{yardName}</p>
             </div>
           </div>
-          <Badge className="rounded-full border-emerald-500/40 bg-emerald-500/15 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-emerald-300">
+          <Badge className="shrink-0 rounded-full border-emerald-500/40 bg-emerald-500/15 px-2 py-1 text-[9px] font-black uppercase tracking-wide text-emerald-300 sm:px-3 sm:text-[10px] sm:tracking-widest">
             <Lock className="mr-1.5 size-3" /> Catalog Only
           </Badge>
         </div>
@@ -323,9 +323,9 @@ export default function PublicInventoryPage() {
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
         
         {/* Header Hero Banner */}
-        <div className="relative bg-gradient-to-r from-slate-900 via-slate-900 to-amber-950/50 p-6 sm:p-8 rounded-3xl border border-slate-800 shadow-2xl overflow-hidden">
-          <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-            <div className="space-y-2 max-w-2xl">
+        <div className="relative bg-slate-900 p-5 sm:p-8 rounded-3xl border border-slate-800 shadow-2xl">
+          <div className="relative z-10 flex flex-col justify-between gap-6">
+            <div className="min-w-0 space-y-2 max-w-2xl">
               <div className="flex flex-wrap items-center gap-2">
                 <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/40 text-xs font-mono uppercase tracking-widest px-3 py-1">
                   LIVE YARD CATALOG
@@ -346,8 +346,8 @@ export default function PublicInventoryPage() {
               </p>
             </div>
 
-            <div className="flex flex-col sm:flex-row items-center gap-3 shrink-0">
-              <a href="/parts-prices" className="rounded-xl border border-emerald-700 bg-emerald-950 px-4 py-3 text-xs font-bold text-emerald-100 hover:bg-emerald-900">Parts Prices</a>
+            <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-3">
+              <a href="/parts-prices" className="min-h-11 rounded-xl border border-emerald-700 bg-emerald-950 px-4 py-3 text-center text-xs font-bold text-emerald-100 hover:bg-emerald-900">Parts Prices</a>
               <Button
                 onClick={() => setInterchangeOpen(true)}
                 className="w-full sm:w-auto bg-purple-600 hover:bg-purple-500 text-white font-extrabold text-xs px-5 h-10 gap-1.5 shadow-lg shadow-purple-950"
@@ -384,7 +384,7 @@ export default function PublicInventoryPage() {
                 {activeFilterCount ? <Badge className="ml-2 rounded-full bg-slate-950 px-2 text-white">{activeFilterCount}</Badge> : null}
               </Button>
             </SheetTrigger>
-            <SheetContent side="bottom" className="max-h-[88vh] overflow-y-auto rounded-t-[28px] border-slate-700 bg-slate-950 p-0 text-white">
+            <SheetContent side="bottom" className="max-h-[88dvh] overflow-y-auto rounded-t-[28px] border-slate-700 bg-slate-950 p-0 text-white">
               <SheetHeader className="border-b border-slate-800 px-5 py-5 text-left">
                 <SheetTitle className="flex items-center gap-2 text-xl font-black text-white"><SlidersHorizontal className="size-5 text-amber-400" /> Find a vehicle</SheetTitle>
                 <SheetDescription className="text-xs text-slate-400">Search the live catalog by vehicle, yard section, or needed component.</SheetDescription>
@@ -416,7 +416,7 @@ export default function PublicInventoryPage() {
                   </Select>
                 </div>
               </div>
-              <SheetFooter className="sticky bottom-0 grid grid-cols-2 gap-2 border-t border-slate-800 bg-slate-950 px-5 py-4 sm:space-x-0">
+              <SheetFooter className="sticky bottom-0 grid grid-cols-2 gap-2 border-t border-slate-800 bg-slate-950 px-5 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:space-x-0">
                 <Button type="button" variant="outline" onClick={clearFilters} disabled={!activeFilterCount} className="h-11 rounded-xl border-slate-700 bg-slate-900 text-slate-200">Clear filters</Button>
                 <SheetClose asChild><Button type="button" className="h-11 rounded-xl bg-amber-400 font-black text-slate-950 hover:bg-amber-300">Show {inventory.total} vehicles</Button></SheetClose>
               </SheetFooter>
@@ -426,7 +426,7 @@ export default function PublicInventoryPage() {
 
         <Card className="hidden border-slate-800 bg-slate-900 text-white shadow-xl md:block">
           <CardContent className="p-4">
-            <div className="grid grid-cols-[1.2fr_1fr_1fr_auto] gap-3">
+            <div className="grid grid-cols-2 gap-3 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_auto] [&>*]:min-w-0">
               <div className="relative"><Search className="absolute left-3 top-3 size-4 text-slate-500" /><Input placeholder="Search year, make, model, or VIN" value={search} onChange={(event) => updateQuery({ search: event.target.value, page: null })} className="h-10 border-slate-800 bg-slate-950 pl-9 text-xs text-white" /></div>
               <Select value={selectedSection} onValueChange={(value) => updateQuery({ section: value, page: null })}><SelectTrigger className="h-10 border-slate-800 bg-slate-950 text-xs text-white"><SelectValue placeholder="All Yard Sections" /></SelectTrigger><SelectContent className="border-slate-800 bg-slate-900 text-xs text-white"><SelectItem value="ALL">All Yard Sections</SelectItem><SelectItem value="Domestic Trucks & SUVs">Domestic Trucks & SUVs</SelectItem><SelectItem value="Ford & Lincoln">Ford & Lincoln</SelectItem><SelectItem value="GM & Chevrolet">GM & Chevrolet</SelectItem><SelectItem value="Asian Imports">Asian Imports</SelectItem><SelectItem value="Chrysler & Dodge">Chrysler & Dodge</SelectItem><SelectItem value="European">European</SelectItem></SelectContent></Select>
               <Select value={partFilter} onValueChange={(value) => updateQuery({ part: value, page: null })}><SelectTrigger className="h-10 border-slate-800 bg-slate-950 text-xs text-white"><SelectValue placeholder="All components" /></SelectTrigger><SelectContent className="border-slate-800 bg-slate-900 text-xs text-white"><SelectItem value="ALL">All Listed Components</SelectItem><SelectItem value="Engine">Engine / Short Block</SelectItem><SelectItem value="Transmission">Transmission</SelectItem><SelectItem value="Doors">Doors & Panels</SelectItem><SelectItem value="Wheels">Alloy Wheels & Rims</SelectItem><SelectItem value="Headlights">Headlights / Lenses</SelectItem><SelectItem value="Fenders">Fenders / Body</SelectItem></SelectContent></Select>
@@ -731,10 +731,10 @@ export default function PublicInventoryPage() {
 
       {/* Request Vehicle Alert Modal */}
       <Dialog open={notifyOpen} onOpenChange={setNotifyOpen}>
-        <DialogContent className="bg-slate-950 text-slate-100 border-slate-800 sm:max-w-[420px]">
-          <DialogHeader>
+        <DialogContent className="w-[calc(100%-2rem)] max-h-[85dvh] overflow-y-auto rounded-2xl bg-slate-950 text-slate-100 border-slate-800 sm:max-w-[420px]">
+          <DialogHeader className="pr-8">
             <DialogTitle className="text-base font-bold text-white flex items-center gap-2">
-              <Bell className="w-5 h-5 text-amber-400" /> Save Vehicle Request
+              <Bell className="w-5 h-5 shrink-0 text-amber-400" /> Save Vehicle Request
             </DialogTitle>
             <DialogDescription className="text-xs text-slate-400">
               Save the vehicle you need and your preferred contact information on this device for quick reference.

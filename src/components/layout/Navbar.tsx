@@ -310,13 +310,13 @@ export const Navbar: React.FC = () => {
               {/* Scale Indicator */}
               <button
                 onClick={() => setConfigOpen(true)}
-                className="flex h-11 w-11 sm:h-auto sm:w-auto items-center justify-center sm:justify-start gap-2 sm:px-2.5 sm:py-1.5 rounded-xl bg-slate-800/90 border border-slate-700/80 hover:border-emerald-500/50 hover:bg-slate-800 transition-all text-left active:scale-95"
+                className="flex h-11 w-11 lg:w-auto items-center justify-center lg:justify-start gap-2 lg:px-2.5 rounded-xl bg-slate-800/90 border border-slate-700/80 hover:border-emerald-500/50 hover:bg-slate-800 transition-all text-left active:scale-95"
                 aria-label={`Scale ${scaleStatus.connected ? (scaleStatus.isStable ? 'connected and stable' : 'connected, in motion') : 'offline'}. Open scale configuration`}
                 title={scaleStatus.connected ? `${scaleStatus.weight.toLocaleString()} ${scaleStatus.unit} · ${scaleStatus.isStable ? 'Stable' : 'In motion'}` : 'Scale offline — open configuration'}
               >
-                <Activity className={`w-5 h-5 sm:w-4 sm:h-4 ${scaleStatus.connected ? 'text-emerald-400' : 'text-amber-400'}`} />
+                <Activity className={`w-5 h-5 lg:w-4 lg:h-4 ${scaleStatus.connected ? 'text-emerald-400' : 'text-amber-400'}`} />
 
-                <div className="hidden sm:block text-xs">
+                <div className="hidden lg:block text-xs">
                   <div className="flex items-center gap-1 font-semibold font-mono text-slate-100 text-[11px]">
                     <span>{scaleStatus.connected ? `${scaleStatus.weight.toLocaleString()} ${scaleStatus.unit}` : 'Scale offline'}</span>
                     <span
@@ -355,9 +355,9 @@ export const Navbar: React.FC = () => {
                       <div className="w-7 h-7 rounded-lg bg-emerald-600/20 border border-emerald-500/30 text-emerald-400 flex items-center justify-center font-bold text-xs">
                         {user.fullName ? user.fullName[0].toUpperCase() : 'U'}
                       </div>
-                      <div className="hidden sm:block text-left">
-                        <div className="text-xs font-bold leading-none">{user.fullName}</div>
-                        <div className="text-[10px] text-slate-400 font-mono mt-0.5">
+                      <div className="hidden lg:block max-w-[120px] text-left">
+                        <div className="truncate text-xs font-bold leading-none">{user.fullName}</div>
+                        <div className="truncate text-[10px] text-slate-400 font-mono mt-0.5">
                           {roleBadgeLabels[user.role] || user.role}
                         </div>
                       </div>
@@ -403,7 +403,7 @@ export const Navbar: React.FC = () => {
         </div>
 
         {/* Quick Horizontal Scrollbar for iPads and Tablets */}
-        <div className="hidden md:flex xl:hidden items-center space-x-1 bg-slate-950 border-t border-slate-800/80 px-3 py-1.5 text-xs overflow-x-auto">
+        <nav aria-label="Tablet navigation" className="hidden md:flex xl:hidden items-center space-x-1 bg-slate-950 border-t border-slate-800/80 px-3 py-1.5 text-xs overflow-x-auto overscroll-x-contain">
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = location.pathname === item.path || (item.path === '/' && location.pathname === '/dashboard');
@@ -411,8 +411,9 @@ export const Navbar: React.FC = () => {
               <Link
                 key={item.path}
                 to={item.path}
-                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg shrink-0 font-medium ${
-                  isActive ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' : 'text-slate-400 hover:text-white'
+                aria-current={isActive ? 'page' : undefined}
+                className={`flex min-h-11 items-center gap-1.5 px-3 py-2 rounded-lg shrink-0 font-medium ${
+                  isActive ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' : 'text-slate-300 hover:text-white'
                 }`}
               >
                 <Icon className="w-3.5 h-3.5" />
@@ -420,7 +421,7 @@ export const Navbar: React.FC = () => {
               </Link>
             );
           })}
-        </div>
+        </nav>
       </header>
 
       <ScaleConfigModal open={configOpen} onOpenChange={setConfigOpen} />

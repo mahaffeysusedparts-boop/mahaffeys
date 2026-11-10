@@ -44,13 +44,9 @@ export function MobileQuickActions() {
   ];
 
   return (
-    <div className="fixed right-4 bottom-[max(1rem,env(safe-area-inset-bottom))] z-40 flex flex-col items-end gap-3 xl:hidden">
-      {/* Expanded action cards */}
-      <div
-        className={`flex flex-col items-end gap-2.5 transition-all duration-200 ${
-          open ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-3 opacity-0"
-        }`}
-      >
+    <div className="mobile-quick-actions fixed right-[max(1rem,env(safe-area-inset-right))] bottom-[max(1rem,env(safe-area-inset-bottom))] z-40 flex flex-col items-end gap-3 xl:hidden">
+      {/* Only mount expanded links when they can be seen and used. */}
+      {open && <div className="flex max-h-[65dvh] flex-col items-end gap-2.5 overflow-y-auto">
         {actions.filter(action => action.to === '/inventory' || (user?.status === 'approved' && hasPageAccess(user.role, PATH_TO_PAGE_KEY[action.to], storageService.getSettings().rolePageAccess))).map((action) => {
           const Icon = action.icon;
           return (
@@ -70,7 +66,7 @@ export function MobileQuickActions() {
             </Link>
           );
         })}
-      </div>
+      </div>}
 
       {/* Backdrop to close on tap-outside */}
       {open && (

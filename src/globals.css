@@ -108,10 +108,40 @@
   }
 }
 
-/* Touch-optimized button min height for iPad and Mobile */
-@media (max-width: 1024px) {
-  button, input, select {
-    min-height: 40px;
+/* Keep touch controls usable, including landscape iPads with wide viewports. */
+@media (max-width: 1279px), (pointer: coarse) {
+  button:not([role="checkbox"]):not([role="switch"]),
+  input:not([type="checkbox"]):not([type="radio"]), select,
+  [role="menuitem"], [role="option"], summary, nav a {
+    min-height: 44px;
+  }
+
+  button:not([role="checkbox"]):not([role="switch"]) {
+    min-width: 44px;
+  }
+
+  input:not([type="checkbox"]):not([type="radio"]), select, textarea {
+    font-size: 16px;
+  }
+
+  summary {
+    align-content: center;
+  }
+}
+
+@media (max-width: 1279px) {
+  #root:has(.mobile-quick-actions) {
+    padding-bottom: calc(6rem + env(safe-area-inset-bottom));
+  }
+
+  body:has(input:focus, textarea:focus, select:focus, [contenteditable="true"]:focus, [role="dialog"][data-state="open"]) .mobile-quick-actions {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html, body {
+    scroll-behavior: auto;
   }
 }
 

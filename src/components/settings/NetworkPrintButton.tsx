@@ -16,11 +16,36 @@ interface NetworkPrintButtonProps {
   disabled?: boolean;
 }
 
-function collectStyles() {
+const PRINT_STYLE_MARKERS = [
+  "@page",
+  "@media print",
+  "printable-receipt",
+  "vehicle-sticker",
+  "check-sheet",
+  "z-report-sheet",
+  "custom-report-sheet",
+];
+
+function collectUsedClassNames(root: HTMLElement) {
+  const classNames = new Set<string>();
+  for (const element of Array.from(root.querySelectorAll<HTMLElement>("*"))) {
+    element.classList.forEach(className => classNames.add(className));
+  }
+  root.classList.forEach(className => classNames.add(className));
+  return Array.from(classNames, className => `.${CSS.escape(className)}`);
+}
+
+function collectStyles(root: HTMLElement) {
   const styles: string[] = [];
+  const usedClasses = collectUsedClassNames(root);
   for (const sheet of Array.from(document.styleSheets)) {
     try {
-      styles.push(Array.from(sheet.cssRules).map((rule) => rule.cssText).join("\n"));
+      for (const rule of Array.from(sheet.cssRules)) {
+        const text = rule.cssText;
+        if (PRINT_STYLE_MARKERS.some(marker => text.includes(marker)) || usedClasses.some(className => text.includes(className))) {
+          styles.push(text);
+        }
+      }
     } catch {
       // Cross-origin stylesheets cannot be read by the browser.
     }
@@ -50,7 +75,7 @@ export function NetworkPrintButton({ kind, rootSelector, documentName, className
     setSending(true);
     let html: string;
     try {
-      html = `<style>${collectStyles()}</style><main>${await preparePrintDocument(root)}</main>`;
+      html = `<style>${collectStyles(root)}</style><main>${await preparePrintDocument(root)}</main>`;
       if (html.length > 15_000_000) throw new Error("The document with photos is too large for direct printing. The print job was not sent.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not prepare photos. The print job was not sent.");
