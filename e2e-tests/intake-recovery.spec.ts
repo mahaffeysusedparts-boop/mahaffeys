@@ -41,6 +41,8 @@ for (const failure of ['CREATE_RESPONSE_LOST', 'MANUAL_SAVE_REJECTED'] as const)
       await page.getByPlaceholder('e.g. Marcus Vance').fill('Retained Seller');
       await page.getByRole('button', { name: 'Save Intake & Continue to Scale', exact: true }).click();
       await expect(page.getByRole('button', { name: 'Reconcile original intake & continue' })).toBeVisible();
+      await expect(page.getByRole('region', { name: 'Continue to scale guidance' }).getByRole('status')).toContainText('Do not create a replacement load.');
+      await expect(page.getByRole('button', { name: 'Save Intake & Continue to Scale', exact: true })).toBeDisabled();
       await expect(page.getByPlaceholder('e.g. Marcus Vance')).toHaveValue('Retained Seller');
       await page.reload();
       await page.getByRole('button', { name: 'Resume previous workspace', exact: true }).click();

@@ -110,17 +110,19 @@ export const Navbar: React.FC = () => {
     { label: 'Cash Drawer', path: '/cash-drawer', icon: Banknote },
     { label: 'Yard Map', path: '/yard-map', icon: Map },
     { label: 'Mill Shipments', path: '/shipments', icon: Truck },
-    { label: 'Reports', path: '/reports', icon: BarChart3 },
+    { label: 'Analytics', path: ['/reports', '/scale-log', '/operations-review', '/system-status'].find(path => isAdmin || canOpen(path)) || '/reports', icon: BarChart3 },
     { label: 'Team Ops', path: '/team', icon: ClipboardList },
     { label: 'Fleet & Tools', path: '/fleet', icon: Wrench },
     { label: 'Customers', path: '/customers', icon: Users },
     ...(isAdmin ? [
-      { label: 'User Access', path: '/users', icon: Shield, badge: pendingUsersCount },
-      { label: 'Server Admin', path: '/server-admin', icon: Lock },
-      { label: 'Settings', path: '/settings', icon: Settings },
+      { label: 'Settings', path: '/settings', icon: Settings, badge: pendingUsersCount },
     ] : []),
-    { label: 'System Status', path: '/system-status', icon: Server },
   ].filter((item) => isAdmin || canOpen(item.path));
+
+  const isItemActive = (path: string) => location.pathname === path
+    || (path === '/' && location.pathname === '/dashboard')
+    || (path === '/settings' && ['/users', '/server-admin'].includes(location.pathname))
+    || (['/reports', '/scale-log', '/operations-review', '/system-status'].includes(path) && ['/reports', '/scale-log', '/operations-review', '/system-status'].includes(location.pathname));
 
   const mobileNavItems = navItems.filter((item) =>
     item.label.toLowerCase().includes(mobileNavQuery.trim().toLowerCase()),
@@ -145,7 +147,7 @@ export const Navbar: React.FC = () => {
           <div className="flex items-center justify-between h-16">
 
             {/* Left Section: Mobile Menu Trigger + Logo */}
-            <div className="flex items-center gap-2 sm:gap-3">
+            <div className="flex min-w-0 items-center gap-2 sm:gap-3">
 
               {/* Mobile / iPad Drawer Trigger */}
               <Sheet open={mobileMenuOpen} onOpenChange={handleMobileMenuChange}>
@@ -160,7 +162,7 @@ export const Navbar: React.FC = () => {
                   </Button>
                 </SheetTrigger>
 
-                <SheetContent side="left" onCloseAutoFocus={event => { if (searchOpen) event.preventDefault(); }} className="w-[92vw] max-w-[380px] bg-slate-950 text-slate-100 border-slate-800 p-0 flex flex-col">
+                <SheetContent side="left" onCloseAutoFocus={event => { if (searchOpen || configOpen) event.preventDefault(); }} className="w-[92vw] max-w-[380px] bg-slate-950 text-slate-100 border-slate-800 p-0 flex flex-col">
                   <SheetHeader className="px-5 pt-5 pb-4 border-b border-slate-800 text-left bg-slate-900">
                     <div className="flex items-center gap-3 pr-10">
                       <div className="w-11 h-11 rounded-xl bg-emerald-600 flex items-center justify-center shadow-md shadow-emerald-950/50">
@@ -201,7 +203,7 @@ export const Navbar: React.FC = () => {
                   <nav aria-label="Mobile navigation" className="flex-1 overflow-y-auto overscroll-contain p-3 space-y-1.5">
                     {mobileNavItems.map((item) => {
                       const Icon = item.icon;
-                      const isActive = location.pathname === item.path || (item.path === '/' && location.pathname === '/dashboard');
+                      const isActive = isItemActive(item.path);
                       return (
                         <Link
                           key={item.path}
@@ -240,6 +242,13 @@ export const Navbar: React.FC = () => {
 
                   {/* Drawer Footer */}
                   <div className="p-4 pb-[max(1rem,env(safe-area-inset-bottom))] border-t border-slate-800 bg-slate-900 text-xs text-slate-400 space-y-3">
+                    <div className="flex items-center justify-between gap-2 sm:hidden">
+                      <Button variant="ghost" className="h-11 rounded-xl text-slate-200 hover:bg-slate-800 hover:text-white" onClick={() => { handleMobileMenuChange(false); setConfigOpen(true); }}>
+                        <Activity className={`mr-2 h-4 w-4 ${scaleStatus.connected ? 'text-emerald-400' : 'text-amber-400'}`} />
+                        {scaleStatus.connected ? `${scaleStatus.weight.toLocaleString()} ${scaleStatus.unit}` : 'Scale offline'}
+                      </Button>
+                      <SyncStatusIndicator />
+                    </div>
                     <div className="flex justify-between items-center gap-3 px-1">
                       <span>Logged in as</span>
                       <span className="text-white font-bold truncate">{user?.fullName || "Operator"}</span>
@@ -252,8 +261,8 @@ export const Navbar: React.FC = () => {
               </Sheet>
 
               {/* Logo */}
-              <Link to="/" className="flex items-center gap-2 group">
-                <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-slate-950/90 border border-slate-700/80 overflow-hidden shadow-md shadow-emerald-950/50 group-hover:scale-105 transition-transform">
+              <Link to="/" className="flex min-w-0 items-center gap-2 group">
+                <div className="shrink-0 w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-slate-950/90 border border-slate-700/80 overflow-hidden shadow-md shadow-emerald-950/50 group-hover:scale-105 transition-transform">
                   <img src="/mahaffeys-logo.png" alt="Mahaffey's logo" className="h-full w-full object-contain p-1" />
                 </div>
                 <div className="hidden sm:block">
@@ -270,13 +279,16 @@ export const Navbar: React.FC = () => {
                   </p>
                 </div>
               </Link>
+              <span className="min-w-0 truncate text-sm font-bold text-slate-100 sm:hidden">
+                {navItems.find(item => isItemActive(item.path))?.label || 'Mahaffeys'}
+              </span>
             </div>
 
             {/* Desktop Navigation Links */}
             <nav aria-label="Main navigation" className="hidden xl:flex min-w-0 flex-1 mx-4 items-center space-x-1 overflow-x-auto py-1">
               {navItems.map((item) => {
                 const Icon = item.icon;
-                const isActive = location.pathname === item.path || (item.path === '/' && location.pathname === '/dashboard');
+                const isActive = isItemActive(item.path);
                 return (
                   <Link
                     key={item.path}
@@ -310,7 +322,7 @@ export const Navbar: React.FC = () => {
               {/* Scale Indicator */}
               <button
                 onClick={() => setConfigOpen(true)}
-                className="flex h-11 w-11 lg:w-auto items-center justify-center lg:justify-start gap-2 lg:px-2.5 rounded-xl bg-slate-800/90 border border-slate-700/80 hover:border-emerald-500/50 hover:bg-slate-800 transition-all text-left active:scale-95"
+                className="hidden sm:flex h-11 w-11 lg:w-auto items-center justify-center lg:justify-start gap-2 lg:px-2.5 rounded-xl bg-slate-800/90 border border-slate-700/80 hover:border-emerald-500/50 hover:bg-slate-800 transition-all text-left active:scale-95"
                 aria-label={`Scale ${scaleStatus.connected ? (scaleStatus.isStable ? 'connected and stable' : 'connected, in motion') : 'offline'}. Open scale configuration`}
                 title={scaleStatus.connected ? `${scaleStatus.weight.toLocaleString()} ${scaleStatus.unit} · ${scaleStatus.isStable ? 'Stable' : 'In motion'}` : 'Scale offline — open configuration'}
               >
@@ -337,7 +349,7 @@ export const Navbar: React.FC = () => {
 
               {/* Admin Pending Requests Notification Badge */}
               {isAdmin && pendingUsersCount > 0 && (
-                <Link to="/users" title="Pending User Requests" aria-label={`${pendingUsersCount} pending user requests`} className="hidden sm:block">
+                <Link to="/settings?tab=users" title="Pending User Requests" aria-label={`${pendingUsersCount} pending user requests`} className="hidden sm:block">
                   <Button size="icon" variant="outline" className="h-9 w-9 bg-amber-950/60 border-amber-500/50 text-amber-400 relative">
                     <Bell className="w-4 h-4" />
                     <span className="absolute -top-1 -right-1 bg-amber-500 text-slate-950 font-bold text-[10px] w-4 h-4 rounded-full flex items-center justify-center">
@@ -377,7 +389,7 @@ export const Navbar: React.FC = () => {
                     <DropdownMenuSeparator className="bg-slate-800" />
                     {isAdmin && (
                       <>
-                        <DropdownMenuItem onClick={() => navigate("/users")} className="cursor-pointer text-xs">
+                        <DropdownMenuItem onClick={() => navigate("/settings?tab=users")} className="cursor-pointer text-xs">
                           <Shield className="w-3.5 h-3.5 mr-2 text-emerald-400" /> User Access Management
                         </DropdownMenuItem>
                         <DropdownMenuItem onClick={() => navigate("/settings")} className="cursor-pointer text-xs">
@@ -406,7 +418,7 @@ export const Navbar: React.FC = () => {
         <nav aria-label="Tablet navigation" className="hidden md:flex xl:hidden items-center space-x-1 bg-slate-950 border-t border-slate-800/80 px-3 py-1.5 text-xs overflow-x-auto overscroll-x-contain">
           {navItems.map((item) => {
             const Icon = item.icon;
-            const isActive = location.pathname === item.path || (item.path === '/' && location.pathname === '/dashboard');
+            const isActive = isItemActive(item.path);
             return (
               <Link
                 key={item.path}

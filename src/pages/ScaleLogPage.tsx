@@ -65,7 +65,8 @@ interface DayGroup {
   lbsOff: number;
 }
 
-export default function ScaleLogPage() {
+export default function ScaleLogPage({ embedded = false }: { embedded?: boolean } = {}) {
+  const ContentTag = embedded ? 'section' : 'main';
   const [events, setEvents] = useState<ScaleWeightEvent[]>(storageService.getScaleEvents());
   const [scales, setScales] = useState<ScaleConfig[]>(scaleService.getScales());
   const [settings, setSettings] = useState<YardSettings>(() => storageService.getSettings());
@@ -200,10 +201,10 @@ export default function ScaleLogPage() {
     scaleAccent(scales.find((s) => s.id === event.scaleId)?.accentColor);
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans">
-      <Navbar />
+    <div className={`${embedded ? '' : 'min-h-screen'} bg-slate-950 text-slate-100 font-sans`}>
+      {!embedded && <Navbar />}
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+      <ContentTag className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-900 p-5 rounded-2xl border border-slate-800 shadow-xl">
           <div className="flex items-center gap-3">
@@ -539,7 +540,7 @@ export default function ScaleLogPage() {
           </Link>{' '}
           — the journal is capped at the most recent 500 events.
         </p>
-      </main>
+      </ContentTag>
 
       {/* Clear journal confirm */}
       <AlertDialog open={clearOpen} onOpenChange={setClearOpen}>

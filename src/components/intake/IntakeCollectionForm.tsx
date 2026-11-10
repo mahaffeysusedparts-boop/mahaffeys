@@ -269,6 +269,18 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
 
   const navigationBlocked = draft.loading || !!draft.recovery || saving || operationLoading || !!pendingOperation || !!operationError || !!draft.error;
   const beforeLeave = async () => !navigationBlocked && await draft.flush();
+  const queueFull = activeLoadCount >= MAX_ACTIVE_LOADS || (authoritativeCount !== null && authoritativeCount >= MAX_ACTIVE_LOADS);
+  const continueIssues: IntakeIssue[] = [
+    ...(!customerName.trim() ? [{ target: 'collection-seller-name', message: 'Enter the seller name to start this load.' }] : []),
+    ...(queueFull ? [{ target: 'collection-capacity', message: `All ${MAX_ACTIVE_LOADS} intake slots are occupied. Open the scale queue and complete or void a load to free a slot.` }] : []),
+    ...issues.filter(issue => !issue.beforeCompletion && issue.target !== 'collection-seller-name' && issue.target !== 'collection-capacity'),
+  ];
+  const pauseMessage = saving ? 'Saving this load. Wait for confirmation before starting another.'
+    : draft.loading || operationLoading ? 'Checking for unfinished work. Please wait before entering or saving a load.'
+    : pendingOperation ? 'The last save is not confirmed. Use “Reconcile original intake & continue” below. Do not create a replacement load.'
+    : operationError ? 'Saving is paused. Review the save warning below and use its recovery action; your entered details are still shown.'
+    : draft.recovery ? 'An unfinished draft is waiting. Choose “Resume draft” or “Discard draft” above to unlock the form.'
+    : draft.error ? 'Draft storage needs attention. Review the draft warning above; keep this page open until the problem is resolved.' : '';
   return (
     <div className="mx-auto max-w-5xl space-y-6 pb-24 sm:pb-12">
       <details className="rounded-2xl border border-slate-700 bg-slate-900 p-3">
@@ -292,7 +304,16 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
           finally { setSaving(false); }
         }}>Reconcile original intake &amp; continue</Button>
       </div>}
-      {saveAttempted && <IntakeFieldGuidance issues={issues.filter(issue => !issue.beforeCompletion)}/>}
+      <section id="collection-continue-status" aria-label="Continue to scale guidance" className="space-y-3">
+        <p role="status" className={`rounded-xl border p-4 text-sm font-semibold ${pauseMessage || continueIssues.length ? 'border-amber-700 bg-amber-950 text-amber-100' : 'border-emerald-700 bg-emerald-950 text-emerald-100'}`}>
+          {pauseMessage || (continueIssues.length ? 'Before you can continue to scale' : 'Ready to continue to scale — save this load below. Payment comes later.')}
+        </p>
+        {!pauseMessage && <IntakeFieldGuidance issues={continueIssues} title="Fix these to continue" description="These stop this load from being saved. Select “Take me there” to open the right field."/>}
+        {!pauseMessage && issues.some(issue => issue.beforeCompletion) && <details className="rounded-xl border border-sky-700 bg-sky-950 p-3 text-sky-100">
+          <summary className="min-h-11 cursor-pointer text-sm font-semibold">Before payment: {issues.filter(issue => issue.beforeCompletion).length} items to finish — you can still continue to scale</summary>
+          <div className="mt-3"><IntakeFieldGuidance issues={issues.filter(issue => issue.beforeCompletion)} title="Can wait until payment" description="These do not stop saving or weighing. Complete and save them before recording payment."/></div>
+        </details>}
+      </section>
       <fieldset disabled={draft.loading || !!draft.recovery || saving || operationLoading || !!pendingOperation || !!operationError} className="contents">
       {/* Header */}
       <div className="flex flex-col gap-4 rounded-2xl border border-slate-800 bg-slate-900 p-4 shadow-xl sm:flex-row sm:items-center sm:justify-between">
@@ -557,11 +578,12 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
             </CardHeader>
 
             <CardContent className="space-y-4 p-4">
-              {activeLoadCount >= MAX_ACTIVE_LOADS && <div id="collection-capacity" className="rounded-xl border border-amber-700 bg-amber-950 p-3 text-xs text-amber-100"><p>All {MAX_ACTIVE_LOADS} intake slots are occupied. Your draft is kept while you clear a slot.</p><Button onClick={() => { void beforeLeave().then(allowed => { if (allowed) onOpenQueue(); }); }} variant="link" className="px-0 text-amber-100">Open scale queue</Button></div>}
+              {queueFull && <div id="collection-capacity" className="rounded-xl border border-amber-700 bg-amber-950 p-3 text-xs text-amber-100"><p>All {MAX_ACTIVE_LOADS} intake slots are occupied. Your draft is kept while you clear a slot.</p><Button onClick={() => { void beforeLeave().then(allowed => { if (allowed) onOpenQueue(); }); }} variant="link" className="min-h-11 px-0 text-amber-100">Open scale queue</Button></div>}
               <Button
                 id="collection-handoff"
+                aria-describedby="collection-continue-status"
                 onClick={() => void handleSave()}
-                disabled={saving || activeLoadCount >= MAX_ACTIVE_LOADS}
+                disabled={navigationBlocked || queueFull}
                 className="h-12 w-full gap-2 bg-emerald-600 text-sm font-extrabold text-white shadow-lg shadow-emerald-950 hover:bg-emerald-500"
               >
                 {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Scale className="h-4 w-4" />}

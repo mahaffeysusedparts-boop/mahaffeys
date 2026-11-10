@@ -32,7 +32,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-export default function UserManagementPage() {
+export default function UserManagementPage({ embedded = false }: { embedded?: boolean } = {}) {
+  const ContentTag = embedded ? 'section' : 'main';
   const { allUsers, approveUser, rejectUser, updateUserStatus, updateUserRole, deleteUser, refreshUsers, user: currentUser } = useAuth();
   const [searchTerm, setSearchTerm] = useState("");
   const [roleEdits, setRoleEdits] = useState<Record<string, UserRole>>({});
@@ -150,10 +151,10 @@ export default function UserManagementPage() {
   const operatorCount = allUsers.filter((u) => u.role === "scale_operator" && u.status === "approved").length;
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
-      <Navbar />
+    <div className={`${embedded ? '' : 'min-h-screen'} bg-slate-950 text-slate-100 flex flex-col font-sans`}>
+      {!embedded && <Navbar />}
 
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+      <ContentTag className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
         
         {/* Header Bar */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-900 p-5 rounded-2xl border border-slate-800 shadow-xl">
@@ -547,7 +548,7 @@ export default function UserManagementPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
-      </main>
+      </ContentTag>
     </div>
   );
 }

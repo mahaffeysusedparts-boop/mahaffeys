@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Navbar } from '@/components/layout/Navbar';
 import { operationsService } from '@/services/operationsService';
 import { storageService } from '@/services/storageService';
@@ -10,7 +10,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { AlertTriangle, Banknote, Clock, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 
-export default function OperationsReviewPage() {
+export default function OperationsReviewPage({ embedded = false }: { embedded?: boolean } = {}) {
+  const ContentTag = embedded ? 'section' : 'main';
   const { user, isAdmin } = useAuth();
   const canManage = isAdmin || user?.role === 'yard_manager';
   const [refreshing, setRefreshing] = useState(false);
@@ -70,15 +71,14 @@ export default function OperationsReviewPage() {
     loadData();
   };
 
-  // Initial load
-  // In a real app, this would be in useEffect
-  // For simplicity, we'll call it directly
-  loadData();
+  useEffect(() => {
+    void loadData();
+  }, []);
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
-      <Navbar />
-      <main className="max-w-7xl mx-auto px-3 sm:px-6 py-4 sm:py-6">
+    <div className={`${embedded ? '' : 'min-h-screen'} bg-slate-950 text-slate-100`}>
+      {!embedded && <Navbar />}
+      <ContentTag className="max-w-7xl mx-auto px-3 sm:px-6 py-4 sm:py-6">
         <div className="mb-6">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
@@ -134,7 +134,7 @@ export default function OperationsReviewPage() {
             </CardContent>
           </section>
         </div>
-      </main>
+      </ContentTag>
     </div>
   );
 }

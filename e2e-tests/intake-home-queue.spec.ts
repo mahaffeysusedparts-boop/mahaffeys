@@ -44,6 +44,10 @@ for (const count of [0, 2]) {
     await page.getByText('New scrap load', { exact: true }).click();
     await expect(page.getByRole('heading', { name: 'New scrap load', exact: true })).toBeVisible();
     await page.getByPlaceholder('e.g. Marcus Vance').fill('Recoverable Seller');
+    const continueGuidance = page.getByRole('region', { name: 'Continue to scale guidance' });
+    await expect(continueGuidance.getByRole('status')).toContainText('Ready to continue to scale');
+    await expect(continueGuidance.locator('summary')).toContainText('you can still continue to scale');
+    await expect(page.getByRole('button', { name: 'Save Intake & Continue to Scale', exact: true })).toBeEnabled();
     await expect(page.getByRole('region', { name: 'Required seller details' }).getByLabel('Phone Number', { exact: true })).toBeVisible();
     await expect(page.getByLabel('Driver License / ID #', { exact: true })).toBeVisible();
     await expect(page.getByLabel('Intake Notes', { exact: true })).not.toBeVisible();
@@ -137,4 +141,46 @@ test('Weighing keeps complete seller details tucked away and required correction
   await strip.locator('summary').filter({ hasText: 'Completion blockers / verification' }).click();
   await strip.getByRole('button', { name: 'Unsaved corrections / inputs — saved evidence has not changed', exact: true }).click();
   await expect(seller.getByLabel('Seller phone', { exact: true })).toBeVisible();
+  const completion = page.getByRole('region', { name: 'Payment completion guidance' });
+  await expect(completion.getByText('Save the seller corrections before completing.', { exact: true })).toBeVisible();
+  await seller.locator('summary').click();
+  await completion.getByRole('listitem').filter({ hasText: 'Save the seller corrections before completing.' }).getByRole('button', { name: 'Take me there' }).click();
+  await expect(seller.getByLabel('Seller phone', { exact: true })).toBeFocused();
+  await expect(page.getByRole('status').filter({ hasText: 'Scale is offline. Use the manual weight entry below' })).toBeVisible();
+});
+
+test('A missing optional ID type opens the hidden field and clears when corrected', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await syntheticApi(page, []);
+  await page.route('**/api/scrap-buying/requirements', route => route.fulfill({ json: { revision: 1, requirePhotos: false, requirePhone: false, requireAddress: false, requireSellerId: false, requireVehiclePlate: false, requireExplicitReview: false } }));
+  await page.goto('/intake');
+  await page.getByText('New scrap load', { exact: true }).click();
+  await page.getByPlaceholder('e.g. Marcus Vance').fill('ID Review Seller');
+  await page.locator('summary').filter({ hasText: 'Optional seller details & notes' }).click();
+  await page.getByLabel('Driver License / ID #', { exact: true }).fill('TEST-ID-123');
+  await page.locator('summary').filter({ hasText: 'Optional seller details & notes' }).click();
+  const guidance = page.getByRole('region', { name: 'Continue to scale guidance' });
+  await expect(guidance.getByText('Confirm the actual ID type.', { exact: true })).toBeVisible();
+  await guidance.getByRole('button', { name: 'Take me there', exact: true }).click();
+  await expect(page.getByRole('combobox', { name: 'Actual ID type', exact: true })).toBeFocused();
+  await page.getByRole('combobox', { name: 'Actual ID type', exact: true }).click();
+  await page.getByRole('option', { name: 'State ID', exact: true }).click();
+  await expect(guidance.getByRole('status')).toContainText('Ready to continue to scale');
+  await expect(guidance.getByText('Confirm the actual ID type.', { exact: true })).toHaveCount(0);
+});
+
+test('Full queue explains the disabled save and keeps the draft while opening the queue', async ({ page }) => {
+  await syntheticApi(page, Array.from({ length: 10 }, (_, index) => load(`FULL-${index}`, 5)));
+  await page.goto('/intake');
+  await page.getByText('New scrap load', { exact: true }).click();
+  await page.getByPlaceholder('e.g. Marcus Vance').fill('Waiting Seller');
+  const guidance = page.getByRole('region', { name: 'Continue to scale guidance' });
+  await expect(guidance.getByText(/All 10 intake slots are occupied/)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Save Intake & Continue to Scale', exact: true })).toBeDisabled();
+  await guidance.getByRole('button', { name: 'Take me there', exact: true }).click();
+  await page.locator('#collection-capacity').getByRole('button', { name: 'Open scale queue', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Weigh & pay', exact: true })).toBeVisible();
+  await page.getByRole('navigation', { name: 'Intake workspaces' }).getByRole('button', { name: 'New scrap load', exact: true }).click();
+  await page.getByRole('button', { name: 'Resume draft', exact: true }).click();
+  await expect(page.getByPlaceholder('e.g. Marcus Vance')).toHaveValue('Waiting Seller');
 });

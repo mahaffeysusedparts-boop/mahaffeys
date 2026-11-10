@@ -24,9 +24,16 @@ export function goToIntakeField(target: string) {
   }
   input.focus({ preventScroll: true });
 }
-export function IntakeFieldGuidance({ issues }: { issues: IntakeIssue[] }) {
+export function IntakeFieldGuidance({ issues, title = 'Missing requirements', description }: { issues: IntakeIssue[]; title?: string; description?: string }) {
   if (!issues.length) return null;
-  return <section aria-label="Missing intake requirements" className="space-y-2 rounded-2xl border border-amber-700 bg-amber-950 p-4 text-amber-100"><h3 className="flex items-center gap-2 text-sm font-bold"><AlertTriangle className="h-4 w-4"/>Missing requirements</h3>{issues.map(issue => <div key={`${issue.target}:${issue.message}`} className="flex items-center justify-between gap-3 text-xs"><span>{issue.message}{issue.beforeCompletion ? ' — required before completion; draft can still be saved.' : ''}</span><Button type="button" variant="ghost" onClick={() => goToIntakeField(issue.target)} className="h-auto shrink-0 rounded-lg px-2 py-2 text-amber-100 hover:bg-amber-900 hover:text-white">Take me there<ArrowRight className="ml-1 h-3 w-3"/></Button></div>)}</section>;
+  return <section aria-label="Missing intake requirements" className="space-y-3 rounded-2xl border border-amber-700 bg-amber-950 p-4 text-amber-100">
+    <h3 className="flex items-center gap-2 text-sm font-bold"><AlertTriangle className="h-4 w-4 shrink-0"/>{title}</h3>
+    {description && <p className="text-sm leading-relaxed">{description}</p>}
+    <ol className="space-y-3">{issues.map(issue => <li key={`${issue.target}:${issue.message}`} className="flex flex-col gap-2 rounded-xl border border-amber-800 p-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+      <span>{issue.message}{issue.beforeCompletion ? ' — needed before payment, not before weighing.' : ''}</span>
+      <Button type="button" variant="ghost" onClick={() => goToIntakeField(issue.target)} className="min-h-11 shrink-0 self-start rounded-lg px-3 py-2 text-amber-100 hover:bg-amber-900 hover:text-white sm:self-center">Take me there<ArrowRight className="ml-1 h-4 w-4"/></Button>
+    </li>)}</ol>
+  </section>;
 }
 export function IntakeFieldError({ message }: { message?: string }) {
   return message ? <p role="status" className="mt-1 text-xs font-medium text-amber-200">{message}</p> : null;

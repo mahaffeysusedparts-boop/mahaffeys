@@ -38,7 +38,13 @@ test('Saving a scrap intake without an ID creates a customer profile', async ({ 
 
   await page.goto('/intake');
   await page.getByRole('region', { name: 'Intake home', exact: true }).getByRole('button', { name: /^New scrap load / }).click();
+  const guidance = page.getByRole('region', { name: 'Continue to scale guidance' });
+  await page.getByRole('button', { name: 'Save Intake & Continue to Scale', exact: true }).click();
+  await expect(guidance.getByText('Enter the seller name to start this load.', { exact: true })).toBeVisible();
+  await guidance.getByRole('button', { name: 'Take me there', exact: true }).click();
+  await expect(page.getByPlaceholder('e.g. Marcus Vance')).toBeFocused();
   await page.getByPlaceholder('e.g. Marcus Vance').fill('Jamie No-ID Seller');
+  await expect(guidance.getByRole('status')).toContainText('Ready to continue to scale');
   await expect(page.getByLabel('Phone Number', { exact: true })).not.toBeVisible();
   await expect(page.getByLabel('Driver License / ID #', { exact: true })).not.toBeVisible();
   await expect(page.getByLabel('Seller address', { exact: true })).not.toBeVisible();
