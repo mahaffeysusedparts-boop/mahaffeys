@@ -64,6 +64,7 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
   useEffect(() => storageService.subscribe('mahaffeys_tickets', () => setActiveLoadCount(storageService.getTickets().filter(ticket => ticket.ticketType === 'SCRAP_METAL' && ticket.status === 'PENDING').length)), []);
   const queueStatus = useQuery({ queryKey: ['scrap-buying-queue'], queryFn: () => scrapBuyingService.queue(), refetchInterval: 5000 });
   const authoritativeCount = queueStatus.isError ? null : queueStatus.data?.capacity?.openCount ?? null;
+  const queueFull = (authoritativeCount ?? activeLoadCount) >= MAX_ACTIVE_LOADS;
   const [pendingOperation, setPendingOperation] = useState<IntakeOperation | null>(null);
   const [operationLoading, setOperationLoading] = useState(true);
   const [operationError, setOperationError] = useState('');
@@ -111,8 +112,8 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
 
   const compliance = calculateComplianceScore(captures, 'SCRAP_METAL');
   const issues: IntakeIssue[] = [
-    ...(authoritativeCount !== null && authoritativeCount >= MAX_ACTIVE_LOADS ? [{ target: 'collection-capacity', message: 'The intake queue is full. Complete or void an open intake first.' }] : []),
-    ...(!customerName.trim() && saveAttempted ? [{ target: 'collection-seller-name', message: 'Enter the seller name.' }] : []),
+    ...(queueFull ? [{ target: 'collection-capacity', message: 'The intake queue is full. Complete or void an open intake first.' }] : []),
+    ...(!customerName.trim() ? [{ target: 'collection-seller-name', message: 'Enter the seller name.' }] : []),
     ...(!customerPhone.trim() && requirements.data?.requirePhone ? [{ target: 'collection-phone', message: 'Enter the seller phone.', beforeCompletion: true }] : []),
     ...(!customerIdNumber.trim() && requirements.data?.requireSellerId ? [{ target: 'collection-id', message: 'Enter the seller ID number.', beforeCompletion: true }] : []),
     ...(!customerIdType && !!customerIdNumber.trim() ? [{ target: 'collection-id-type', message: 'Confirm the actual ID type.' }] : []),
@@ -120,9 +121,17 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
     ...(!customerAddress.trim() && requirements.data?.requireAddress ? [{ target: 'seller-address', message: 'Enter the seller address.', beforeCompletion: true }] : []),
     ...(!vehicleLicensePlate.trim() && requirements.data?.requireVehiclePlate ? [{ target: 'collection-plate', message: 'Enter today’s vehicle plate.', beforeCompletion: true }] : []),
     ...(compliance.score < 100 && requirements.data?.requirePhotos ? [{ target: 'collection-photos', message: 'Capture the missing intake photos.', beforeCompletion: true }] : []),
-    ...(saveAttempted && storageService.getTickets().some(t => t.id === ticketNumber.trim()) ? [{ target: 'collection-receipt', message: 'Receipt number is already used. Generate a new number.' }] : []),
+    ...(storageService.getTickets().some(t => t.id === ticketNumber.trim()) ? [{ target: 'collection-receipt', message: 'Receipt number is already used. Generate a new number.' }] : []),
   ];
-  const fieldError = (target: string) => issues.find(issue => issue.target === target)?.message;
+  const saveBlockers = issues.filter(issue => !issue.beforeCompletion);
+  const laterDetails = issues.filter(issue => issue.beforeCompletion);
+  const fieldError = (target: string) => target === 'collection-seller-name' && !saveAttempted ? undefined : issues.find(issue => issue.target === target)?.message;
+  const pauseReason = saving ? 'Saving this load. Wait for confirmation before starting another intake.'
+    : draft.loading || operationLoading ? 'Checking for unfinished work. Wait for this check to finish before entering details.'
+    : pendingOperation ? 'The previous save is not confirmed. Check the original submission below; do not create a replacement load.'
+    : operationError ? 'Saving is paused after an error. Review the warning and retained inputs below before retrying.'
+    : draft.recovery ? 'An unfinished draft is waiting. Resume it or discard it using the recovery options below.'
+    : '';
 
   useEffect(() => {
     if (!customerSearchOpen) return;
@@ -184,7 +193,7 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
       goToIntakeField('collection-seller-name');
       return;
     }
-    if (authoritativeCount !== null && authoritativeCount >= MAX_ACTIVE_LOADS) { goToIntakeField('collection-capacity'); return; }
+    if (queueFull) { goToIntakeField('collection-capacity'); return; }
 
     if (customerIdNumber.trim() && !customerIdType) { goToIntakeField('collection-id-type'); return; }
     const finalId = ticketNumber.trim() || storageService.generateScrapReceiptNumber();
@@ -275,7 +284,7 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
         <summary className="cursor-pointer text-sm font-semibold text-sky-100">Switch workspace</summary>
         <div className="mt-3">{workspaceNavigation?.(navigationBlocked, beforeLeave)}</div>
       </details>
-      <DraftRecoveryBanner draft={draft}/>
+      <div id="collection-recovery"><DraftRecoveryBanner draft={draft}/></div>
       <details className="rounded-2xl border border-slate-700 bg-slate-900 p-3" open={operationError || pendingOperation || draft.error ? true : undefined}>
         <summary className="cursor-pointer text-sm font-semibold text-sky-100">Load progress &amp; queue status</summary>
         <div className="mt-3 space-y-3">
@@ -292,7 +301,22 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
           finally { setSaving(false); }
         }}>Reconcile original intake &amp; continue</Button>
       </div>}
-      {saveAttempted && <IntakeFieldGuidance issues={issues.filter(issue => !issue.beforeCompletion)}/>}
+      <section id="collection-continuation" aria-label="Continue to scale guidance" className="space-y-3">
+        {pauseReason ? <div role="status" className="rounded-2xl border border-amber-600 bg-amber-950 p-4 text-amber-100">
+          <h2 className="text-base font-bold">Why you cannot continue yet</h2>
+          <p className="mt-2 text-sm leading-relaxed">{pauseReason}</p>
+          {draft.recovery && !pendingOperation && !operationError && <Button type="button" onClick={() => goToIntakeField('collection-recovery')} className="mt-3 min-h-11 rounded-xl bg-amber-700 text-white hover:bg-amber-600">Show draft recovery options</Button>}
+        </div> : <>
+          <IntakeFieldGuidance issues={saveBlockers} title="Before you can continue to scale" description="Fix these items to save this load. Use Take me there to open the right field."/>
+          {!saveBlockers.length && <p role="status" className="rounded-2xl border border-emerald-700 bg-emerald-950 p-4 text-sm font-semibold text-emerald-100">Ready to save and continue to scale. The server will check the load when you save.</p>}
+          {laterDetails.length > 0 && <details className="rounded-xl border border-sky-700 bg-sky-950 p-3 text-sky-100">
+            <summary className="cursor-pointer text-sm font-semibold">Can finish at the scale ({laterDetails.length}) — does not stop saving</summary>
+            <div className="mt-3"><IntakeFieldGuidance issues={laterDetails} title="Needed before payment, not before saving" description="You can save and weigh this load now. Finish these details before recording payment."/></div>
+          </details>}
+        </>}
+        {draft.error && !draft.recovery && <p className="text-sm text-amber-100">Autosave is unavailable. Keep this form open and save the intake before leaving; do not rely on draft recovery.</p>}
+        {requirements.isError && <p role="status" className="rounded-xl border border-sky-700 bg-sky-950 p-3 text-sm text-sky-100">Yard requirements could not refresh. This does not stop saving a draft; payment still needs verified requirements. <Button type="button" variant="link" onClick={() => void requirements.refetch()} className="min-h-11 text-sky-100">Retry requirement check</Button></p>}
+      </section>
       <fieldset disabled={draft.loading || !!draft.recovery || saving || operationLoading || !!pendingOperation || !!operationError} className="contents">
       {/* Header */}
       <div className="flex flex-col gap-4 rounded-2xl border border-slate-800 bg-slate-900 p-4 shadow-xl sm:flex-row sm:items-center sm:justify-between">
@@ -557,12 +581,14 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
             </CardHeader>
 
             <CardContent className="space-y-4 p-4">
-              {activeLoadCount >= MAX_ACTIVE_LOADS && <div id="collection-capacity" className="rounded-xl border border-amber-700 bg-amber-950 p-3 text-xs text-amber-100"><p>All {MAX_ACTIVE_LOADS} intake slots are occupied. Your draft is kept while you clear a slot.</p><Button onClick={() => { void beforeLeave().then(allowed => { if (allowed) onOpenQueue(); }); }} variant="link" className="px-0 text-amber-100">Open scale queue</Button></div>}
+              {queueFull && <div id="collection-capacity" className="rounded-xl border border-amber-700 bg-amber-950 p-3 text-sm text-amber-100"><p>All {MAX_ACTIVE_LOADS} intake slots are occupied. Open the scale queue and complete or void an open load to free a slot. Your draft is kept when you switch.</p><Button onClick={() => { void beforeLeave().then(allowed => { if (allowed) onOpenQueue(); }); }} variant="outline" className="mt-3 min-h-11 rounded-xl border-amber-600 bg-amber-900 text-amber-100 hover:bg-amber-800">Open scale queue</Button></div>}
+              <p id="collection-save-help" role="status" className={`rounded-xl border p-3 text-sm ${pauseReason || saveBlockers.length ? 'border-amber-700 bg-amber-950 text-amber-100' : 'border-emerald-700 bg-emerald-950 text-emerald-100'}`}>{pauseReason || (saveBlockers.length ? `Before continuing: ${saveBlockers[0].message}${saveBlockers.length > 1 ? ` ${saveBlockers.length - 1} more item(s) are listed above.` : ''}` : laterDetails.length ? 'You can continue. Missing seller details and photos can be finished at the scale before payment.' : 'You can continue. Save this load to start weighing.')}</p>
               <Button
                 id="collection-handoff"
+                aria-describedby="collection-save-help"
                 onClick={() => void handleSave()}
-                disabled={saving || activeLoadCount >= MAX_ACTIVE_LOADS}
-                className="h-12 w-full gap-2 bg-emerald-600 text-sm font-extrabold text-white shadow-lg shadow-emerald-950 hover:bg-emerald-500"
+                disabled={saving || queueFull}
+                className="h-auto min-h-12 w-full gap-2 whitespace-normal rounded-xl bg-emerald-600 px-3 py-3 text-sm font-extrabold text-white shadow-lg shadow-emerald-950 hover:bg-emerald-500"
               >
                 {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Scale className="h-4 w-4" />}
                 {saving ? 'Saving Intake...' : 'Save Intake & Continue to Scale'}

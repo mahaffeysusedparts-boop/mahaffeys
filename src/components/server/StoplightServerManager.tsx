@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { stoplightService, type StoplightState } from "@/services/stoplightService";
+import { stoplightService, type StoplightState, type StoplightStatus } from "@/services/stoplightService";
 
 type StoplightPresetValue = "tasmota" | "shelly_gen1" | "shelly_gen2" | "custom";
 
@@ -26,14 +26,7 @@ interface StoplightAdminConfig {
 
 interface StoplightAdminSnapshot {
   config: StoplightAdminConfig | null;
-  status: {
-    configured: boolean;
-    state: StoplightState;
-    relayReachable: boolean | null;
-    lastError?: string;
-    lastCommandAt?: string;
-    updatedAt: string;
-  };
+  status: StoplightStatus;
   presets: Array<{ value: StoplightPresetValue; label: string; urlExample: string }>;
   checkedAt: string;
 }
@@ -88,10 +81,11 @@ export function StoplightServerManager() {
   const loadStoplight = useCallback(async (quiet = false) => {
     if (!quiet) setLoading(true);
     try {
-      const response = await fetch("/api/admin/stoplight", { credentials: "include" });
+      const response = await fetch("/api/admin/stoplight", { credentials: "include", cache: "no-store", signal: AbortSignal.timeout(10000) });
       if (!response.ok) throw new Error(await readError(response, "Unable to inspect the stoplight relay"));
       applySnapshot(await response.json() as StoplightAdminSnapshot);
     } catch (error) {
+      setSnapshot(current => current ? { ...current, status: { ...current.status, state: "unknown", relayReachable: null, verifiedAt: undefined, lastError: "Live relay feedback is unavailable. Check the physical lights." } } : current);
       if (!quiet) toast.error("Stoplight status unavailable", {
         description: error instanceof Error ? error.message : "Unknown server error",
       });
@@ -132,7 +126,8 @@ export function StoplightServerManager() {
       });
       if (!response.ok) throw new Error(await readError(response, "Could not activate the stoplight relay"));
       toast.success("Stoplight relay activated", {
-        description: `${PRESET_LABELS[preset]} board at ${host.trim()} — both lamps set to a safe OFF.`,
+        description: preset === "custom" ? "OFF commands sent; output cannot be verified with custom command URLs."
+          : `${PRESET_LABELS[preset]} board at ${host.trim()} — both relay outputs confirmed OFF.`,
       });
       setPassword("");
       await loadStoplight(true);
@@ -181,7 +176,8 @@ export function StoplightServerManager() {
   };
 
   const presetExample = snapshot?.presets.find((option) => option.value === preset)?.urlExample;
-  const stateLabel = snapshot?.status.state === "red" ? "RED" : snapshot?.status.state === "green" ? "GREEN" : "OFF";
+  const stateLabel = snapshot?.status.state === "conflict" ? "BOTH ON — CHECK SWITCH"
+    : snapshot?.status.state?.toUpperCase() ?? "UNKNOWN";
   const busy = saving || testing || switching !== null;
 
   const canSave = host.trim().length > 0
@@ -258,9 +254,10 @@ export function StoplightServerManager() {
                   {switching === "off" ? "…" : "Off"}
                 </Button>
               </div>
-              <p className="mt-3 text-[11px] leading-relaxed text-slate-500">
-                Saving a configuration always parks both lamps OFF first. The scale desk gets Red/Green buttons from the
-                intake weighing screen.
+              <p className="mt-3 text-[11px] leading-relaxed text-slate-400">
+                Tasmota and Shelly output feedback is read from the device on each refresh, including manual switch changes.
+                This confirms relay state, not bulb health. A bypass switch requires separate lamp feedback.
+                Custom command URLs have no readback and show UNKNOWN. Saving sends both OFF commands first.
               </p>
             </div>
 

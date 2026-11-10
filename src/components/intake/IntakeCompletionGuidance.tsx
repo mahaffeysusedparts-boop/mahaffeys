@@ -8,8 +8,9 @@ import type { BuyingPaymentInput } from './BuyingPaymentFields';
 import { IntakeFieldGuidance, type IntakeIssue } from './IntakeFieldGuidance';
 import { assessScrapEvidence } from '@/utils/scrapIntakeProgress';
 import { ShieldCheck, AlertTriangle } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
-export function IntakeCompletionGuidance({ ticket, requirements, eligibility, eligibilityError, reviewed, paymentInput, sellerDirty = false, identityVerified, profileAddress }: {
+export function IntakeCompletionGuidance({ ticket, requirements, eligibility, eligibilityError, reviewed, paymentInput, sellerDirty = false, identityVerified, profileAddress, pauseReason, onRetryChecks }: {
   ticket: Ticket;
   requirements?: IntakeRequirements;
   eligibility?: PaymentEligibility;
@@ -19,6 +20,8 @@ export function IntakeCompletionGuidance({ ticket, requirements, eligibility, el
   sellerDirty?: boolean;
   identityVerified?: boolean;
   profileAddress?: string;
+  pauseReason?: string;
+  onRetryChecks?: () => void;
 }) {
   const { isAdmin } = useAuth();
   const unfinished = !!ticket.pendingPlatformCapture || ticket.scaleGrossInWeight != null || !!ticket.buying?.activeCycleId;
@@ -33,12 +36,19 @@ export function IntakeCompletionGuidance({ ticket, requirements, eligibility, el
     ...(eligibility?.permitRequired && !paymentInput?.permitReference.trim() ? [{ target: 'scale-payment', message: 'Enter the required permit reference.' }] : []),
     ...(eligibility?.documentationRequired && !paymentInput?.documentationReference.trim() ? [{ target: 'scale-payment', message: 'Enter the required supporting documentation reference.' }] : []),
     ...(eligibility?.reasons.map(reason => ({ target: reason.code === 'INTAKE_NOT_READY' ? 'scale-seller-editor' : 'scale-payment', message: reason.message })) ?? []),
+    ...(eligibility && !eligibilityError && paymentInput && !eligibility.allowedMethods.includes(paymentInput.method) && !eligibility.reasons.length ? [{ target: 'scale-payment', message: 'The selected payment method is not available. Check the automatic Cash / Check selection below.' }] : []),
   ];
-  return <section className="space-y-3 rounded-2xl border border-sky-700 bg-sky-950 p-4">
+  const checksUnavailable = !requirements || !eligibility || !!eligibilityError;
+  return <section id="scale-completion-guidance" aria-label="Payment completion guidance" className="space-y-3 rounded-2xl border border-sky-700 bg-sky-950 p-4">
     <h3 className="flex items-center gap-2 font-bold text-sky-100"><ShieldCheck className="h-5 w-5"/>What is stopping completion?</h3>
-    <IntakeFieldGuidance issues={issues}/>
-    {!requirements && <p className="text-xs text-sky-100">Load the saved intake requirements before completing.</p>}
-    {!issues.length && requirements && <p className="text-xs text-sky-100">Local checks are ready. The server rechecks saved requirements when you complete.</p>}
+    {pauseReason && <p role="status" className="rounded-xl border border-amber-700 bg-amber-950 p-3 text-sm text-amber-100">{pauseReason}</p>}
+    <IntakeFieldGuidance issues={issues} description="Payment stays blocked until these items are resolved. Take me there opens the field or section that needs attention."/>
+    {checksUnavailable && <div role="status" className="rounded-xl border border-amber-700 bg-amber-950 p-3 text-sm text-amber-100">
+      {!requirements && <p>Yard requirements are not verified yet. Payment must wait for this check.</p>}
+      {(!eligibility || eligibilityError) && <p>Payment rules are not verified yet. Your entered details are kept.</p>}
+      {onRetryChecks && <Button type="button" onClick={onRetryChecks} className="mt-3 min-h-11 rounded-xl bg-sky-700 text-white hover:bg-sky-600">Retry completion checks</Button>}
+    </div>}
+    {!issues.length && !checksUnavailable && !pauseReason && <p role="status" className="text-sm font-semibold text-emerald-100">Local checks are ready. The server rechecks saved requirements when you complete.</p>}
     <div className="rounded-xl border border-amber-800 bg-amber-950 p-3 text-xs leading-relaxed text-amber-100">
       <p className="flex items-center gap-2 font-semibold"><AlertTriangle className="h-4 w-4"/>Complete with payment</p>
       <p className="mt-2">The material category and amount choose Cash or Check. Enter the issued check number when Check is selected.</p>

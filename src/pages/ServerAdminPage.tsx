@@ -6,7 +6,6 @@ import { ScaleServerManager } from "@/components/server/ScaleServerManager";
 import { StoplightServerManager } from "@/components/server/StoplightServerManager";
 import { StorageBayManager } from "@/components/server/StorageBayManager";
 import { RestoreBackupButton } from '@/components/server/RestoreBackupButton';
-import { BusinessIntelligenceDashboard } from "@/components/admin/BusinessIntelligenceDashboard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -104,7 +103,7 @@ const formatDuration = (seconds: number) => {
 
 const usagePercent = (used: number, total: number) => total > 0 ? Math.round((used / total) * 100) : 0;
 
-export default function ServerAdminPage() {
+export default function ServerAdminPage({ embedded = false }: { embedded?: boolean }) {
   const [snapshot, setSnapshot] = useState<ServerSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [restarting, setRestarting] = useState(false);
@@ -249,7 +248,7 @@ export default function ServerAdminPage() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
-      <Navbar />
+      {!embedded && <Navbar />}
       <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8">
         <section className="mb-6 overflow-hidden rounded-3xl border border-emerald-500/20 bg-slate-900 p-5 shadow-2xl shadow-emerald-950/20 sm:p-7">
           <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
@@ -309,19 +308,14 @@ export default function ServerAdminPage() {
             </section>
 
             {/* Administration tabs */}
-            <Tabs defaultValue="business-intelligence" className="w-full space-y-4">
+            <Tabs defaultValue="backups" className="w-full space-y-4">
               <div className="overflow-x-auto pb-1">
                 <TabsList className="h-auto min-w-max rounded-xl border border-slate-800 bg-slate-900 p-1">
-                  <TabsTrigger value="business-intelligence" className="text-sm">Business Intelligence</TabsTrigger>
                   <TabsTrigger value="backups" className="text-sm">Backups</TabsTrigger>
                   <TabsTrigger value="audit" className="text-sm">Audit Log</TabsTrigger>
                   <TabsTrigger value="alarmcom" className="text-sm">Alarm.com</TabsTrigger>
                 </TabsList>
               </div>
-
-              <TabsContent value="business-intelligence" className="space-y-4">
-                <BusinessIntelligenceDashboard />
-              </TabsContent>
 
               <TabsContent value="backups" className="space-y-4">
                 <Card className="bg-slate-900 border-slate-800 text-white shadow-lg">

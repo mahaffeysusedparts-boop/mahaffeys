@@ -65,7 +65,7 @@ interface DayGroup {
   lbsOff: number;
 }
 
-export default function ScaleLogPage() {
+export default function ScaleLogPage({ embedded = false }: { embedded?: boolean }) {
   const [events, setEvents] = useState<ScaleWeightEvent[]>(storageService.getScaleEvents());
   const [scales, setScales] = useState<ScaleConfig[]>(scaleService.getScales());
   const [settings, setSettings] = useState<YardSettings>(() => storageService.getSettings());
@@ -201,7 +201,7 @@ export default function ScaleLogPage() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 font-sans">
-      <Navbar />
+      {!embedded && <Navbar />}
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
         {/* Header */}

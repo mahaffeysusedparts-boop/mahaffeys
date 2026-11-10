@@ -9,6 +9,7 @@ import { ScaleQuickSwitcher } from '../scale/ScaleQuickSwitcher';
 import { QuickSearchButton } from './QuickSearch';
 import { SyncStatusIndicator } from './SyncStatusIndicator';
 import { hasPageAccess, PATH_TO_PAGE_KEY } from '@/utils/pageAccess';
+import { canOpenWorkspace } from '@/utils/workspaceSections';
 import {
   Sheet,
   SheetContent,
@@ -32,7 +33,6 @@ import {
   Scale,
   Car,
   Receipt,
-  DollarSign,
   Users,
   Settings,
   ShieldCheck,
@@ -41,14 +41,11 @@ import {
   Banknote,
   Map,
   Wrench,
-  Server,
   Menu,
   ChevronRight,
   LayoutDashboard,
   LogOut,
-  UserCheck,
   Bell,
-  Lock,
   Shield,
   Camera,
   BarChart3,
@@ -87,8 +84,13 @@ export const Navbar: React.FC = () => {
     };
   }, []);
 
-  const canOpen = (path: string) =>
-    user ? hasPageAccess(user.role, PATH_TO_PAGE_KEY[path] ?? 'dashboard', settings.rolePageAccess) : false;
+  const canOpen = (path: string) => {
+    if (!user) return false;
+    if (path === '/settings' || path === '/analytics') {
+      return canOpenWorkspace(user.role, path === '/settings' ? 'settings' : 'analytics', settings.rolePageAccess);
+    }
+    return hasPageAccess(user.role, PATH_TO_PAGE_KEY[path] ?? 'dashboard', settings.rolePageAccess);
+  };
 
   const handleSignOut = async () => {
     await logout();
@@ -105,23 +107,18 @@ export const Navbar: React.FC = () => {
     { label: 'Compliance & NMVTIS', path: '/compliance', icon: ShieldCheck },
     { label: 'IP Cameras', path: '/cameras', icon: Camera },
     { label: 'Ticket Ledger', path: '/tickets', icon: Receipt },
-    { label: 'Metal Rates', path: '/pricing', icon: DollarSign },
     { label: 'Containers', path: '/containers', icon: Truck },
     { label: 'Cash Drawer', path: '/cash-drawer', icon: Banknote },
     { label: 'Yard Map', path: '/yard-map', icon: Map },
     { label: 'Mill Shipments', path: '/shipments', icon: Truck },
-    { label: 'Reports', path: '/reports', icon: BarChart3 },
+    { label: 'Analytics', path: '/analytics', icon: BarChart3 },
     { label: 'Team Ops', path: '/team', icon: ClipboardList },
     { label: 'Fleet & Tools', path: '/fleet', icon: Wrench },
     { label: 'Customers', path: '/customers', icon: Users },
-    ...(isAdmin ? [
-      { label: 'User Access', path: '/users', icon: Shield, badge: pendingUsersCount },
-      { label: 'Server Admin', path: '/server-admin', icon: Lock },
-      { label: 'Settings', path: '/settings', icon: Settings },
-    ] : []),
-    { label: 'System Status', path: '/system-status', icon: Server },
+    { label: 'Settings', path: '/settings', icon: Settings, badge: isAdmin ? pendingUsersCount : 0 },
   ].filter((item) => isAdmin || canOpen(item.path));
 
+  const currentPage = navItems.find(item => item.path === location.pathname)?.label ?? 'Mahaffeys';
   const mobileNavItems = navItems.filter((item) =>
     item.label.toLowerCase().includes(mobileNavQuery.trim().toLowerCase()),
   );
@@ -142,10 +139,10 @@ export const Navbar: React.FC = () => {
     <>
       <header className="bg-slate-900 border-b border-slate-800 text-white sticky top-0 z-40 shadow-xl">
         <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
+          <div className="flex items-center justify-between gap-2 h-16">
 
             {/* Left Section: Mobile Menu Trigger + Logo */}
-            <div className="flex items-center gap-2 sm:gap-3">
+            <div className="flex min-w-0 items-center gap-2 sm:gap-3">
 
               {/* Mobile / iPad Drawer Trigger */}
               <Sheet open={mobileMenuOpen} onOpenChange={handleMobileMenuChange}>
@@ -153,15 +150,15 @@ export const Navbar: React.FC = () => {
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="xl:hidden h-11 w-11 rounded-xl bg-emerald-600/15 border border-emerald-500/30 text-emerald-300 hover:text-white hover:bg-emerald-600/25 active:scale-95"
+                    className="xl:hidden shrink-0 h-11 w-11 rounded-xl bg-emerald-600/15 border border-emerald-500/30 text-emerald-300 hover:text-white hover:bg-emerald-600/25 active:scale-95"
                     aria-label="Open main menu"
                   >
                     <Menu className="w-6 h-6" />
                   </Button>
                 </SheetTrigger>
 
-                <SheetContent side="left" onCloseAutoFocus={event => { if (searchOpen) event.preventDefault(); }} className="w-[92vw] max-w-[380px] bg-slate-950 text-slate-100 border-slate-800 p-0 flex flex-col">
-                  <SheetHeader className="px-5 pt-5 pb-4 border-b border-slate-800 text-left bg-slate-900">
+                <SheetContent side="left" onCloseAutoFocus={event => { if (searchOpen || configOpen) event.preventDefault(); }} className="h-dvh w-[92vw] max-w-[380px] gap-0 overflow-y-auto overscroll-contain bg-slate-950 text-slate-100 border-slate-800 p-0 pl-[env(safe-area-inset-left)] pt-[env(safe-area-inset-top)] flex flex-col [&>button]:top-[max(1rem,env(safe-area-inset-top))]">
+                  <SheetHeader className="shrink-0 px-5 pt-5 pb-4 border-b border-slate-800 text-left bg-slate-900">
                     <div className="flex items-center gap-3 pr-10">
                       <div className="w-11 h-11 rounded-xl bg-emerald-600 flex items-center justify-center shadow-md shadow-emerald-950/50">
                         <Scale className="w-6 h-6 text-white" />
@@ -177,7 +174,7 @@ export const Navbar: React.FC = () => {
                     </div>
                   </SheetHeader>
 
-                  <div className="p-3 border-b border-slate-800 bg-slate-900/60">
+                  <div className="shrink-0 p-3 border-b border-slate-800 bg-slate-900/60">
                     <label className="relative block">
                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 pointer-events-none" />
                       <Input
@@ -198,7 +195,7 @@ export const Navbar: React.FC = () => {
                   </div>
 
                   {/* Drawer Nav Items */}
-                  <nav aria-label="Mobile navigation" className="flex-1 overflow-y-auto overscroll-contain p-3 space-y-1.5">
+                  <nav aria-label="Mobile navigation" className="min-h-12 flex-1 overflow-y-auto overscroll-contain p-3 space-y-1.5">
                     {mobileNavItems.map((item) => {
                       const Icon = item.icon;
                       const isActive = location.pathname === item.path || (item.path === '/' && location.pathname === '/dashboard');
@@ -239,7 +236,13 @@ export const Navbar: React.FC = () => {
                   </nav>
 
                   {/* Drawer Footer */}
-                  <div className="p-4 pb-[max(1rem,env(safe-area-inset-bottom))] border-t border-slate-800 bg-slate-900 text-xs text-slate-400 space-y-3">
+                  <div className="shrink-0 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] border-t border-slate-800 bg-slate-900 text-xs text-slate-400 space-y-3">
+                    <Button variant="outline" className="h-11 w-full justify-start rounded-xl border-slate-700 bg-slate-950 text-emerald-300 hover:bg-slate-800 hover:text-white" onClick={() => {
+                      handleMobileMenuChange(false);
+                      setConfigOpen(true);
+                    }}>
+                      <Activity className="mr-3 h-5 w-5" /> Scale configuration · {scaleStatus.connected ? 'Online' : 'Offline'}
+                    </Button>
                     <div className="flex justify-between items-center gap-3 px-1">
                       <span>Logged in as</span>
                       <span className="text-white font-bold truncate">{user?.fullName || "Operator"}</span>
@@ -252,9 +255,13 @@ export const Navbar: React.FC = () => {
               </Sheet>
 
               {/* Logo */}
-              <Link to="/" className="flex items-center gap-2 group">
-                <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-slate-950/90 border border-slate-700/80 overflow-hidden shadow-md shadow-emerald-950/50 group-hover:scale-105 transition-transform">
+              <Link to="/" className="flex min-w-0 items-center gap-2 group">
+                <div className="w-10 h-10 sm:w-12 sm:h-12 shrink-0 rounded-xl bg-slate-950/90 border border-slate-700/80 overflow-hidden shadow-md shadow-emerald-950/50 group-hover:scale-105 transition-transform">
                   <img src="/mahaffeys-logo.png" alt="Mahaffey's logo" className="h-full w-full object-contain p-1" />
+                </div>
+                <div className="min-w-0 sm:hidden">
+                  <p className="truncate text-sm font-bold text-white">{currentPage}</p>
+                  <p className="truncate text-[10px] text-emerald-300">Mahaffeys</p>
                 </div>
                 <div className="hidden sm:block">
                   <div className="flex items-center gap-1.5">
@@ -302,15 +309,15 @@ export const Navbar: React.FC = () => {
 
             {/* Right: Scale Live Status, Sync Status & User Profile Dropdown */}
             <div className="flex shrink-0 items-center gap-1 sm:gap-2">
-              <QuickSearchButton open={searchOpen} onOpenChange={setSearchOpen} />
+              <div className="hidden sm:block"><QuickSearchButton open={searchOpen} onOpenChange={setSearchOpen} /></div>
 
               {/* Scale Quick Switcher */}
-              <div className="hidden sm:block"><ScaleQuickSwitcher /></div>
+              <div className="hidden md:block"><ScaleQuickSwitcher /></div>
 
-              {/* Scale Indicator */}
+              {/* On phones scale configuration is available in the menu. */}
               <button
                 onClick={() => setConfigOpen(true)}
-                className="flex h-11 w-11 lg:w-auto items-center justify-center lg:justify-start gap-2 lg:px-2.5 rounded-xl bg-slate-800/90 border border-slate-700/80 hover:border-emerald-500/50 hover:bg-slate-800 transition-all text-left active:scale-95"
+                className="hidden sm:flex h-11 w-11 lg:w-auto items-center justify-center lg:justify-start gap-2 lg:px-2.5 rounded-xl bg-slate-800/90 border border-slate-700/80 hover:border-emerald-500/50 hover:bg-slate-800 transition-all text-left active:scale-95"
                 aria-label={`Scale ${scaleStatus.connected ? (scaleStatus.isStable ? 'connected and stable' : 'connected, in motion') : 'offline'}. Open scale configuration`}
                 title={scaleStatus.connected ? `${scaleStatus.weight.toLocaleString()} ${scaleStatus.unit} · ${scaleStatus.isStable ? 'Stable' : 'In motion'}` : 'Scale offline — open configuration'}
               >
@@ -337,7 +344,7 @@ export const Navbar: React.FC = () => {
 
               {/* Admin Pending Requests Notification Badge */}
               {isAdmin && pendingUsersCount > 0 && (
-                <Link to="/users" title="Pending User Requests" aria-label={`${pendingUsersCount} pending user requests`} className="hidden sm:block">
+                <Link to="/settings?section=users" title="Pending User Requests" aria-label={`${pendingUsersCount} pending user requests`} className="hidden sm:block">
                   <Button size="icon" variant="outline" className="h-9 w-9 bg-amber-950/60 border-amber-500/50 text-amber-400 relative">
                     <Bell className="w-4 h-4" />
                     <span className="absolute -top-1 -right-1 bg-amber-500 text-slate-950 font-bold text-[10px] w-4 h-4 rounded-full flex items-center justify-center">
@@ -377,16 +384,16 @@ export const Navbar: React.FC = () => {
                     <DropdownMenuSeparator className="bg-slate-800" />
                     {isAdmin && (
                       <>
-                        <DropdownMenuItem onClick={() => navigate("/users")} className="cursor-pointer text-xs">
+                        <DropdownMenuItem onClick={() => navigate("/settings?section=users")} className="min-h-11 rounded-lg cursor-pointer text-sm">
                           <Shield className="w-3.5 h-3.5 mr-2 text-emerald-400" /> User Access Management
                         </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => navigate("/settings")} className="cursor-pointer text-xs">
+                        <DropdownMenuItem onClick={() => navigate("/settings")} className="min-h-11 rounded-lg cursor-pointer text-sm">
                           <Settings className="w-3.5 h-3.5 mr-2 text-slate-400" /> System Settings
                         </DropdownMenuItem>
                       </>
                     )}
                     <DropdownMenuSeparator className="bg-slate-800" />
-                    <DropdownMenuItem onClick={handleSignOut} className="cursor-pointer text-xs text-red-400 focus:text-red-400">
+                    <DropdownMenuItem onClick={handleSignOut} className="min-h-11 rounded-lg cursor-pointer text-sm text-red-400 focus:text-red-400">
                       <LogOut className="w-3.5 h-3.5 mr-2" /> Sign Out
                     </DropdownMenuItem>
                   </DropdownMenuContent>

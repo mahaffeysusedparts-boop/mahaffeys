@@ -26,20 +26,20 @@ export function StoplightControlPanel() {
     }
   };
 
-  const redOn = status.state === "red";
-  const greenOn = status.state === "green";
+  const redOn = status.state === "red" || status.state === "conflict";
+  const greenOn = status.state === "green" || status.state === "conflict";
   const disabled = !status.configured || sending !== null;
 
   const relayBadge = !status.configured
     ? { label: "Not set up", className: "border border-amber-500/40 bg-amber-500/15 text-amber-300" }
-    : status.relayReachable === false
+    : status.relayReachable === false || status.state === "conflict"
       ? { label: "Relay error", className: "border border-red-500/40 bg-red-500/15 text-red-300" }
-      : status.relayReachable
-        ? { label: "Relay online", className: "border border-emerald-500/40 bg-emerald-500/15 text-emerald-300" }
-        : { label: "Standing by", className: "border border-slate-600 bg-slate-800 text-slate-300" };
+      : status.state !== "unknown"
+        ? { label: "Output confirmed", className: "border border-emerald-500/40 bg-emerald-500/15 text-emerald-300" }
+        : { label: "Output unknown", className: "border border-amber-500/40 bg-amber-500/15 text-amber-300" };
 
   return (
-    <Card className="overflow-hidden rounded-3xl border-slate-800 bg-slate-900 text-slate-100 shadow-xl">
+    <Card data-testid="stoplight-panel" className="overflow-hidden rounded-3xl border-slate-800 bg-slate-900 text-slate-100 shadow-xl">
       <CardHeader className="border-b border-slate-800">
         <div className="flex items-center justify-between gap-3">
           <CardTitle className="flex items-center gap-2.5 text-lg">
@@ -51,8 +51,8 @@ export function StoplightControlPanel() {
           </CardTitle>
           <Badge className={relayBadge.className}>{relayBadge.label}</Badge>
         </div>
-        <p className="mt-1 text-xs text-slate-500">
-          Control traffic while the vehicle is on the scale — red holds the driver, green signals them to proceed off the scale.
+        <p className="mt-1 text-xs text-slate-400">
+          Relay outputs refresh every 3 seconds, including manual switch changes reported by the relay.
         </p>
       </CardHeader>
 
@@ -80,15 +80,17 @@ export function StoplightControlPanel() {
           </div>
 
           <div className="min-w-0 flex-1">
-            <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">Showing driver</p>
-            <p className={`mt-1 text-xl font-black tracking-tight ${
-              redOn ? "text-red-400" : greenOn ? "text-emerald-400" : "text-slate-400"
+            <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">Relay-reported output</p>
+            <p data-testid="stoplight-output" role="status" className={`mt-1 text-xl font-black tracking-tight ${
+              redOn ? "text-red-400" : greenOn ? "text-emerald-400" : "text-amber-300"
             }`}>
-              {redOn ? "HOLD — STAY ON SCALE" : greenOn ? "PROCEED OFF SCALE" : "LIGHTS OFF"}
+              {status.state === "conflict" ? "BOTH LIGHTS ON — CHECK SWITCH"
+                : status.state === "unknown" ? "OUTPUT UNKNOWN — CHECK LIGHTS"
+                : redOn ? "HOLD — STAY ON SCALE" : greenOn ? "PROCEED OFF SCALE" : "LIGHTS OFF"}
             </p>
-            {status.lastCommandAt ? (
-              <p className="mt-1 text-xs text-slate-500">
-                Last switched {new Date(status.lastCommandAt).toLocaleTimeString()}
+            {status.verifiedAt ? (
+              <p className="mt-1 text-xs text-slate-400">
+                Output read {new Date(status.verifiedAt).toLocaleTimeString()}
               </p>
             ) : null}
           </div>
@@ -97,7 +99,7 @@ export function StoplightControlPanel() {
         <div className="mt-5 space-y-2.5">
           <Button
             onClick={() => void change("red", "Stoplight set to RED — stay on scale")}
-            disabled={disabled || redOn}
+            disabled={disabled || status.state === "red"}
             className="h-12 w-full rounded-2xl bg-red-600 text-base font-black tracking-wide text-white hover:bg-red-500 disabled:opacity-60"
           >
             <Hand className="mr-2 h-5 w-5" />
@@ -105,7 +107,7 @@ export function StoplightControlPanel() {
           </Button>
           <Button
             onClick={() => void change("green", "Stoplight set to GREEN — proceed off scale")}
-            disabled={disabled || greenOn}
+            disabled={disabled || status.state === "green"}
             className="h-12 w-full rounded-2xl bg-emerald-600 text-base font-black tracking-wide text-white hover:bg-emerald-500 disabled:opacity-60"
           >
             <ArrowRight className="mr-2 h-5 w-5" />

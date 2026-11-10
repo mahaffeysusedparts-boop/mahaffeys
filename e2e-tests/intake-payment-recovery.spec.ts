@@ -9,9 +9,14 @@ test('A lost payment response reloads and opens the original paid receipt withou
   let ticket = { id: 'PAYMENT-RECOVERY', ticketType: 'SCRAP_METAL', customerName: 'Test Seller', createdAt: new Date().toISOString(), status: 'PENDING', notes: '', operatorName: user.fullName, grossTotal: 26, totalDeductions: 0, finalPayout: 26, payoutMethod: 'Cash', buying: { version: 1, revision: 1, stage: 'DRAFT' }, selectedWeighingType: 'PLATFORM', scrapLines: [{ id: 'test-line', metalGradeId: 'grade', metalName: 'Test Ferrous', metalCategory: 'Ferrous', grossWeight: 26, tareWeight: 0, netWeight: 26, billableWeight: 26, deductionPercent: 0, deductionLbs: 0, ratePerLb: 1, lineTotal: 26, loadNumber: 1, weighingMode: 'SINGLE_WEIGHT', sourceCaptureIds: ['test-capture'] }] } as Ticket;
   const paymentBodies: string[] = [];
   let issued = 0;
+  let paymentChecksUnavailable = true;
   await page.route('**/api/**', async route => {
     if (await ownership(route)) return;
     const path = new URL(route.request().url()).pathname;
+    if (path === '/api/scrap-buying/eligibility' && paymentChecksUnavailable) {
+      await route.fulfill({ status: 503, json: { statusMessage: 'Synthetic payment check unavailable' } });
+      return;
+    }
     let response: unknown = { ok: true };
     if (path === '/api/auth/status') response = { user, hasAdmin: true };
     else if (path === '/api/state') response = { state: { mahaffeys_tickets: [ticket], mahaffeys_settings: { operatorName: user.fullName, scales: [] } } };
@@ -36,6 +41,14 @@ test('A lost payment response reloads and opens the original paid receipt withou
   });
   await page.goto('/intake'); await page.getByRole('region', { name: 'Intake home', exact: true }).getByRole('button', { name: /^Open scale queue / }).click();
   await page.getByRole('button', { name: 'Claim This Intake', exact: true }).click();
+  const guidance = page.getByRole('region', { name: 'Payment completion guidance' });
+  await expect(guidance.getByText('Payment rules are not verified yet. Your entered details are kept.', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Complete & Record Payment', exact: true })).toBeDisabled();
+  paymentChecksUnavailable = false;
+  await guidance.getByRole('button', { name: 'Retry completion checks', exact: true }).click();
+  await expect(guidance.getByText('Enter the actual issued check number.', { exact: true })).toBeVisible();
+  await guidance.getByRole('listitem').filter({ hasText: 'Enter the actual issued check number.' }).getByRole('button', { name: 'Take me there' }).click();
+  await expect(page.getByLabel('Record Check Number · Required', { exact: true })).toBeFocused();
   await page.getByLabel('Record Check Number · Required', { exact: true }).fill('000123');
   await page.getByRole('button', { name: 'Complete & Record Payment', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Reconcile original submission', exact: true })).toBeVisible();

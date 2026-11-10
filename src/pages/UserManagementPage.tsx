@@ -32,7 +32,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-export default function UserManagementPage() {
+export default function UserManagementPage({ embedded = false }: { embedded?: boolean }) {
   const { allUsers, approveUser, rejectUser, updateUserStatus, updateUserRole, deleteUser, refreshUsers, user: currentUser } = useAuth();
   const [searchTerm, setSearchTerm] = useState("");
   const [roleEdits, setRoleEdits] = useState<Record<string, UserRole>>({});
@@ -151,7 +151,7 @@ export default function UserManagementPage() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
-      <Navbar />
+      {!embedded && <Navbar />}
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
         

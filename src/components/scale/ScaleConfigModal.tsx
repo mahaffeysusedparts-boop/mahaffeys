@@ -30,10 +30,10 @@ export const ScaleConfigModal: React.FC<ScaleConfigModalProps> = ({ open, onOpen
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px] max-h-[94vh] overflow-y-auto bg-slate-900 border-slate-800 text-slate-100 rounded-2xl">
-        <DialogHeader>
+      <DialogContent className="w-[calc(100%-2rem)] sm:max-w-[500px] max-h-[calc(100dvh-2rem-env(safe-area-inset-top)-env(safe-area-inset-bottom))] overflow-y-auto overscroll-contain bg-slate-900 border-slate-800 text-slate-100 rounded-2xl p-4 sm:p-6">
+        <DialogHeader className="pr-8">
           <div className="flex items-center gap-2">
-            <Scale className="w-5 h-5 text-emerald-400" />
+            <Scale className="w-5 h-5 shrink-0 text-emerald-400" />
             <DialogTitle className="text-lg font-bold text-white">
               Rice Lake IQ710 Connection
             </DialogTitle>

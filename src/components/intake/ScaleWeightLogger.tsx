@@ -929,7 +929,7 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
 
   // Typed-weight fallback row for the current step (IN or OUT).
   const manualEntryRow = (direction: 'IN' | 'OUT') => (
-    <div className={`flex items-end gap-2 rounded-xl border border-dashed p-3 ${scale.connected ? 'border-slate-700 bg-slate-950' : 'border-amber-500/50 bg-amber-950/20'}`}>
+    <div className={`flex flex-col items-stretch gap-2 rounded-xl border border-dashed p-3 sm:flex-row sm:items-end ${scale.connected ? 'border-slate-700 bg-slate-950' : 'border-amber-500/50 bg-amber-950/20'}`}>
       <div className="min-w-0 flex-1">
         <Label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
           Manual Fallback — Type {direction} Weight (LBS)
@@ -1169,9 +1169,9 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
             locked={remoteConflict || singleCapture !== null || activeTicket.scaleGrossInWeight != null} onSelect={selectWeighingType} /></div>
           {selectedWeighingType && !modeCompatible && <p role="alert" className="rounded-xl border border-amber-500/60 bg-amber-950 p-3 text-sm text-amber-100">Selected mode is incompatible with this scale. Select a compatible scale; existing readings have not been changed.</p>}
 
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
             {/* Left: weighing + lines */}
-            <div className="space-y-6 lg:col-span-2">
+            <div className="min-w-0 space-y-6 xl:col-span-2">
               <fieldset disabled={!modeCompatible || remoteConflict || saveState === 'PENDING'} className="min-w-0 space-y-6">
               {weighingMode === 'SINGLE_WEIGHT' && (
                 <Card className="border-violet-500/40 bg-slate-900 text-white shadow-lg">
@@ -1220,8 +1220,8 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
                         </Button>
                         <div className="rounded-xl border border-dashed border-amber-500/40 bg-amber-950/20 p-3">
                           <Label className="text-[10px] font-bold uppercase tracking-wider text-amber-300">Manual fallback — offline capture (LBS)</Label>
-                          <div className="mt-2 flex gap-2">
-                            <Input type="number" min={0} value={singleManualWeight} onChange={(e) => setSingleManualWeight(e.target.value)} placeholder="e.g. 85" className="h-11 border-slate-700 bg-slate-950 font-mono text-white" />
+                          <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+                            <Input type="number" inputMode="decimal" min={0} value={singleManualWeight} onChange={(e) => setSingleManualWeight(e.target.value)} placeholder="e.g. 85" className="h-11 min-w-0 border-slate-700 bg-slate-950 font-mono text-white" />
                             <Button onClick={handleSingleManualCapture} className="h-11 shrink-0 gap-1.5 bg-amber-700 text-xs font-bold text-white hover:bg-amber-600"><Keyboard className="h-4 w-4" /> Capture Manual</Button>
                           </div>
                           <p className="mt-1 text-[10px] text-amber-200/70">Manual entries are clearly marked and are not connected live readings.</p>
@@ -1240,8 +1240,8 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
                         {deductionReasonField}
                         <p className="text-xs text-slate-300">Tare treatment: {singleCapture.tareTreatment === 'NONE' ? 'no container tare' : singleCapture.tareTreatment === 'SCALE_TARE' ? 'scale-applied tare, subtracted once from gross' : 'manual container tare'}. Tare and deduction settings reset for every new batch.</p>
                         {!selectedSingleBreakdown && <p role="alert" className="text-sm text-amber-200">Invalid weights or rate. Correct this batch before confirming.</p>}
-                        <div className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-950 px-4 py-3 font-mono text-xs"><span className="text-slate-400">{fmtLbs(singleCapturedNet)} lb net − {fmtLbs(selectedSingleBreakdown?.deductionLbs)} lb ded = <span className="font-bold text-white">{fmtLbs(selectedSingleBreakdown?.billableWeight)} lb billable</span></span><span className="font-extrabold text-emerald-400">${(selectedSingleBreakdown?.lineTotal || 0).toFixed(2)}</span></div>
-                        <div className="flex gap-2"><Button onClick={handleCommitSingleLoad} disabled={!selectedSingleBreakdown || !deductionReady} className="h-12 flex-1 gap-2 bg-emerald-600 text-sm font-extrabold text-white hover:bg-emerald-500"><PackagePlus className="h-5 w-5" /> Add Weight · Keep Ticket Open</Button><Button variant="outline" onClick={handleDiscardSingleCapture} className="h-12 border-slate-700 bg-slate-950 text-xs text-slate-400 hover:text-red-400"><Trash2 className="h-4 w-4" /> Cancel</Button></div>
+                        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-800 bg-slate-950 px-4 py-3 font-mono text-xs"><span className="text-slate-400">{fmtLbs(singleCapturedNet)} lb net − {fmtLbs(selectedSingleBreakdown?.deductionLbs)} lb ded = <span className="font-bold text-white">{fmtLbs(selectedSingleBreakdown?.billableWeight)} lb billable</span></span><span className="font-extrabold text-emerald-400">${(selectedSingleBreakdown?.lineTotal || 0).toFixed(2)}</span></div>
+                        <div className="flex flex-col gap-2 sm:flex-row"><Button onClick={handleCommitSingleLoad} disabled={!selectedSingleBreakdown || !deductionReady} className="h-12 flex-1 gap-2 bg-emerald-600 text-sm font-extrabold text-white hover:bg-emerald-500"><PackagePlus className="h-5 w-5" /> Add Weight · Keep Ticket Open</Button><Button variant="outline" onClick={handleDiscardSingleCapture} className="h-12 border-slate-700 bg-slate-950 text-xs text-slate-400 hover:text-red-400"><Trash2 className="h-4 w-4" /> Cancel</Button></div>
                       </div>
                     )}
                   </CardContent>
@@ -1355,7 +1355,7 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
 
                   {weighState === 'AWAITING_OUT' && (
                     <div className="space-y-3">
-                      <div className="flex items-center justify-between rounded-xl border border-emerald-500/30 bg-emerald-950/30 px-4 py-3 font-mono text-xs">
+                      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-500/30 bg-emerald-950/30 px-4 py-3 font-mono text-xs">
                         <div>
                           <span className="block text-[10px] uppercase tracking-wide text-slate-400">IN (Gross) Logged</span>
                           <span className="text-lg font-bold text-emerald-400">{fmtLbs(activeTicket.scaleGrossInWeight)} LBS</span>
@@ -1420,7 +1420,7 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
                       <p className="text-sm text-teal-200">IN − OUT = measured net; measured net − item deductions = payable pounds. Truck contamination percentages are not applied.</p>
                       {!pendingBreakdown && <p role="alert" className="text-sm text-amber-200">Invalid weights, rate, or item deductions exceed measured net. Correct the bin review or weighing before confirming.</p>}
 
-                      <div className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-950 px-4 py-2.5 font-mono text-xs">
+                      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-800 bg-slate-950 px-4 py-2.5 font-mono text-xs">
                         <span className="text-slate-400">
                           {fmtLbs(pendingNet)} lb net − {fmtLbs(pendingDeductionLbs)} lb ded ={' '}
                           <span className="font-bold text-white">{fmtLbs(pendingBillable)} lb billable</span>
@@ -1428,7 +1428,7 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
                         <span className="font-extrabold text-emerald-400">${pendingTotal.toFixed(2)}</span>
                       </div>
 
-                      <div className="flex gap-2">
+                      <div className="flex flex-col gap-2 sm:flex-row">
                         <Button
                           onClick={handleCommitLoad}
                           disabled={!pendingBreakdown || (!binReview && !missingBinAcknowledged)}
@@ -1586,12 +1586,15 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
                 <a href="/settings#intake-requirements" className="mt-2 inline-block text-emerald-200 underline">Administrator requirement settings</a>
               </details>
               {requirements.isError && <p role="alert" className="text-sm text-amber-200">Requirements could not refresh. <button onClick={() => void requirements.refetch()} className="underline">Retry</button> before finalizing.</p>}
-              <IntakeCompletionGuidance ticket={activeTicket} requirements={!requirements.isError && !requirements.isStale ? requirements.data : undefined} eligibility={eligibility.data} eligibilityError={eligibility.error?.message} reviewed={reviewConfirmed} paymentInput={paymentInput} sellerDirty={sellerDirty} identityVerified={savedIdentity} profileAddress={profileVerified ? sellerProfile.data?.address : undefined}/>
+              <IntakeCompletionGuidance ticket={activeTicket} requirements={!requirements.isError && !requirements.isStale ? requirements.data : undefined} eligibility={eligibility.data} eligibilityError={eligibility.error?.message} reviewed={reviewConfirmed} paymentInput={paymentInput} sellerDirty={sellerDirty} identityVerified={savedIdentity} profileAddress={profileVerified ? sellerProfile.data?.address : undefined}
+                pauseReason={!ownership.owned ? 'This desk does not own the load. Use the ownership warning above to review or reclaim it before editing or paying.' : remoteConflict ? 'This load changed on another workstation. Review the conflict warning above and reload the saved load before paying.' : saveState === 'PENDING' ? 'A save is in progress. Wait for confirmation before recording payment.' : !paymentAllowed ? 'Your account cannot record payments. Ask an authorized operator or administrator to complete this purchase.' : undefined}
+                onRetryChecks={() => { void requirements.refetch(); void eligibility.refetch(); }}/>
               <div id="scale-payment"><BuyingPaymentFields eligibility={eligibility.data} error={eligibility.error?.message} loading={eligibility.isLoading} disabled={saveState==='PENDING' || remoteConflict} value={paymentInput} onChange={value=>{setPaymentInput(value);setReviewConfirmed(false);}}/></div>
               {requirements.data?.requireExplicitReview && <label id="scale-purchase-review" className="flex items-start gap-2 rounded-xl border border-slate-700 p-3 text-xs leading-relaxed"><input type="checkbox" disabled={saveState==='PENDING' || remoteConflict} checked={reviewConfirmed} onChange={(event) => setReviewConfirmed(event.target.checked)} className="mt-0.5 accent-emerald-500" />I reviewed the seller information, confirmed weights, material grades and deductions for this purchase.</label>}
               <p className="rounded-xl border border-emerald-700 bg-emerald-950 p-3 text-xs text-emerald-100">By completing, you confirm the cash was handed over or the check was issued. The purchase and payment are saved together, and both receipt copies say PAID.</p>
               <div className="grid gap-3">
-                <Button onClick={handleComplete} disabled={sellerDirty || !ownership.owned || !paymentAllowed || eligibility.isError || !buyingPaymentReady(eligibility.data,paymentInput) || (requirements.data?.requireExplicitReview !== false && !reviewConfirmed) || !requirements.data || requirements.isError || !lines.length || !!singleCapture || activeTicket.scaleGrossInWeight != null || remoteConflict || saveState === 'PENDING'} className="h-auto min-h-12 whitespace-normal rounded-xl bg-emerald-600 px-3 py-3 font-bold text-white hover:bg-emerald-500">Complete &amp; Record Payment</Button>
+                <p className="text-sm text-slate-200">If payment is unavailable, check “What is stopping completion?” above. Each item tells you what to fix.</p>
+                <Button aria-describedby="scale-completion-guidance" onClick={handleComplete} disabled={sellerDirty || !ownership.owned || !paymentAllowed || eligibility.isError || !buyingPaymentReady(eligibility.data,paymentInput) || (requirements.data?.requireExplicitReview !== false && !reviewConfirmed) || !requirements.data || requirements.isError || !lines.length || !!singleCapture || activeTicket.scaleGrossInWeight != null || remoteConflict || saveState === 'PENDING'} className="h-auto min-h-12 whitespace-normal rounded-xl bg-emerald-600 px-3 py-3 font-bold text-white hover:bg-emerald-500">Complete &amp; Record Payment</Button>
               </div>
             </div>
           </div>

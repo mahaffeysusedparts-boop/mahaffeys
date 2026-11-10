@@ -116,7 +116,7 @@ async function fetchBackupMedia(data: unknown): Promise<{ media: BackupMediaEntr
   return { media, failed };
 }
 
-export default function SettingsPage() {
+export default function SettingsPage({ embedded = false }: { embedded?: boolean }) {
   const [settings, setSettings] = useState<YardSettings>(storageService.getSettings());
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>(sharedStorage.getStatus());
   const [copiedField, setCopiedField] = useState<string | null>(null);
@@ -363,7 +363,7 @@ export default function SettingsPage() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
-      <Navbar />
+      {!embedded && <Navbar />}
 
       <main className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
         <IntakeRequirementsSettings />

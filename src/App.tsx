@@ -3,7 +3,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { lazy, Suspense } from "react";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "./context/AuthContext";
 import { ProtectedRoute } from "./components/auth/ProtectedRoute";
 import { LoadingSpinner } from "./components/layout/LoadingSpinner";
@@ -21,9 +21,7 @@ const PublicVehicleDetailPage = lazy(() => import("./pages/PublicVehicleDetailPa
 const PublicVehicleInventoryPage = lazy(() => import("./pages/PublicVehicleInventoryPage"));
 const PublicPartsPricesPage = lazy(() => import('./pages/PublicPartsPricesPage'));
 const TicketsPage = lazy(() => import("./pages/TicketsPage"));
-const PricingPage = lazy(() => import("./pages/PricingPage"));
 const CustomersPage = lazy(() => import("./pages/CustomersPage"));
-const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 const CompliancePage = lazy(() =>
   import("./pages/CompliancePage").then((module) => ({ default: module.CompliancePage })),
 );
@@ -33,18 +31,13 @@ const YardMapPage = lazy(() => import("./pages/YardMapPage"));
 const PullAPartPage = lazy(() => import("./pages/PullAPartPage"));
 const VehicleRecordPage = lazy(() => import("./pages/VehicleRecordPage"));
 const CamerasPage = lazy(() => import("./pages/CamerasPage"));
-const SystemHealthPage = lazy(() => import("./pages/SystemHealthPage"));
-const ServerAdminPage = lazy(() => import("./pages/ServerAdminPage"));
-const UserManagementPage = lazy(() => import("./pages/UserManagementPage"));
 const LoginPage = lazy(() => import("./pages/LoginPage"));
 const PendingApprovalPage = lazy(() => import("./pages/PendingApprovalPage"));
-const ReportsPage = lazy(() => import("./pages/ReportsPage"));
-const ScaleLogPage = lazy(() => import("./pages/ScaleLogPage"));
 const ShipmentsPage = lazy(() => import("./pages/ShipmentsPage"));
 const TeamOpsPage = lazy(() => import("./pages/TeamOpsPage"));
 const OperationsPage = lazy(() => import("./pages/OperationsPage"));
-const OperationsReviewPage = lazy(() => import("./pages/OperationsReviewPage"));
 const FleetPage = lazy(() => import("./pages/FleetPage"));
+const WorkspacePage = lazy(() => import("./pages/WorkspacePage"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 const queryClient = new QueryClient();
@@ -92,22 +85,23 @@ const App = () => (
               <Route path="/compliance" element={guarded(<CompliancePage />, "compliance")} />
               <Route path="/cameras" element={guarded(<CamerasPage />, "cameras")} />
               <Route path="/tickets" element={guarded(<TicketsPage />, "tickets")} />
-              <Route path="/pricing" element={guarded(<PricingPage />, "pricing")} />
+              <Route path="/pricing" element={guarded(<Navigate to="/settings?section=pricing" replace />, "pricing")} />
               <Route path="/containers" element={guarded(<ContainersPage />, "containers")} />
               <Route path="/cash-drawer" element={guarded(<CashDrawerPage />, "cash-drawer")} />
               <Route path="/yard-map" element={guarded(<YardMapPage />, "yard-map")} />
               <Route path="/customers" element={guarded(<CustomersPage />, "customers")} />
-              <Route path="/users" element={guarded(<UserManagementPage />, "users", true)} />
-              <Route path="/system-status" element={guarded(<SystemHealthPage />, "system-status")} />
-              <Route path="/server-admin" element={guarded(<ServerAdminPage />, "server-admin", true)} />
-              <Route path="/reports" element={guarded(<ReportsPage />, "reports")} />
-              <Route path="/scale-log" element={guarded(<ScaleLogPage />, "scale-log")} />
+              <Route path="/users" element={guarded(<Navigate to="/settings?section=users" replace />, "users", true)} />
+              <Route path="/system-status" element={guarded(<Navigate to="/analytics?section=health" replace />, "system-status")} />
+              <Route path="/server-admin" element={guarded(<Navigate to="/settings?section=server" replace />, "server-admin", true)} />
+              <Route path="/reports" element={guarded(<Navigate to="/analytics?section=reports" replace />, "reports")} />
+              <Route path="/scale-log" element={guarded(<Navigate to="/analytics?section=scales" replace />, "scale-log")} />
               <Route path="/operations" element={guarded(<OperationsPage />, "operations")} />
-              <Route path="/operations-review" element={guarded(<OperationsReviewPage />, "operations-review")} />
+              <Route path="/operations-review" element={guarded(<Navigate to="/analytics?section=operations" replace />, "operations-review")} />
               <Route path="/shipments" element={guarded(<ShipmentsPage />, "shipments")} />
               <Route path="/team" element={guarded(<TeamOpsPage />, "team")} />
-                            <Route path="/fleet" element={guarded(<FleetPage />, "fleet")} />
-                            <Route path="/settings" element={guarded(<SettingsPage />, "settings", true)} />
+              <Route path="/fleet" element={guarded(<FleetPage />, "fleet")} />
+              <Route path="/settings" element={guarded(<WorkspacePage kind="settings" />, undefined)} />
+              <Route path="/analytics" element={guarded(<WorkspacePage kind="analytics" />, undefined)} />
 
               {/* CATCH-ALL 404 */}
               <Route path="*" element={<NotFound />} />
