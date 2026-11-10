@@ -980,13 +980,10 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
           </Button>
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              <h1 className="font-mono text-xl font-bold text-white">Scrap Intake — Part 2</h1>
-              <Badge className="border border-emerald-500/40 bg-emerald-500/15 font-mono text-xs text-emerald-300">
-                SCALE WORKSTATION
-              </Badge>
+              <h1 className="text-xl font-bold text-white">Weigh &amp; pay</h1>
             </div>
-            <p className="mt-0.5 text-xs text-slate-400">
-              Check in the seller, choose a weighing type, then add as many reviewed batches or load cycles as needed.
+            <p className="mt-1 text-sm text-slate-200">
+              Select a load, weigh it, review the material, then record payment.
             </p>
           </div>
         </div>
@@ -1022,7 +1019,7 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
             disabled={navigationBlocked || (!serverQueue.isError && (serverQueue.data?.capacity?.openCount ?? 0) >= MAX_ACTIVE_LOADS)}
             className="gap-1.5 bg-sky-600 text-xs font-bold text-white hover:bg-sky-500"
           >
-            <Plus className="h-3.5 w-3.5" /> New Intake (Part 1)
+            <Plus className="h-3.5 w-3.5" /> Start another scrap load
           </Button>
           <Badge className="gap-1 border border-amber-500/40 bg-amber-500/10 font-mono text-xs text-amber-300">
             <Layers className="h-3.5 w-3.5" /> {serverQueue.isError || !serverQueue.data?.capacity ? `${queue.length}/${MAX_ACTIVE_LOADS} ACTIVE · UNVERIFIED` : `${serverQueue.data.capacity.openCount}/${MAX_ACTIVE_LOADS} ACTIVE · CONFIRMED`}
@@ -1072,15 +1069,15 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
             </div>
             <div>
               <p className="text-lg font-bold text-white">Select an intake to weigh</p>
-              <p className="mt-1 max-w-md text-sm text-slate-400">
+              <p className="mt-1 max-w-md text-sm text-slate-200">
                 {queue.length > 0
-                  ? 'Pick one of the active intakes above to log its IN weight, or start a new Part 1 intake.'
-                  : 'No active intakes right now. Start a Part 1 intake to collect seller info & photos first.'}
+                  ? 'Choose a saved load from the queue above.'
+                  : 'Start a new scrap load to collect seller details and photos.'}
               </p>
             </div>
             {queue.length === 0 && (
               <Button onClick={() => { void beforeLeave().then(allowed => { if (allowed) onNewIntake(); }); }} className="gap-2 bg-emerald-600 text-sm font-bold text-white hover:bg-emerald-500">
-                <Plus className="h-4 w-4" /> Start Part 1 Intake
+                <Plus className="h-4 w-4" /> Start scrap intake
               </Button>
             )}
           </CardContent>
@@ -1115,7 +1112,7 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
       {activeTicket && (
         <>
           <DraftRecoveryBanner draft={draft}/>
-          <p className="text-xs text-sky-100">Confirmed readings are already saved on the server. Recovered inputs must be reviewed against the current ticket; auto-capture and purchase acknowledgement are never resumed automatically.</p>
+          {draft.recovery && <p className="text-xs text-sky-100">Review recovered inputs against the saved ticket. Auto-capture and payment acknowledgement must be enabled again manually.</p>}
           {!ownership.owned && !ownership.error && <p role="status" className="rounded-xl bg-sky-950 p-3 text-sm text-sky-100">Verifying this desk’s ownership before editing…</p>}
           <fieldset disabled={!ownership.owned || draft.loading || !!draft.recovery || !!pendingOperation} className="contents">
           {/* Seller summary banner */}
@@ -1527,16 +1524,9 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
 
               {/* Weighing audit trail — platform + operator stamps for every captured reading */}
               {(activeTicket.weightTransactions?.length ?? 0) > 0 && (
-                <Card className="overflow-hidden border-slate-800 bg-slate-900 text-white shadow-lg">
-                  <CardHeader className="border-b border-slate-800 bg-slate-950/60 px-4 py-3">
-                    <CardTitle className="flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-slate-300">
-                      <ShieldCheck className="h-4 w-4 text-sky-400" /> Weighing Audit Trail
-                      <Badge className="border border-slate-700 bg-slate-950 font-mono text-[9px] text-slate-400">
-                        {activeTicket.weightTransactions!.length} READINGS
-                      </Badge>
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="p-0">
+                <details className="overflow-hidden rounded-2xl border border-slate-700 bg-slate-900 text-white">
+                  <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-sky-100">Weight history · {activeTicket.weightTransactions!.length} readings</summary>
+                  <div>
                     <div className="divide-y divide-slate-800/80">
                       {[...activeTicket.weightTransactions!].reverse().map((tx) => (
                         <div key={tx.id} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-4 py-2 font-mono text-[11px]">
@@ -1570,31 +1560,32 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
                       ))}
                     </div>
                     {(activeTicket.weighingCorrections ?? []).map((correction) => <div key={correction.id} className="border-t border-amber-500/30 px-4 py-3 text-xs text-amber-100"><strong>{correction.action === 'REMOVE_LINE' ? 'Line removed' : 'Weighing cancelled'}</strong> · {correction.reason}<span className="mt-1 block text-slate-300">{correction.actor} · {new Date(correction.at).toLocaleString()} · {correction.sourceCaptureIds.length} linked reading(s)</span></div>)}
-                    <p className="border-t border-slate-800 px-4 py-2 text-[10px] text-slate-300">
-                      This workstation preserves original readings and audited cancellations. Server-enforced immutability and transactional migration remain a release gate.
-                    </p>
-                  </CardContent>
-                </Card>
+                    <p className="border-t border-slate-800 px-4 py-2 text-xs text-slate-200">Original readings and correction reasons are kept here.</p>
+                  </div>
+                </details>
               )}
             </div>
 
             {/* Completion and actual payment are recorded atomically. */}
             <div id="scale-final-review" tabIndex={-1} className="scroll-mt-6 space-y-4 rounded-2xl border border-slate-700 bg-slate-900 p-4 text-white">
-              <h2 className="text-base font-bold">Final purchase review</h2>
-              <p className="rounded-xl border border-amber-500/40 bg-amber-950 p-3 text-xs text-amber-100">Review seller, weights, grades and deductions, then hand over cash or issue the check before completing. No routine manager approval is required.</p>
+              <h2 className="text-base font-bold">Review &amp; payment</h2>
               <div className="space-y-2 rounded-xl bg-slate-950 p-4 font-mono text-sm">
                 <div className="flex justify-between"><span>Reviewed lines</span><strong>{lines.length}</strong></div>
                 <div className="flex justify-between"><span>Payable pounds</span><strong>{fmtLbs(totalBillableWeight)} lb</strong></div>
                 <div className="flex justify-between text-emerald-300"><span>Purchase amount</span><strong>${totalPayout.toFixed(2)}</strong></div>
               </div>
-              <Label htmlFor="canonical-ticket-notes">Ticket notes</Label>
-              <Textarea id="canonical-ticket-notes" value={notes} onChange={(event) => setNotes(event.target.value)} onBlur={handleNotesBlur} disabled={saveState === 'PENDING' || remoteConflict} className="rounded-xl border-slate-700 bg-slate-950 text-white" />
+              <details className="rounded-xl border border-slate-700 p-3">
+                <summary className="cursor-pointer text-sm text-slate-200">Ticket notes · optional</summary>
+                <Label htmlFor="canonical-ticket-notes" className="mt-3 block">Ticket notes</Label>
+                <Textarea id="canonical-ticket-notes" value={notes} onChange={(event) => setNotes(event.target.value)} onBlur={handleNotesBlur} disabled={saveState === 'PENDING' || remoteConflict} className="mt-2 rounded-xl border-slate-700 bg-slate-950 text-white" />
+              </details>
               {(singleCapture || activeTicket.scaleGrossInWeight != null) && <p role="alert" className="text-sm text-amber-200">Unfinished weighing blocks finalization. Finish or explicitly cancel it first.</p>}
-              <div className="rounded-xl border border-slate-700 bg-slate-950 p-3 text-xs leading-relaxed text-slate-100">
-                {requirements.data ? <><p className="font-semibold">Yard requirements · revision {requirements.data.revision}</p><p className="mt-1">Photos: {requirements.data.requirePhotos ? 'Required' : 'Optional'} · Phone: {requirements.data.requirePhone ? 'Required' : 'Optional'} · Address: {requirements.data.requireAddress ? 'Required' : 'Optional'} · Seller ID: {requirements.data.requireSellerId ? 'Required' : 'Optional'} · Plate: {requirements.data.requireVehiclePlate ? 'Required' : 'Optional'} · Explicit review: {requirements.data.requireExplicitReview ? 'Required' : 'Optional'}</p><p className="mt-2 text-amber-100">ID details and photos are independent requirements. Missing optional information is recorded honestly; completed weights and applicable material/payment obligations remain enforced.</p></> : <p role="status">Loading yard requirements…</p>}
+              <details className="rounded-xl border border-slate-700 bg-slate-950 p-3 text-xs leading-relaxed text-slate-100">
+                <summary className="cursor-pointer text-sm font-semibold">Yard requirement settings</summary>
+                {requirements.data ? <p className="mt-3">Photos: {requirements.data.requirePhotos ? 'Required' : 'Optional'} · Phone: {requirements.data.requirePhone ? 'Required' : 'Optional'} · Address: {requirements.data.requireAddress ? 'Required' : 'Optional'} · Seller ID: {requirements.data.requireSellerId ? 'Required' : 'Optional'} · Plate: {requirements.data.requireVehiclePlate ? 'Required' : 'Optional'} · Explicit review: {requirements.data.requireExplicitReview ? 'Required' : 'Optional'}</p> : <p role="status">Loading yard requirements…</p>}
                 <a href="/settings#intake-requirements" className="mt-2 inline-block text-emerald-200 underline">Administrator requirement settings</a>
-                {requirements.isError && <p role="alert" className="mt-2 text-amber-200">Requirements could not refresh. <button onClick={() => void requirements.refetch()} className="underline">Retry</button> before finalizing.</p>}
-              </div>
+              </details>
+              {requirements.isError && <p role="alert" className="text-sm text-amber-200">Requirements could not refresh. <button onClick={() => void requirements.refetch()} className="underline">Retry</button> before finalizing.</p>}
               <IntakeCompletionGuidance ticket={activeTicket} requirements={!requirements.isError && !requirements.isStale ? requirements.data : undefined} eligibility={eligibility.data} eligibilityError={eligibility.error?.message} reviewed={reviewConfirmed} paymentInput={paymentInput} sellerDirty={sellerDirty} identityVerified={savedIdentity} profileAddress={profileVerified ? sellerProfile.data?.address : undefined}/>
               <div id="scale-payment"><BuyingPaymentFields eligibility={eligibility.data} error={eligibility.error?.message} loading={eligibility.isLoading} disabled={saveState==='PENDING' || remoteConflict} value={paymentInput} onChange={value=>{setPaymentInput(value);setReviewConfirmed(false);}}/></div>
               {requirements.data?.requireExplicitReview && <label id="scale-purchase-review" className="flex items-start gap-2 rounded-xl border border-slate-700 p-3 text-xs leading-relaxed"><input type="checkbox" disabled={saveState==='PENDING' || remoteConflict} checked={reviewConfirmed} onChange={(event) => setReviewConfirmed(event.target.checked)} className="mt-0.5 accent-emerald-500" />I reviewed the seller information, confirmed weights, material grades and deductions for this purchase.</label>}

@@ -42,14 +42,18 @@ for (const count of [0, 2]) {
     await expect(page.getByRole('heading', { name: 'What are you starting?' })).toBeVisible();
     await expect(page.getByText(`${count} active loads · confirmed`, { exact: true })).toBeVisible();
     await page.getByText('New scrap load', { exact: true }).click();
-    await expect(page.getByRole('heading', { name: 'Scrap Intake — Part 1', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'New scrap load', exact: true })).toBeVisible();
     await page.getByPlaceholder('e.g. Marcus Vance').fill('Recoverable Seller');
+    await expect(page.getByLabel('Receipt number', { exact: true })).not.toBeVisible();
+    await page.locator('summary').filter({ hasText: /^Receipt #/ }).click();
+    await expect(page.getByLabel('Receipt number', { exact: true })).toBeVisible();
+    await expect(page.getByPlaceholder('e.g. Marcus Vance')).toHaveValue('Recoverable Seller');
     const strip = page.getByRole('region', { name: 'Scrap next steps' });
     await strip.getByText('Workflow steps & states', { exact: true }).click();
     await expect(strip.getByRole('button', { name: 'Seller details: needs attention', exact: true })).toBeVisible();
     expect(await strip.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
     await page.getByRole('navigation', { name: 'Intake workspaces' }).getByRole('button', { name: 'Open scale queue', exact: true }).click();
-    await expect(page.getByRole('heading', { name: 'Scrap Intake — Part 2', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Weigh & pay', exact: true })).toBeVisible();
     await expect(page.getByRole('textbox', { name: 'Search scale queue', exact: true })).toBeVisible();
     if (!count) await expect(page.getByText('No active scrap loads.', { exact: true })).toBeVisible();
     await page.getByRole('navigation', { name: 'Intake workspaces' }).getByRole('button', { name: 'Intake home', exact: true }).click();
@@ -97,4 +101,30 @@ test('Saved queue cards retain stage beside CURRENT, minute ages, attention filt
   const strip = page.getByRole('region', { name: 'Scrap next steps' });
   await strip.getByRole('button', { name: 'Go to next section', exact: true }).click();
   expect(api.commands).toEqual(['ADOPT']);
+});
+
+test('Weighing keeps complete seller details tucked away and required corrections accessible', async ({ page }) => {
+  const ticket = load('SIMPLE', 2, {
+    customerId: 'PROFILE', customerPhone: '555', customerAddress: 'Street', customerIdNumber: 'ID', vehicleLicensePlate: 'TEST-1',
+    complianceCaptures: Object.fromEntries(INTAKE_PHOTO_FIELDS.map(field => [field, '/saved-photo'])),
+    buying: { version: 1, revision: 1, stage: 'DRAFT', sellerIdentity: { idType: 'Driver License', idState: 'SC', idNumber: 'ID' } },
+  });
+  await syntheticApi(page, [ticket]);
+  await page.goto('/intake');
+  await page.getByText('Open scale queue', { exact: true }).click();
+  await page.getByRole('button', { name: 'Claim This Intake', exact: true }).click();
+  const seller = page.locator('#scale-seller-editor');
+  await expect(seller.locator('summary')).toContainText('review or edit');
+  await expect(seller.getByLabel('Seller phone', { exact: true })).not.toBeVisible();
+  await expect(page.getByRole('region', { name: 'Weighing type', exact: true }).getByRole('button')).toHaveCount(2);
+  await expect(page.getByRole('button', { name: 'Complete & Record Payment', exact: true })).toBeDisabled();
+  await seller.locator('summary').click();
+  await seller.getByLabel('Seller phone', { exact: true }).fill('');
+  await expect(seller.getByText('Seller phone is required.', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Complete & Record Payment', exact: true })).toBeDisabled();
+  await seller.locator('summary').click();
+  const strip = page.getByRole('region', { name: 'Scrap next steps' });
+  await strip.locator('summary').filter({ hasText: 'Completion blockers / verification' }).click();
+  await strip.getByRole('button', { name: 'Unsaved corrections / inputs — saved evidence has not changed', exact: true }).click();
+  await expect(seller.getByLabel('Seller phone', { exact: true })).toBeVisible();
 });

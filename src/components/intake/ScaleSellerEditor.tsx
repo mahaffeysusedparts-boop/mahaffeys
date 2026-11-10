@@ -6,7 +6,7 @@ import { customerService } from '@/services/customerService';
 import { scrapBuyingService } from '@/services/scrapBuyingService';
 import { useIntakeDraft } from '@/hooks/useIntakeDraft';
 import { DraftRecoveryBanner } from './DraftRecoveryBanner';
-import { IntakeFieldError, IntakeFieldGuidance, type IntakeIssue } from './IntakeFieldGuidance';
+import { IntakeFieldError, type IntakeIssue } from './IntakeFieldGuidance';
 import { INTAKE_PHOTO_FIELDS } from '@/utils/intakeRequirements';
 import { ComplianceCaptureModal } from '@/components/compliance/ComplianceCaptureModal';
 import { Button } from '@/components/ui/button';
@@ -76,16 +76,17 @@ export function ScaleSellerEditor({ ticket, requirements, onSave, onDirtyChange 
     { id: 'scale-seller-plate', label: 'Today’s vehicle plate', value: plate, set: setPlate, max: 80 },
   ];
   return <section id="scale-seller-editor" className="space-y-4 rounded-2xl border border-sky-800 bg-slate-900 p-4">
-    <h3 className="font-bold text-sky-100">Seller details &amp; missing evidence</h3>
-    <p className="text-xs text-slate-200">Correct missing requirements here without leaving the scale desk. Saving updates this ticket and its customer profile together.</p>
     <DraftRecoveryBanner draft={draft}/>
-    <IntakeFieldGuidance issues={issues}/>
     {profile.isError && <p role="alert" className="text-xs text-amber-200">Could not load the customer profile. Retry before correcting ID details.<Button variant="link" onClick={() => void profile.refetch()} className="text-amber-100">Retry</Button></p>}
-    <fieldset disabled={saving || draft.loading || !!draft.recovery || profile.isLoading || profile.isError} className="space-y-3">
+    <details open={issues.length > 0 || dirty || !!draft.recovery || !!error ? true : undefined}>
+    <summary className="cursor-pointer font-bold text-sky-100">Seller details &amp; photos{issues.length ? ` · ${issues.length} missing requirements` : ' · review or edit'}</summary>
+    <p className="mt-3 text-xs text-slate-200">Changes are saved to this load and the customer profile together.</p>
+    <fieldset disabled={saving || draft.loading || !!draft.recovery || profile.isLoading || profile.isError} className="mt-3 space-y-3">
       <div className="grid gap-3 sm:grid-cols-2">{fields.map(field => <div key={field.id}><Label htmlFor={field.id} className="text-xs text-slate-100">{field.label}</Label><Input id={field.id} maxLength={field.max} value={field.value} onChange={event => { field.set(event.target.value); markDirty(); }} aria-invalid={!!message(field.id)} className="mt-1 h-11 rounded-xl border-slate-700 bg-slate-950 text-white"/><IntakeFieldError message={message(field.id)}/></div>)}<div><Label className="text-xs text-slate-100">ID type</Label><Select value={idType} onValueChange={value => { setIdType(value as Customer['idType']); markDirty(); }}><SelectTrigger className="mt-1 h-11 rounded-xl border-slate-700 bg-slate-950"><SelectValue placeholder="Confirm ID type"/></SelectTrigger><SelectContent>{(['Driver License','State ID','Passport','Military ID'] as const).map(type => <SelectItem key={type} value={type}>{type}</SelectItem>)}</SelectContent></Select></div></div>
       <div id="scale-seller-photos" className="space-y-2"><Button onClick={() => setPhotosOpen(true)} variant="outline" className="rounded-xl border-sky-700 bg-sky-950 text-sky-100"><Camera className="mr-2 h-4 w-4"/>Capture missing photos</Button><IntakeFieldError message={message('scale-seller-photos')}/><div className="flex flex-wrap gap-2">{INTAKE_PHOTO_FIELDS.map(field => captures[field] && <img key={field} src={captures[field]} alt={field.replace('PhotoUrl','')} className="h-16 w-20 rounded-lg object-cover"/>)}</div></div>
       <Button disabled={!dirty || saving} onClick={() => void save()} className="rounded-xl bg-sky-700 text-white hover:bg-sky-600"><Save className="mr-2 h-4 w-4"/>{saving ? 'Saving seller details…' : 'Save seller corrections'}</Button>
     </fieldset>
+    </details>
     {dirty && <p className="text-xs text-amber-200">Unsaved seller corrections: save them before completing payment.</p>}
     {captures.idReadWarning && <p role="alert" className="text-xs text-amber-200">{captures.idReadWarning}</p>}
     {error && <p role="alert" className="text-sm text-amber-200">{error}</p>}

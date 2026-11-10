@@ -73,8 +73,8 @@ for (const savedPhoto of [true, false]) {
     await expect.poll(() => savedTicket?.complianceCaptures?.idPhotoUrl).toBe('/api/uploads/seller-id');
     expect(savedTicket.customerId).toBe(customer.id);
     expect(updatedPhoto).toBe('/api/uploads/seller-id');
-    await page.getByRole('button', { name: 'New Intake (Part 1)', exact: true }).click();
-    await expect(page.getByRole('heading', { name: 'Scrap Intake — Part 1', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Start another scrap load', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'New scrap load', exact: true })).toBeVisible();
     await page.getByRole('combobox', { name: 'Find Registered Customer', exact: true }).click();
     await page.getByRole('option', { name: /ID Photo Seller/ }).click();
     await page.getByRole('button', { name: 'Confirm & reuse seller details', exact: true }).click();

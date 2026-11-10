@@ -6,6 +6,11 @@ export interface IntakeIssue { target: string; message: string; beforeCompletion
 export function goToIntakeField(target: string) {
   const element = document.getElementById(target);
   if (!element) { toast.info('This control is unavailable in the current intake stage. Return to the relevant editor first.'); return; }
+  let ancestor: HTMLElement | null = element;
+  while (ancestor) {
+    if (ancestor instanceof HTMLDetailsElement) ancestor.open = true;
+    ancestor = ancestor.parentElement;
+  }
   element.scrollIntoView({ behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'center' });
   const input = element.matches('input,textarea,button,select') ? element
     : element.querySelector<HTMLElement>('[aria-invalid="true"]:not(:disabled)')

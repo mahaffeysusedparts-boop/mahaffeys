@@ -29,14 +29,12 @@ import {
   CheckCircle2,
   ChevronsUpDown,
   CreditCard,
-  Hash,
   Loader2,
   Package,
   Phone,
   RefreshCw,
   Scan,
   Scale,
-  ShieldCheck,
   Truck,
   UserCheck,
 } from 'lucide-react';
@@ -286,7 +284,7 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
           finally { setSaving(false); }
         }}>Reconcile original intake &amp; continue</Button>
       </div>}
-      <IntakeFieldGuidance issues={issues}/>
+      {saveAttempted && <IntakeFieldGuidance issues={issues.filter(issue => !issue.beforeCompletion)}/>}
       <fieldset disabled={draft.loading || !!draft.recovery || saving || operationLoading || !!pendingOperation || !!operationError} className="contents">
       {/* Header */}
       <div className="flex flex-col gap-4 rounded-2xl border border-slate-800 bg-slate-900 p-4 shadow-xl sm:flex-row sm:items-center sm:justify-between">
@@ -301,46 +299,32 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
           </Button>
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              <h1 className="font-mono text-xl font-bold text-white">Scrap Intake — Part 1</h1>
-              <Badge className="border border-emerald-500/40 bg-emerald-500/15 font-mono text-xs text-emerald-300">
-                SELLER &amp; PHOTOS
-              </Badge>
+              <h1 className="text-xl font-bold text-white">New scrap load</h1>
             </div>
-            <p className="mt-0.5 text-xs text-slate-400">
-              Collect the seller's information and compliance photos, save, then weigh IN/OUT later at the scale desk.
+            <p className="mt-1 text-sm text-slate-200">
+              Enter seller details, add photos, then save to start weighing.
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          <div className="rounded-xl border border-slate-800 bg-slate-950 px-3 py-2">
-            <p className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Receipt #</p>
-            <Input
-              id="collection-receipt" aria-invalid={!!fieldError('collection-receipt')}
-              value={ticketNumber}
-              onChange={(e) => setTicketNumber(e.target.value)}
-              className="mt-1 h-8 w-36 border-slate-700 bg-slate-900 text-center font-mono text-sm font-bold text-amber-300"
-            />
-            <IntakeFieldError message={fieldError('collection-receipt')}/>
+        <details open={fieldError('collection-receipt') ? true : undefined} className="rounded-xl border border-slate-700 bg-slate-950 p-3">
+          <summary className="cursor-pointer text-sm text-slate-200">Receipt #{ticketNumber} · edit</summary>
+          <div className="mt-3 flex items-center gap-2">
+            <div>
+              <Label htmlFor="collection-receipt" className="text-xs text-slate-200">Receipt number</Label>
+              <Input id="collection-receipt" aria-invalid={!!fieldError('collection-receipt')} value={ticketNumber} onChange={e => setTicketNumber(e.target.value)} className="mt-1 h-11 w-36 rounded-xl border-slate-700 bg-slate-900 font-mono text-amber-200"/>
+              <IntakeFieldError message={fieldError('collection-receipt')}/>
+            </div>
+            <Button type="button" variant="outline" onClick={handleRegenerateNumber} className="mt-5 h-11 rounded-xl border-slate-700 bg-slate-800 text-slate-100"><RefreshCw className="mr-2 h-4 w-4"/>New #</Button>
           </div>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={handleRegenerateNumber}
-            title="Auto-generate a new receipt number"
-            className="h-10 gap-1 border-slate-700 bg-slate-800 text-xs text-slate-300 hover:text-white"
-          >
-            <RefreshCw className="h-3.5 w-3.5 text-emerald-400" /> New #
-          </Button>
-        </div>
+        </details>
       </div>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-6">
         {/* Left: Seller + Photos */}
-        <div className="space-y-6 lg:col-span-2">
+        <div className="space-y-6">
           {/* Seller card */}
-          <Card className="border-slate-800 bg-slate-900 text-white shadow-xl">
+          <Card className="rounded-2xl border-slate-800 bg-slate-900 text-white shadow-xl">
             <CardHeader className="flex flex-row items-center justify-between border-b border-slate-800 bg-slate-950/80 px-4 py-3.5">
               <div className="flex items-center gap-2">
                 <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-950 text-sm font-black text-emerald-400 ring-1 ring-emerald-500/30">1</span>
@@ -573,29 +557,6 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
             </CardHeader>
 
             <CardContent className="space-y-4 p-4">
-              <div className="space-y-2 rounded-xl border border-slate-800 bg-slate-950 p-4 font-mono text-xs">
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Receipt #:</span>
-                  <span className="font-bold text-amber-400">{ticketNumber}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Seller:</span>
-                  <span className="font-bold text-white">{customerName || 'Not entered'}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Phone:</span>
-                  <span className="font-bold text-emerald-400">{customerPhone || 'Not entered'}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">ID #:</span>
-                  <span className="font-bold text-amber-300">{customerIdNumber || 'Not entered'}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Photos:</span>
-                  <span className="font-bold text-emerald-400">{compliance.score}%</span>
-                </div>
-              </div>
-
               {activeLoadCount >= MAX_ACTIVE_LOADS && <div id="collection-capacity" className="rounded-xl border border-amber-700 bg-amber-950 p-3 text-xs text-amber-100"><p>All {MAX_ACTIVE_LOADS} intake slots are occupied. Your draft is kept while you clear a slot.</p><Button onClick={() => { void beforeLeave().then(allowed => { if (allowed) onOpenQueue(); }); }} variant="link" className="px-0 text-amber-100">Open scale queue</Button></div>}
               <Button
                 id="collection-handoff"
@@ -608,22 +569,18 @@ export const IntakeCollectionForm: React.FC<IntakeCollectionFormProps> = ({ onBa
                 {!saving && <ArrowRight className="h-4 w-4" />}
               </Button>
 
-              <p className="flex items-start gap-2 text-[11px] leading-relaxed text-slate-400">
-                <Hash className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-400" />
-                Saving stores this intake in the active queue. At the scale desk you can log this load's IN weight,
-                switch to another transaction, and come back to log the OUT weight.
-              </p>
+              <p className="text-sm text-slate-200">This saves the load to the queue. No payment is recorded yet.</p>
             </CardContent>
           </Card>
 
-          <div className="flex items-start gap-3 rounded-2xl border border-emerald-800 bg-emerald-950 p-4 text-xs text-emerald-100">
-            <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-emerald-300" />
-            <div>
-              <p>{requirements.data ? `Yard finalization settings — Photos: ${requirements.data.requirePhotos ? 'required' : 'optional'} · Phone: ${requirements.data.requirePhone ? 'required' : 'optional'} · Address: ${requirements.data.requireAddress ? 'required' : 'optional'} · Seller ID: ${requirements.data.requireSellerId ? 'required' : 'optional'} · Plate: ${requirements.data.requireVehiclePlate ? 'required' : 'optional'} · Explicit review: ${requirements.data.requireExplicitReview ? 'required' : 'optional'}.` : 'Loading yard finalization settings…'}</p>
-              <p className="mt-2">Missing optional information will not block finalization. ID details and photos are independent settings. Applicable material/payment obligations still apply. Complete &amp; Record Payment records actual disbursement and opens your receipt.</p>
-              <a href="/settings#intake-requirements" className="mt-2 inline-block font-semibold underline">Administrator requirement settings</a>
+          <details className="rounded-2xl border border-slate-700 p-4 text-xs text-slate-200">
+            <summary className="cursor-pointer text-sm font-semibold">Yard requirement settings</summary>
+            <div className="mt-3 space-y-2">
+              <p>{requirements.data ? `Photos: ${requirements.data.requirePhotos ? 'required' : 'optional'} · Phone: ${requirements.data.requirePhone ? 'required' : 'optional'} · Address: ${requirements.data.requireAddress ? 'required' : 'optional'} · Seller ID: ${requirements.data.requireSellerId ? 'required' : 'optional'} · Plate: ${requirements.data.requireVehiclePlate ? 'required' : 'optional'} · Review: ${requirements.data.requireExplicitReview ? 'required' : 'optional'}.` : 'Loading yard requirements…'}</p>
+              <p>Required information must be completed before payment. You can save an incomplete load and finish it at the scale.</p>
+              <a href="/settings#intake-requirements" className="inline-block font-semibold text-emerald-200 underline">Administrator requirement settings</a>
             </div>
-          </div>
+          </details>
         </div>
       </div>
 
