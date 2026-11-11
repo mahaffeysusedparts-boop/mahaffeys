@@ -13,7 +13,7 @@ const sizes = [
 async function mockApi(page: Page, authenticated: boolean, ticket?: Ticket) {
   // Synthetic responses keep responsive checks away from yard data and hardware.
   const user = { id: 'responsive-admin', username: 'responsive', fullName: 'A Very Long Workstation Operator Name', role: 'admin', status: 'approved' };
-  const scales = ticket ? [{ id: 'test-platform', name: 'Test Platform Scale', connectionType: 'TCP', weighingMode: 'SINGLE_WEIGHT', supportedWeighingTypes: ['SINGLE_WEIGHT'], capacityLbs: 10000, resolutionLbs: 1 }] : [];
+  const scales = ticket ? [{ id: 'test-platform', name: 'Test Platform Scale', connectionType: 'TCP', weighingMode: 'SINGLE_WEIGHT', supportedWeighingTypes: ['PLATFORM'], capacityLbs: 10000, resolutionLbs: 1 }] : [];
   const state = { mahaffeys_tickets: ticket ? [ticket] : [], mahaffeys_metals: [{ id: 'test-metal', name: 'Test Ferrous', code: 'TEST', category: 'Ferrous', ratePerLb: 0.1 }], mahaffeys_settings: { operatorName: user.fullName, yardName: 'Mahaffeys Test Yard', scales, currentScaleId: scales[0]?.id } };
   await page.addInitScript(values => {
     for (const [key, value] of Object.entries(values)) localStorage.setItem(key, JSON.stringify(value));
@@ -28,7 +28,14 @@ async function mockApi(page: Page, authenticated: boolean, ticket?: Ticket) {
     else if (path === '/api/printers') response = [];
     else if (path === '/api/state') response = { state };
     else if (path === '/api/scrap-buying/queue') response = queueEnvelope(ticket ? [ticket] : []);
-    else if (path === '/api/scrap-buying/commands') response = ticket;
+    else if (path === '/api/scrap-buying/commands') {
+      const command = route.request().postDataJSON();
+      if (command.action === 'SAVE') {
+        ticket = { ...command.ticket, buying: { ...ticket!.buying!, revision: ticket!.buying!.revision + 1 } };
+        state.mahaffeys_tickets = [ticket!];
+      } else expect(command.action).toBe('ADOPT');
+      response = ticket;
+    }
     else if (path === '/api/scrap-buying/eligibility') response = { ticketId: ticket?.id, revision: 1, allowedMethods: [], selectableMethods: [], reasons: [], permitRequired: false, documentationRequired: false };
     else if (path === '/api/scale/evidence-config') response = { scales: [], cameras: [] };
     else if (path === '/api/scrap-buying/bin-inspections') response = { cycles: [] };
@@ -146,7 +153,7 @@ for (const size of sizes) {
 for (const size of sizes.filter(size => size.name === 'small phone' || size.name === 'iPad landscape')) {
   test(`${size.name}: capture and cancel a manual platform batch without overflow`, async ({ page }) => {
     await page.setViewportSize(size);
-    const ticket = { id: 'RESPONSIVE-BATCH', ticketType: 'SCRAP_METAL', customerName: 'Mobile Seller', createdAt: new Date().toISOString(), operatorName: 'Responsive Tester', status: 'PENDING', finalPayout: 0, grossTotal: 0, totalDeductions: 0, payoutMethod: 'Cash', selectedWeighingType: 'SINGLE_WEIGHT', scrapLines: [], weightTransactions: [], buying: { version: 1, revision: 1, stage: 'DRAFT' } } as Ticket;
+    const ticket = { id: 'RESPONSIVE-BATCH', ticketType: 'SCRAP_METAL', customerName: 'Mobile Seller', createdAt: new Date().toISOString(), operatorName: 'Responsive Tester', status: 'PENDING', finalPayout: 0, grossTotal: 0, totalDeductions: 0, payoutMethod: 'Cash', selectedWeighingType: 'PLATFORM', scrapLines: [], weightTransactions: [], buying: { version: 1, revision: 1, stage: 'DRAFT' } } as Ticket;
     await mockApi(page, true, ticket);
     await page.goto('/intake');
     await page.getByText('Open scale queue', { exact: true }).click();
@@ -163,6 +170,11 @@ for (const size of sizes.filter(size => size.name === 'small phone' || size.name
     await expect(review.getByRole('button', { name: 'Add Weight · Keep Ticket Open', exact: true })).toBeEnabled();
     await noPageOverflow(page);
     await review.getByRole('button', { name: 'Cancel', exact: true }).click();
+    const correction = page.getByRole('alertdialog', { name: 'Record weighing correction' });
+    await expect(correction.getByRole('button', { name: 'Confirm audited correction', exact: true })).toBeDisabled();
+    await correction.getByLabel('Reason (required)', { exact: true }).fill('Synthetic batch entered for the wrong load');
+    await correction.getByRole('button', { name: 'Confirm audited correction', exact: true }).click();
+    await expect(correction).not.toBeVisible();
     await expect(manual).toBeVisible();
     await expect(page.getByText('FINAL NET', { exact: true })).not.toBeVisible();
   });
