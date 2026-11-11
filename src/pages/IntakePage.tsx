@@ -72,11 +72,11 @@ function IntakeWorkspace() {
       {activeMode === 'CAR_SALVAGE' && <CarIntakeForm onBack={home} workspaceNavigation={navigation}/>}
       {activeMode === 'SCRAP_METAL' && scrapStage === 'COLLECT' && <IntakeCollectionForm onBack={home} onSaved={id => { setScrapTicketId(id); setScrapStage('SCALE'); }} onOpenQueue={() => enter('SCALE')} workspaceNavigation={navigation}/>}
       {activeMode === 'SCRAP_METAL' && scrapStage === 'SCALE' && <div className="space-y-6">
+        <section aria-label="Scale traffic light controls" className="mx-auto max-w-6xl">
+          <h2 className="mb-4 text-sm font-semibold text-sky-100">Scale traffic light controls</h2>
+          <div className="max-w-md"><StoplightControlPanel/></div>
+        </section>
         <ScaleWeightLogger onBack={home} onNewIntake={() => enter('COLLECT')} activeTicketId={scrapTicketId} onActiveTicketChange={setScrapTicketId} onTicketCreated={ticket => { setCreatedTicket(ticket); setReceiptOpen(true); }} workspaceNavigation={navigation}/>
-        <details className="mx-auto max-w-6xl rounded-2xl border border-slate-700 bg-slate-900 p-4">
-          <summary className="cursor-pointer text-sm font-semibold text-sky-100">Scale traffic light controls</summary>
-          <div className="mt-4 max-w-md"><StoplightControlPanel/></div>
-        </details>
       </div>}
     </main>
     <ReceiptModal ticket={createdTicket} open={receiptOpen} onOpenChange={setReceiptOpen}/>

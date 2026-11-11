@@ -39,8 +39,11 @@ test("Desk light follows manual relay changes and only displays confirmed output
   });
   await page.goto("/intake");
   await page.getByText("Open scale queue", { exact: true }).click();
-  await page.getByText("Scale traffic light controls", { exact: true }).click();
   const panel = page.getByTestId("stoplight-panel");
+  await expect(panel).toBeVisible();
+  await expect(panel.getByRole("button", { name: "RED — STAY ON SCALE", exact: true })).toBeVisible();
+  await expect(panel.getByRole("button", { name: "GREEN — PROCEED OFF SCALE", exact: true })).toBeVisible();
+  await expect(panel.getByRole("button", { name: "All lights off", exact: true })).toBeVisible();
   const indicator = panel.getByTestId("stoplight-output");
   await expect(indicator).toHaveText("HOLD — STAY ON SCALE");
 
