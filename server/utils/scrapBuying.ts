@@ -3,6 +3,7 @@ import { createError, type H3Event } from 'nitro/h3';
 import { z } from 'zod';
 import { requireUser, type PublicUser } from './auth';
 import { query, withTransaction } from './db';
+import { auditFor, recordAudit } from './audit';
 import { lockFinancialState, putState, stateValue } from './financialState';
 import { serverScale } from './scale';
 import { normalizeWeight, validateScaleReading, validatedBreakdown, validatedItemBreakdown } from '../../src/utils/weighingContract';
@@ -316,7 +317,8 @@ async function pay(client: PoolClient, ticket: Ticket, command: z.infer<typeof b
 export async function executeBuyingCommand(command: z.infer<typeof buyingCommandSchema>, user: PublicUser) {
   if (!canRecordBuyingPayment(user)) fail('Buying action is not permitted for this account',403);
   const hash = createHash('sha256').update(canonical(command)).digest('hex');
-  return withTransaction(async (client) => {
+  let changed = false;
+  const committed = await withTransaction(async (client) => {
     await lockFinancialState(client);
     const retry = await client.query('SELECT request_hash,result FROM scrap_buying_events WHERE actor_id=$1 AND idempotency_key=$2',[user.id,command.idempotencyKey]);
     if (retry.rows[0]) { if (retry.rows[0].request_hash !== hash) fail('Idempotency key was reused for another request'); return retry.rows[0].result as Ticket; }
@@ -386,6 +388,12 @@ export async function executeBuyingCommand(command: z.infer<typeof buyingCommand
     }
     await projectTicket(client,next,user.id);
     await client.query('INSERT INTO scrap_buying_events(id,ticket_id,revision,actor_id,idempotency_key,request_hash,action,result) VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb)',[randomUUID(),next.id,next.buying!.revision,user.id,command.idempotencyKey,hash,command.action,JSON.stringify(next)]);
+    changed = true;
     return next;
   });
+  const action = command.action === 'CREATE' ? 'purchase.created'
+    : command.action === 'VOID' ? 'purchase.voided'
+    : ['PAY', 'FINALIZE_AND_PAY'].includes(command.action) ? 'purchase.paid' : null;
+  if (changed && action) await recordAudit(auditFor(user, { action, entity: 'purchase', entityId: committed.id }));
+  return committed;
 }

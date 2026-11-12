@@ -2,6 +2,7 @@ import { defineHandler } from "nitro";
 import { createError, getRequestHeaders, getRequestURL, readBody } from "nitro/h3";
 import { requireUser } from "../../../utils/auth";
 import { commandStoplight, getStoplightStatus } from "../../../utils/stoplight";
+import { auditFor, recordAudit } from '../../../utils/audit';
 
 export default defineHandler(async (event) => {
   const user = await requireUser(event);
@@ -29,5 +30,6 @@ export default defineHandler(async (event) => {
     });
   }
 
+  await recordAudit(auditFor(user, { action: 'stoplight.changed', entity: 'stoplight', detail: { state: body.state } }));
   return getStoplightStatus();
 });

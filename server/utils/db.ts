@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import type { PGlite } from '@electric-sql/pglite';
 import { buyingPriceSchema } from './buyingPriceSchema';
 import { isLocalPreview, localPreviewDirectory } from './databaseMode';
+import { notificationSchema } from './phoneNotificationSchema';
 
 let pool: Promise<Pool> | undefined;
 let embedded: PGlite | undefined;
@@ -221,6 +222,7 @@ async function initializeSchema() {
   `);
 
   await database.query(buyingPriceSchema);
+  await database.query(notificationSchema);
 
   await database.query(`
     INSERT INTO customers (

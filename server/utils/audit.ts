@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { query } from "./db";
 import type { PublicUser } from "./auth";
+import { notifyOperatorAction } from './phoneNotifications';
 
 export interface AuditEntry {
   /** Authenticated user performing the action (null for anonymous attempts). */
@@ -35,6 +36,7 @@ export async function recordAudit(entry: AuditEntry): Promise<void> {
   } catch (error) {
     console.warn("[audit] failed to record entry:", error instanceof Error ? error.message : error);
   }
+  await notifyOperatorAction(entry);
 }
 
 /** Convenience: attribute an audit entry to the authenticated user. */

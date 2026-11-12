@@ -2,10 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Ticket } from '../../src/types/scrap';
 import type { PublicUser } from './auth';
 
-const mocks = vi.hoisted(() => ({ query: vi.fn(), putState: vi.fn(), ticket: null as Ticket | null, events: new Map<string, { request_hash: string; result: Ticket }>() }));
+const mocks = vi.hoisted(() => ({ query: vi.fn(), putState: vi.fn(), audit: vi.fn(), ticket: null as Ticket | null, events: new Map<string, { request_hash: string; result: Ticket }>() }));
 vi.mock('nitro/h3', () => ({ createError: ({ statusCode, statusMessage }: { statusCode: number; statusMessage: string }) => Object.assign(new Error(statusMessage), { statusCode }) }));
 vi.mock('./db', () => ({ query: mocks.query, withTransaction: async (run: (client: unknown) => unknown) => run({ query: mocks.query }) }));
 vi.mock('./auth', () => ({ requireUser: vi.fn() }));
+vi.mock('./audit', () => ({ recordAudit: mocks.audit, auditFor: (user: PublicUser, entry: object) => ({ ...entry, userId: user.id, userName: user.fullName }) }));
 vi.mock('./intakeOwnership', () => ({ ensureIntakeOwnership: vi.fn(), lockIntakeOwnership: vi.fn() }));
 vi.mock('./financialState', () => ({ lockFinancialState: vi.fn(), stateValue: async () => [mocks.ticket], putState: mocks.putState }));
 vi.mock('./scale', () => ({ serverScale: {} }));
@@ -20,7 +21,7 @@ const actor = { id: 'admin', fullName: 'Void Administrator', username: 'admin', 
 const request = (revision = 5) => ({ action: 'VOID' as const, id: 'PAID-VOID', revision, idempotencyKey: crypto.randomUUID(), reason: 'Entry error — wrong seller' });
 
 beforeEach(() => {
-  mocks.events.clear(); mocks.query.mockReset(); mocks.putState.mockReset();
+  mocks.events.clear(); mocks.query.mockReset(); mocks.putState.mockReset(); mocks.audit.mockReset();
   mocks.ticket = {
     id: 'PAID-VOID', ticketType: 'SCRAP_METAL', customerName: 'Synthetic Seller', createdAt: '2026-01-01T12:00:00Z', status: 'COMPLETED',
     grossTotal: 20, totalDeductions: 0, finalPayout: 20, payoutMethod: 'Cash', operatorName: actor.fullName, scrapLines: [],
@@ -46,6 +47,8 @@ describe('paid purchase voiding', () => {
     expect(mocks.putState).toHaveBeenCalledWith(expect.anything(), 'mahaffeys_tickets', [voided], actor.id);
     expect(await executeBuyingCommand(command, { ...actor, role })).toEqual(voided);
     expect(mocks.events.size).toBe(1);
+    expect(mocks.audit).toHaveBeenCalledTimes(1);
+    expect(mocks.audit).toHaveBeenCalledWith({ action: 'purchase.voided', entity: 'purchase', entityId: voided.id, userId: actor.id, userName: actor.fullName });
     expect(mocks.query.mock.calls.some(([sql]) => /(?:INSERT|UPDATE|DELETE).*scrap_buying_payments/i.test(sql))).toBe(false);
     expect(mocks.putState.mock.calls.some(([, key]) => key === 'mahaffeys_cash_drawer')).toBe(false);
     await expect(executeBuyingCommand({ ...request(6), action: 'PAY', method: 'Cash', disbursed: true }, actor)).rejects.toThrow('Finalize');

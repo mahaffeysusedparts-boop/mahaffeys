@@ -10,6 +10,7 @@ import { storageService } from '@/services/storageService';
 import { canOpenSection, workspaceSections, type WorkspaceKind } from '@/utils/workspaceSections';
 
 const SettingsPage = lazy(() => import('./SettingsPage'));
+const PhoneNotificationSettings = lazy(() => import('@/components/settings/PhoneNotificationSettings'));
 const PricingPage = lazy(() => import('./PricingPage'));
 const UserManagementPage = lazy(() => import('./UserManagementPage'));
 const ServerAdminPage = lazy(() => import('./ServerAdminPage'));
@@ -34,6 +35,7 @@ export default function WorkspacePage({ kind }: { kind: WorkspaceKind }) {
 
   const content = kind === 'settings' ? {
     general: <SettingsPage embedded />, pricing: <PricingPage embedded />,
+    notifications: <PhoneNotificationSettings />,
     users: <UserManagementPage embedded />, server: <ServerAdminPage embedded />,
   } : {
     reports: <ReportsPage embedded />, operations: <OperationsReviewPage embedded />,

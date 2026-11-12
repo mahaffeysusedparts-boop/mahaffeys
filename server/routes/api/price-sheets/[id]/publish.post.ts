@@ -4,6 +4,7 @@ import { getRouterParam, assertBodySize, readBody, createError } from 'nitro/h3'
 import { z } from 'zod';
 import { withTransaction } from '../../../../utils/db';
 import { priceSheetUser, publishableRows } from '../../../../utils/priceSheets';
+import { auditFor, recordAudit } from '../../../../utils/audit';
 import type { ReviewedPriceRow } from '../../../../../src/types/priceSheets';
 
 export default defineHandler(async (event) => {
@@ -12,7 +13,8 @@ export default defineHandler(async (event) => {
   assertBodySize(event, 4096);
   const body = z.object({revision:z.number().int().positive(),expectedActiveVersion:z.string().uuid().nullable(),reviewedWarnings:z.literal(true)}).safeParse(await readBody(event));
   if (!id.success || !body.success) throw createError({statusCode:400,statusMessage:'Explicit draft, preview and warning review are required'});
-  return withTransaction(async (client) => {
+  let changed = false;
+  const committed = await withTransaction(async (client) => {
     await client.query('SELECT pg_advisory_xact_lock(114682)');
     const active = (await client.query('SELECT version_id FROM price_sheet_active')).rows[0]?.version_id ?? null;
     const draft = (await client.query('SELECT revision,status,rows FROM price_sheet_drafts WHERE id=$1 FOR UPDATE',[id.data])).rows[0];
@@ -26,6 +28,9 @@ export default defineHandler(async (event) => {
     if (!existing) await client.query('INSERT INTO price_sheet_versions(id,document_id,rows,published_by,source_revision) VALUES($1,$2,$3::jsonb,$4,$5)',[version,id.data,JSON.stringify(rows),user.id,draft.revision]);
     await client.query('INSERT INTO price_sheet_active(singleton,version_id,updated_at) VALUES(TRUE,$1,NOW()) ON CONFLICT(singleton) DO UPDATE SET version_id=EXCLUDED.version_id,updated_at=NOW()',[version]);
     await client.query("INSERT INTO price_sheet_publication_events(id,version_id,actor_id,action) VALUES($1,$2,$3,'PUBLISH')",[randomUUID(),version,user.id]);
+    changed = true;
     return {version};
   });
+  if (changed) await recordAudit(auditFor(user, { action: 'prices.changed', entity: 'price_sheet', entityId: committed.version }));
+  return committed;
 });

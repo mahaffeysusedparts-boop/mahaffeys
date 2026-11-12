@@ -32,7 +32,7 @@ test('Phone navigation opens consolidated settings and analytics and preserves o
   await expect(page).toHaveURL(/\/settings$/);
   await expect(drawer).not.toBeVisible();
   const settings = page.getByRole('navigation', { name: 'Settings sections' });
-  await expect(settings.getByRole('link')).toHaveCount(4);
+  await expect(settings.getByRole('link')).toHaveCount(5);
   await settings.getByRole('link', { name: 'User access', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'User Management & Workstation Access Control' })).toBeVisible();
   await expect(page.locator('header')).toHaveCount(1);

@@ -8,6 +8,7 @@
  *    the app's own offline queue handles writes while disconnected.
  */
 
+importScripts('/push-events.js');
 const CACHE_NAME = "mahaffeys-shell-v1";
 const SHELL_URLS = ["/", "/index.html", "/manifest.json", "/mahaffeys-logo.png"];
 
