@@ -9,7 +9,7 @@ export function IntakeModeSelector({ onEntry, queueCount, queueState }: {
 }) {
   const cards = [
     { entry: 'COLLECT' as const, title: 'New scrap load', description: 'Collect seller details and evidence, then hand off to the scale.', Icon: ClipboardPlus, accent: 'border-emerald-700 text-emerald-200', label: 'Seller collection' },
-    { entry: 'SCALE' as const, title: 'Open scale queue', description: 'Claim or continue a saved load. Opens the queue even when it is empty.', Icon: Scale, accent: 'border-sky-700 text-sky-200', label: queueState === 'loading' ? 'Active loads loading…' : queueState === 'unverified' ? 'Active load count unverified' : `${queueCount ?? 0} active loads · confirmed` },
+    { entry: 'SCALE' as const, title: 'Open scale queue', description: 'Open or continue a saved load. Opens the queue even when it is empty.', Icon: Scale, accent: 'border-sky-700 text-sky-200', label: queueState === 'loading' ? 'Active loads loading…' : queueState === 'unverified' ? 'Active load count unverified' : `${queueCount ?? 0} active loads · confirmed` },
     { entry: 'VEHICLE' as const, title: 'New vehicle', description: 'Flat-rate vehicle intake with its separate Pending Group workflow.', Icon: Car, accent: 'border-amber-700 text-amber-200', label: 'Vehicle intake · no scale' },
   ];
   return <section className="mx-auto max-w-6xl space-y-6 py-4" aria-label="Intake home">

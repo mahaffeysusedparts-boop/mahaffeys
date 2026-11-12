@@ -58,7 +58,7 @@ test('Stable weight captures immediately and another device receives same-login 
     for (const page of [desk, otherDevice]) {
       await page.goto('/intake');
       await page.getByText('Open scale queue', { exact: true }).click();
-      await page.getByRole('button', { name: /Claim This Intake|Switch to This Intake|Continue This Intake/ }).click();
+      await page.getByRole('button', { name: /Open This Intake|Continue This Intake/ }).click();
       await expect(page.getByRole('button', { name: /LOG IN WEIGHT/ })).toBeEnabled();
     }
     // Fill the old smoothing window, then change sharply to a stable reading.

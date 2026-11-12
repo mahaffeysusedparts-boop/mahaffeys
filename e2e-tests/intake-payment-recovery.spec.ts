@@ -40,7 +40,7 @@ test('A lost payment response reloads and opens the original paid receipt withou
     await route.fulfill({ json: response });
   });
   await page.goto('/intake'); await page.getByRole('region', { name: 'Intake home', exact: true }).getByRole('button', { name: /^Open scale queue / }).click();
-  await page.getByRole('button', { name: 'Claim This Intake', exact: true }).click();
+  await page.getByRole('button', { name: 'Open This Intake', exact: true }).click();
   const guidance = page.getByRole('region', { name: 'Payment completion guidance' });
   await expect(guidance.getByText('Payment rules are not verified yet. Your entered details are kept.', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Complete & Record Payment', exact: true })).toBeDisabled();

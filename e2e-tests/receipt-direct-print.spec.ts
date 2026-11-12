@@ -102,6 +102,30 @@ for (const { missingPhoto, savedProfile } of [
         expect(box?.width).toBeGreaterThan(30);
         expect(box?.height).toBeGreaterThan(30);
       }
+      const layouts = await rendered.evaluate(() => Array.from(document.querySelectorAll<HTMLElement>('.printable-receipt-card')).map(card => {
+        const style = getComputedStyle(card);
+        const header = getComputedStyle(card.firstElementChild!);
+        const signature = getComputedStyle(card.querySelector('.h-12')!);
+        const bounds = card.getBoundingClientRect();
+        const footer = card.lastElementChild!.getBoundingClientRect();
+        return {
+          font: style.fontFamily, lineHeight: style.lineHeight, padding: style.paddingTop,
+          headerLayout: header.display, headerBackground: header.backgroundColor,
+          signatureHeight: signature.height, overflow: style.overflow,
+          height: bounds.height, footerInside: footer.bottom <= bounds.bottom,
+        };
+      }));
+      for (const layout of layouts) {
+        expect(layout.font).toContain('monospace');
+        expect(parseFloat(layout.lineHeight)).toBeCloseTo(15.6, 1);
+        expect(parseFloat(layout.padding)).toBeCloseTo(24.96, 1);
+        expect(layout.headerLayout).toBe('flex');
+        expect(layout.headerBackground).toBe('rgb(15, 23, 42)');
+        expect(parseFloat(layout.signatureHeight)).toBeCloseTo(48, 1);
+        expect(layout.overflow).toBe('visible');
+        expect(layout.height).toBeLessThanOrEqual(960);
+        expect(layout.footerInside, 'The complete receipt, including signatures and footer, fits without clipping').toBe(true);
+      }
       const pdf = await rendered.pdf({ printBackground: true, preferCSSPageSize: true });
       expect((pdf.toString('latin1').match(/\/Subtype\s*\/Image\b/g) ?? []).length).toBeGreaterThanOrEqual(5);
       expect((pdf.toString('latin1').match(/\/Type\s*\/Page\b/g) ?? []).length, 'One page per receipt copy, with no trailing sheet').toBe(2);

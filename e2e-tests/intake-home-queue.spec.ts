@@ -94,7 +94,7 @@ test('Saved queue cards retain stage beside CURRENT, minute ages, attention filt
   await expect(newer.getByText('Since IN: 12 min', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Needs details (1)', exact: true })).toBeVisible();
   expect(api.profileRequests).toHaveLength(0);
-  await newer.getByRole('button', { name: 'Claim This Intake', exact: true }).click();
+  await newer.getByRole('button', { name: 'Open This Intake', exact: true }).click();
   await expect(newer.getByText('CURRENT', { exact: true })).toBeVisible();
   await expect(newer.getByText('On yard · awaiting OUT', { exact: true })).toBeVisible();
   await page.clock.fastForward(60000);
@@ -122,7 +122,7 @@ test('Weighing keeps complete seller details tucked away and required correction
   await syntheticApi(page, [ticket]);
   await page.goto('/intake');
   await page.getByText('Open scale queue', { exact: true }).click();
-  await page.getByRole('button', { name: 'Claim This Intake', exact: true }).click();
+  await page.getByRole('button', { name: 'Open This Intake', exact: true }).click();
   const seller = page.locator('#scale-seller-editor');
   await expect(seller.locator('summary')).toContainText('review or edit');
   await expect(seller.getByLabel('Seller phone', { exact: true })).not.toBeVisible();

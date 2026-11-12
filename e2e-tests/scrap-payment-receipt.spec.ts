@@ -58,7 +58,7 @@ for (const scenario of [
     });
     await page.goto('/intake');
     await page.getByText('Open scale queue', { exact: true }).click();
-    await page.getByRole('button', { name: /Claim This Intake|Switch to This Intake|Continue This Intake/ }).click();
+    await page.getByRole('button', { name: /Open This Intake|Continue This Intake/ }).click();
     await expect(page.getByRole('heading', { name: 'Review & payment' })).toBeVisible();
     await expect(page.getByRole('button', { name: /Pay Later/ })).toHaveCount(0);
     await expect(page.getByRole('button', { name: scenario.method, exact: true })).toHaveAttribute('aria-pressed', 'true');

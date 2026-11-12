@@ -19,7 +19,7 @@ export function goToIntakeField(target: string) {
   if (!input || input.matches(':disabled,[aria-disabled="true"]')) {
     element.tabIndex = -1;
     element.focus({ preventScroll: true });
-    toast.info('Editing this requirement is paused. Resolve recovery, ownership or the current save before continuing.');
+    toast.info('Editing this requirement is paused. Resolve recovery, conflicting edits or the current save before continuing.');
     return;
   }
   input.focus({ preventScroll: true });

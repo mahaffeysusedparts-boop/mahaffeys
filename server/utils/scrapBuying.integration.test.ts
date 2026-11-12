@@ -15,12 +15,7 @@ let finance:typeof import('./financialState');
 const user={id:'test-admin',fullName:'SYNTHETIC TEST OPERATOR',username:'test-admin',role:'admin',status:'approved',createdAt:new Date().toISOString()} as PublicUser;
 let ticket:Ticket;
 const grade={id:'test-grade',name:'TEST FERROUS',code:'TEST',category:'Ferrous',ratePerLb:0.5,description:'Synthetic test grade'};
-const fixtureClient = randomUUID();
 async function execute(request: Parameters<typeof buying.executeBuyingCommand>[0], actor: PublicUser) {
-  if (['SAVE','UPDATE_SELLER','FINALIZE','FINALIZE_AND_PAY'].includes(request.action) && !request.clientId) {
-    await db.query(`INSERT INTO intake_ownership(ticket_id,user_id,operator_name,client_id,expires_at) VALUES($1,$2,$3,$4,NOW()+INTERVAL '90 seconds') ON CONFLICT(ticket_id) DO UPDATE SET user_id=EXCLUDED.user_id,operator_name=EXCLUDED.operator_name,client_id=EXCLUDED.client_id,expires_at=EXCLUDED.expires_at`,[request.id,actor.id,actor.fullName,fixtureClient]);
-    request = {...request,clientId:fixtureClient};
-  }
   return buying.executeBuyingCommand(request,actor);
 }
 const command=(action:'CREATE'|'SAVE'|'FINALIZE'|'FINALIZE_AND_PAY'|'PAY',extra:Record<string,unknown>={})=>({action,id:ticket?.id??'test-ticket',revision:ticket?.buying?.revision??0,idempotencyKey:randomUUID(),...extra});
@@ -46,29 +41,27 @@ describe.skipIf(!safe)('real PostgreSQL buying invariants (isolated TEST_DATABAS
     if(connection){await connection.query(`DROP SCHEMA "${namespace}" CASCADE`);await connection.end();}
     vi.unstubAllEnvs();
   });
-  it('enforces workstation ownership and atomically corrects seller requirements',async()=>{
-    let draft=await buying.executeBuyingCommand({action:'CREATE',id:'ownership-test',revision:0,idempotencyKey:randomUUID(),ticket:{customerName:'OWNERSHIP TEST SELLER'}},user);
+  it('allows unclaimed edits despite legacy leases while preserving revision and seller checks',async()=>{
+    const {ensureIntakeOwnership}=await import('./intakeOwnership');
+    await ensureIntakeOwnership();
+    let draft=await buying.executeBuyingCommand({action:'CREATE',id:'ownership-test',revision:0,idempotencyKey:randomUUID(),ticket:{customerName:'SHARED TEST SELLER'}},user);
     const firstClient=randomUUID(),secondClient=randomUUID();
+    const save=(clientId?:string)=>buying.executeBuyingCommand({action:'SAVE',id:draft.id,revision:draft.buying!.revision,idempotencyKey:randomUUID(),clientId,ticket:{...draft,notes:'UNCLAIMED UPDATE'}},user);
+    draft=await save();
     await db.query(`INSERT INTO intake_ownership(ticket_id,user_id,operator_name,client_id,expires_at) VALUES($1,$2,$3,$4,NOW()+INTERVAL '90 seconds')`,[draft.id,user.id,user.fullName,firstClient]);
-    const save=(clientId:string)=>buying.executeBuyingCommand({action:'SAVE',id:draft.id,revision:draft.buying!.revision,idempotencyKey:randomUUID(),clientId,ticket:{...draft,notes:'CONFIRMED OWNER UPDATE'}},user);
-    await expect(save(secondClient)).rejects.toThrow('handling this intake');
-    draft=await save(firstClient);
-    const seller={phone:'5550007890',address:'TEST NEW ADDRESS',idNumber:'TEST-OWN-ID',idState:'SC',idType:'Driver License' as const,plate:'TEST-OWN',captures:{idPhotoUrl:'/TEST/owner-id'}};
-    const correction=(value:typeof seller)=>buying.executeBuyingCommand({action:'UPDATE_SELLER',id:draft.id,revision:draft.buying!.revision,idempotencyKey:randomUUID(),clientId:firstClient,seller:value},user);
+    draft=await save(secondClient);
+    const stale={action:'SAVE' as const,id:draft.id,revision:draft.buying!.revision,idempotencyKey:randomUUID(),ticket:{...draft,notes:'STALE UPDATE'}};
+    const seller={phone:'5550007890',address:'TEST NEW ADDRESS',idNumber:'TEST-ID',idState:'SC',idType:'Driver License' as const,plate:'TEST-PLATE',captures:{idPhotoUrl:'/TEST/id'}};
+    const correction=(value:typeof seller)=>buying.executeBuyingCommand({action:'UPDATE_SELLER',id:draft.id,revision:draft.buying!.revision,idempotencyKey:randomUUID(),seller:value},user);
     await expect(correction({...seller,idState:''})).rejects.toThrow('issuing jurisdiction');
     draft=await correction(seller);
     expect(draft).toMatchObject({customerPhone:seller.phone,customerAddress:seller.address,customerIdNumber:seller.idNumber,vehicleLicensePlate:seller.plate});
     expect((await db.query('SELECT phone,address,id_number,id_state FROM customers WHERE id=$1',[draft.customerId])).rows[0]).toMatchObject({phone:seller.phone,address:seller.address,id_number:seller.idNumber,id_state:'SC'});
-    await db.query('UPDATE intake_ownership SET client_id=$2 WHERE ticket_id=$1',[draft.id,secondClient]);
-    await expect(save(firstClient)).rejects.toThrow('handling this intake');
-    draft=await save(secondClient);
+    await expect(buying.executeBuyingCommand(stale,user)).rejects.toThrow('Ticket changed');
     await db.query("UPDATE intake_ownership SET expires_at=NOW()-INTERVAL '1 second' WHERE ticket_id=$1",[draft.id]);
-    await expect(save(firstClient)).rejects.toThrow('Ownership expired');
-    await db.query("UPDATE intake_ownership SET client_id=$2,expires_at=NOW()+INTERVAL '90 seconds' WHERE ticket_id=$1",[draft.id,firstClient]);
-    draft=await save(firstClient);
-    const retry={action:'SAVE' as const,id:draft.id,revision:draft.buying!.revision,idempotencyKey:randomUUID(),clientId:firstClient,ticket:{...draft,notes:'REPLAY AFTER EXPIRY'}};
+    draft=await save();
+    const retry={action:'SAVE' as const,id:draft.id,revision:draft.buying!.revision,idempotencyKey:randomUUID(),ticket:{...draft,notes:'REPLAY WITHOUT CLAIM'}};
     const confirmed=await buying.executeBuyingCommand(retry,user);
-    await db.query("UPDATE intake_ownership SET expires_at=NOW()-INTERVAL '1 second' WHERE ticket_id=$1",[draft.id]);
     expect(await buying.executeBuyingCommand(retry,user)).toEqual(confirmed);
   });
   it('serializes the final queue slot and rolls back losing customer creation',async()=>{

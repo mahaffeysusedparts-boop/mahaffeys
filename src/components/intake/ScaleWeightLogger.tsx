@@ -2,9 +2,7 @@ import { pendingIntakeOperation, acknowledgeIntakeOperation, type IntakeOperatio
 import { MAX_ACTIVE_INTAKES } from '@/utils/intakeQueue';
 import React, { useEffect, useRef, useState } from 'react';
 import { useIntakeDraft } from '@/hooks/useIntakeDraft';
-import { useIntakeOwnership } from '@/hooks/useIntakeOwnership';
 import { DraftRecoveryBanner } from './DraftRecoveryBanner';
-import { IntakeOwnershipDialog } from './IntakeOwnershipDialog';
 import { ScaleSellerEditor } from './ScaleSellerEditor';
 import { goToIntakeField } from './IntakeFieldGuidance';
 import { MetalGrade, ScaleStatus, ScrapTicketLine, Ticket, WeightTransaction, ScaleConfig, ScaleWeighingMode } from '@/types/scrap';
@@ -111,7 +109,6 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
   const requirements = useIntakeRequirements();
   const [operationLoading, setOperationLoading] = useState(true);
   const [pendingOperation, setPendingOperation] = useState<IntakeOperation | null>(null);
-  const ownership = useIntakeOwnership(operationLoading || pendingOperation ? null : activeTicketId, onActiveTicketChange);
   const [metals] = useState<MetalGrade[]>(() => storageService.getMetals());
   const [popularMetals] = useState<MetalGrade[]>(() => {
     const popular = metals.filter((m) => m.isPopular);
@@ -197,7 +194,7 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
     singleManualTare: { value: singleManualTare, restore: setSingleManualTare },
     singleManualWeight: { value: singleManualWeight, restore: setSingleManualWeight },
     paymentInput: { value: paymentInput, restore: setPaymentInput },
-  }, !!activeTicket && (!!manualWeight || !!singleManualWeight || !!singleManualTare || singleTareMode !== 'NONE' || selectedMetalId !== (metals[0]?.id ?? '') || !!deductionPercent || !!deductionReason || !!paymentInput.reference || !!paymentInput.permitReference || !!paymentInput.documentationReference || notes !== (activeTicket.notes?.startsWith('Seller info') ? '' : activeTicket.notes ?? '')), ownership.claimVersion);
+  }, !!activeTicket && (!!manualWeight || !!singleManualWeight || !!singleManualTare || singleTareMode !== 'NONE' || selectedMetalId !== (metals[0]?.id ?? '') || !!deductionPercent || !!deductionReason || !!paymentInput.reference || !!paymentInput.permitReference || !!paymentInput.documentationReference || notes !== (activeTicket.notes?.startsWith('Seller info') ? '' : activeTicket.notes ?? '')));
 
   useEffect(() => {
     const unsub = scaleService.subscribe((s) => {
@@ -218,9 +215,8 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
 
   const canEdit = () => {
     if (busyRef.current) return false;
-    if (pendingOperation) { toast.warning('Reconcile the interrupted save before editing or submitting again.'); return false; }
+    if (operationLoading || pendingOperation) { toast.warning('Reconcile the interrupted save before editing or submitting again.'); return false; }
     if (draft.loading || draft.recovery) { toast.info('Resume or discard the saved scale inputs before editing.'); return false; }
-    if (!ownership.owned) { toast.warning(ownership.error || 'Claim this intake before editing it.'); return false; }
     const latest = storageService.getTickets().find((ticket) => ticket.id === activeTicket?.id);
     if (remoteConflict || !latest || latest.status !== 'PENDING' || latest.buying?.revision !== activeTicket?.buying?.revision) {
       setRemoteConflict(true);
@@ -366,7 +362,7 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
     } else setSaveState('SAVED');
     return () => { mounted = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTicketId, ownership.claimVersion]);
+  }, [activeTicketId]);
 
   useEffect(() => {
     refreshQueue();
@@ -378,7 +374,7 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
   }, [serverQueue.data]);
 
   const persist = async (ticket: Ticket, binAcknowledgment?: BinReviewAcknowledgment): Promise<Ticket | null> => {
-    if (busyRef.current || !ownership.owned || draft.loading || draft.recovery) return null;
+    if (busyRef.current || operationLoading || pendingOperation || remoteConflict || draft.loading || draft.recovery) return null;
     busyRef.current = true; setSaveState('PENDING'); setSaveError('');
     try {
       const saved = await scrapBuyingService.save(ticket, binAcknowledgment);
@@ -583,7 +579,7 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
   // ---- Auto-capture engine -----------------------------------------------------
   // Capture the hardware-confirmed stable reading without an extra UI delay.
   useEffect(() => {
-    if (!ownership.owned || draft.loading || draft.recovery) { setAutoCapture(false); return; }
+    if (operationLoading || pendingOperation || draft.loading || draft.recovery) { setAutoCapture(false); return; }
     if (!autoCapture || !activeTicket || remoteConflict || busyRef.current || weighingMode !== 'VEHICLE_IN_OUT' || !modeCompatible) return;
     const context = `${activeTicket.id}:${weighingMode}:${currentScaleId}:${weighState}`;
     if (autoCaptureContextRef.current !== context) {
@@ -612,7 +608,7 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
       commitOutWeight(currentLbs);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scale, currentLbs, autoCapture, activeTicket, weighState, weighingMode, currentScaleId, remoteConflict, modeCompatible, ownership.owned, draft.loading, draft.recovery]);
+  }, [scale, currentLbs, autoCapture, activeTicket, weighState, weighingMode, currentScaleId, remoteConflict, modeCompatible, operationLoading, pendingOperation, draft.loading, draft.recovery]);
 
   // Context changes must disarm and discard any unconfirmed hardware prompt.
   useEffect(() => {
@@ -620,7 +616,7 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
     autoCaptureContextRef.current = null;
     setPendingUnstable(null);
     setCorrectionTarget(null);
-  }, [activeTicket?.id, weighState, currentScaleId, weighingMode, ownership.owned]);
+  }, [activeTicket?.id, weighState, currentScaleId, weighingMode]);
 
   // ---- Grade commit -----------------------------------------------------------
   const pendingBreakdown = activeTicket && weighState === 'PENDING_GRADE'
@@ -787,12 +783,12 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
   };
 
   // ---- Queue ------------------------------------------------------------------
-  const navigationBlocked = busyRef.current || saveState === 'PENDING' || operationLoading || !!pendingOperation || draft.loading || !!draft.recovery || !!draft.error || sellerDirty || ownership.busy || !!pendingUnstable || !!pendingScaleSwitch || !!correctionTarget;
+  const navigationBlocked = busyRef.current || saveState === 'PENDING' || operationLoading || !!pendingOperation || draft.loading || !!draft.recovery || !!draft.error || sellerDirty || !!pendingUnstable || !!pendingScaleSwitch || !!correctionTarget;
   const beforeLeave = async () => !navigationBlocked && await draft.flush();
   const handleSwitch = async (ticket: Ticket) => {
-    if (ticket.id === activeTicket?.id && ownership.owned) return;
+    if (ticket.id === activeTicket?.id) return;
     if (!await beforeLeave()) return;
-    await ownership.claim(ticket.id);
+    onActiveTicketChange(ticket.id);
   };
 
   const handleSwitchAway = async () => {
@@ -1052,9 +1048,7 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             {filteredQueue.map(ticket => {
               const isCurrent = activeTicket?.id === ticket.id;
-              const owner = ownership.owners.find(row => row.ticketId === ticket.id);
-              const otherDesk = !!owner && owner.clientId !== ownership.clientId;
-              return <ScaleQueueCard key={ticket.id} ticket={ticket} assessment={assessmentFor(ticket)} now={queueClock} current={isCurrent} handler={owner ? 'Handling: ' + owner.operatorName + (otherDesk ? ' · another workstation' : ' · this desk') : 'No active handler · available to claim'} actionLabel={isCurrent && ownership.owned ? 'Continue This Intake' : otherDesk ? 'Review Ownership' : 'Claim This Intake'} disabled={navigationBlocked} voidDisabled={otherDesk} onContinue={() => void handleSwitch(ticket)} onVoid={() => setVoidTarget(ticket)}/>;
+              return <ScaleQueueCard key={ticket.id} ticket={ticket} assessment={assessmentFor(ticket)} now={queueClock} current={isCurrent} actionLabel={isCurrent ? 'Continue This Intake' : 'Open This Intake'} disabled={navigationBlocked} onContinue={() => void handleSwitch(ticket)} onVoid={() => setVoidTarget(ticket)}/>;
             })}
           </div>}
         </CardContent>
@@ -1084,7 +1078,6 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
         </Card>
       )}
 
-      {ownership.error && <div role="alert" className="rounded-xl border border-amber-600 bg-amber-950 p-4 text-sm text-amber-100">{ownership.error}<Button onClick={() => activeTicketId && void ownership.claim(activeTicketId)} variant="link" className="text-amber-100">Review / reclaim intake</Button><Button onClick={handleSwitchAway} variant="link" className="text-amber-100">Return to queue</Button></div>}
           {pendingOperation && <div role="alert" className="rounded-xl border border-amber-600 bg-amber-950 p-4 text-sm text-amber-100">Not confirmed—review/retry the original submission. Do not hand over funds again. Local inputs are retained.
             <Button disabled={saveState === 'PENDING'} className="ml-2 rounded-xl bg-sky-700 text-white" onClick={async () => {
               const id = activeTicketId!; setSaveState('PENDING'); setAutoCapture(false);
@@ -1113,8 +1106,7 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
         <>
           <DraftRecoveryBanner draft={draft}/>
           {draft.recovery && <p className="text-xs text-sky-100">Review recovered inputs against the saved ticket. Auto-capture and payment acknowledgement must be enabled again manually.</p>}
-          {!ownership.owned && !ownership.error && <p role="status" className="rounded-xl bg-sky-950 p-3 text-sm text-sky-100">Verifying this desk’s ownership before editing…</p>}
-          <fieldset disabled={!ownership.owned || draft.loading || !!draft.recovery || !!pendingOperation} className="contents">
+          <fieldset disabled={operationLoading || draft.loading || !!draft.recovery || !!pendingOperation} className="contents">
           {/* Seller summary banner */}
           <div className="flex flex-col gap-3 rounded-2xl border border-slate-800 bg-slate-900 p-4 text-xs sm:flex-row sm:items-center sm:justify-between">
             <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
@@ -1587,14 +1579,14 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
               </details>
               {requirements.isError && <p role="alert" className="text-sm text-amber-200">Requirements could not refresh. <button onClick={() => void requirements.refetch()} className="underline">Retry</button> before finalizing.</p>}
               <IntakeCompletionGuidance ticket={activeTicket} requirements={!requirements.isError && !requirements.isStale ? requirements.data : undefined} eligibility={eligibility.data} eligibilityError={eligibility.error?.message} reviewed={reviewConfirmed} paymentInput={paymentInput} sellerDirty={sellerDirty} identityVerified={savedIdentity} profileAddress={profileVerified ? sellerProfile.data?.address : undefined}
-                pauseReason={!ownership.owned ? 'This desk does not own the load. Use the ownership warning above to review or reclaim it before editing or paying.' : remoteConflict ? 'This load changed on another workstation. Review the conflict warning above and reload the saved load before paying.' : saveState === 'PENDING' ? 'A save is in progress. Wait for confirmation before recording payment.' : !paymentAllowed ? 'Your account cannot record payments. Ask an authorized operator or administrator to complete this purchase.' : undefined}
+                pauseReason={remoteConflict ? 'This load changed on another workstation. Review the conflict warning above and reload the saved load before paying.' : saveState === 'PENDING' ? 'A save is in progress. Wait for confirmation before recording payment.' : !paymentAllowed ? 'Your account cannot record payments. Ask an authorized operator or administrator to complete this purchase.' : undefined}
                 onRetryChecks={() => { void requirements.refetch(); void eligibility.refetch(); }}/>
               <div id="scale-payment"><BuyingPaymentFields eligibility={eligibility.data} error={eligibility.error?.message} loading={eligibility.isLoading} disabled={saveState==='PENDING' || remoteConflict} value={paymentInput} onChange={value=>{setPaymentInput(value);setReviewConfirmed(false);}}/></div>
               {requirements.data?.requireExplicitReview && <label id="scale-purchase-review" className="flex items-start gap-2 rounded-xl border border-slate-700 p-3 text-xs leading-relaxed"><input type="checkbox" disabled={saveState==='PENDING' || remoteConflict} checked={reviewConfirmed} onChange={(event) => setReviewConfirmed(event.target.checked)} className="mt-0.5 accent-emerald-500" />I reviewed the seller information, confirmed weights, material grades and deductions for this purchase.</label>}
               <p className="rounded-xl border border-emerald-700 bg-emerald-950 p-3 text-xs text-emerald-100">By completing, you confirm the cash was handed over or the check was issued. The purchase and payment are saved together, and both receipt copies say PAID.</p>
               <div className="grid gap-3">
                 <p className="text-sm text-slate-200">If payment is unavailable, check “What is stopping completion?” above. Each item tells you what to fix.</p>
-                <Button aria-describedby="scale-completion-guidance" onClick={handleComplete} disabled={sellerDirty || !ownership.owned || !paymentAllowed || eligibility.isError || !buyingPaymentReady(eligibility.data,paymentInput) || (requirements.data?.requireExplicitReview !== false && !reviewConfirmed) || !requirements.data || requirements.isError || !lines.length || !!singleCapture || activeTicket.scaleGrossInWeight != null || remoteConflict || saveState === 'PENDING'} className="h-auto min-h-12 whitespace-normal rounded-xl bg-emerald-600 px-3 py-3 font-bold text-white hover:bg-emerald-500">Complete &amp; Record Payment</Button>
+                <Button aria-describedby="scale-completion-guidance" onClick={handleComplete} disabled={sellerDirty || !paymentAllowed || eligibility.isError || !buyingPaymentReady(eligibility.data,paymentInput) || (requirements.data?.requireExplicitReview !== false && !reviewConfirmed) || !requirements.data || requirements.isError || !lines.length || !!singleCapture || activeTicket.scaleGrossInWeight != null || remoteConflict || saveState === 'PENDING'} className="h-auto min-h-12 whitespace-normal rounded-xl bg-emerald-600 px-3 py-3 font-bold text-white hover:bg-emerald-500">Complete &amp; Record Payment</Button>
               </div>
             </div>
           </div>
@@ -1693,7 +1685,6 @@ export const ScaleWeightLogger: React.FC<ScaleWeightLoggerProps> = ({
         </AlertDialogContent>
       </AlertDialog>
 
-      <IntakeOwnershipDialog ownership={ownership}/>
       {/* Void a transaction at any stage — active panel or a queued intake */}
       <VoidTicketDialog
         ticket={voidTarget}

@@ -5,9 +5,9 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Ban, Scale, Clock, AlertTriangle, ShieldCheck } from 'lucide-react';
 
-export function ScaleQueueCard({ ticket, assessment, now, current, handler, actionLabel, disabled, voidDisabled, onContinue, onVoid }: {
+export function ScaleQueueCard({ ticket, assessment, now, current, actionLabel, disabled, onContinue, onVoid }: {
   ticket: Ticket; assessment: ReturnType<typeof assessScrapEvidence>; now: number; current: boolean;
-  handler: string; actionLabel: string; disabled: boolean; voidDisabled: boolean; onContinue: () => void; onVoid: () => void;
+  actionLabel: string; disabled: boolean; onContinue: () => void; onVoid: () => void;
 }) {
   const lines = ticket.scrapLines ?? [];
   const materials = [...new Set(lines.map(line => line.metalName))].slice(0, 3);
@@ -19,8 +19,7 @@ export function ScaleQueueCard({ ticket, assessment, now, current, handler, acti
       {assessment.issues.length > 0 && <details className="mt-2"><summary className="cursor-pointer py-1 focus-visible:outline focus-visible:outline-sky-300">Evidence details</summary><ul className="mt-1 list-inside list-disc space-y-1">{assessment.issues.map(issue => <li key={issue.key}>{issue.label} · {issue.required ? 'required before completion' : 'optional'}{issue.unknown ? ' · unverified' : ''}</li>)}</ul></details>}
       {assessment.verified && <p className="mt-1">Evidence only — weighing, review and payment checks remain separate.</p>}
     </div>
-    <p className="text-xs font-semibold leading-relaxed text-sky-200">{handler}</p>
-    <div className="flex gap-2"><Button disabled={disabled} onClick={onContinue} className="min-h-11 flex-1 whitespace-normal rounded-xl bg-emerald-700 text-xs font-bold text-white hover:bg-emerald-600"><Scale className="mr-2 h-4 w-4 shrink-0" aria-hidden="true"/>{actionLabel}</Button><Button disabled={voidDisabled || disabled} onClick={onVoid} variant="outline" aria-label={`Void intake ${ticket.id}`} title={voidDisabled ? 'Review and claim ownership before voiding' : 'Void this intake'} className="min-h-11 min-w-11 rounded-xl border-slate-700 bg-slate-900 text-slate-200 hover:bg-red-950 hover:text-red-100"><Ban className="h-4 w-4" aria-hidden="true"/></Button></div>
+    <div className="flex gap-2"><Button disabled={disabled} onClick={onContinue} className="min-h-11 flex-1 whitespace-normal rounded-xl bg-emerald-700 text-xs font-bold text-white hover:bg-emerald-600"><Scale className="mr-2 h-4 w-4 shrink-0" aria-hidden="true"/>{actionLabel}</Button><Button disabled={disabled} onClick={onVoid} variant="outline" aria-label={`Void intake ${ticket.id}`} title="Void this intake" className="min-h-11 min-w-11 rounded-xl border-slate-700 bg-slate-900 text-slate-200 hover:bg-red-950 hover:text-red-100"><Ban className="h-4 w-4" aria-hidden="true"/></Button></div>
     <div className="space-y-1 border-t border-slate-700 pt-2 text-xs text-slate-300"><p>Created by {ticket.operatorName || 'Operator'}</p>{ticket.customerPhone && <p>Phone: {ticket.customerPhone}</p>}<p>{lines.length} confirmed loads · {lines.reduce((sum, line) => sum + line.billableWeight, 0).toLocaleString()} lb</p>{materials.length > 0 && <p className="break-words">{materials.join(' · ')}</p>}{ticket.notes && <details><summary className="cursor-pointer py-1 focus-visible:outline focus-visible:outline-sky-300">Saved load context</summary><p className="mt-1 break-words">{ticket.notes}</p></details>}</div>
   </article>;
 }

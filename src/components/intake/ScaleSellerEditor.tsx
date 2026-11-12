@@ -64,7 +64,7 @@ export function ScaleSellerEditor({ ticket, requirements, onSave, onDirtyChange 
     try {
       if (await onSave({ phone, address, idNumber, idState, idType, plate, captures })) {
         await draft.clear(); setDirty(false); void profile.refetch();
-      } else setError('Seller changes were not saved. Resolve the ownership or save warning and retry.');
+      } else setError('Seller changes were not saved. Resolve the conflict or save warning and retry.');
     } catch (failure) { setError(failure instanceof Error ? failure.message : 'Seller correction cleanup failed; retained inputs require review.'); }
     finally { setSaving(false); }
   };

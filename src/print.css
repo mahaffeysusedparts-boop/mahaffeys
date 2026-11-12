@@ -97,20 +97,16 @@
     page-break-inside: avoid;
   }
 
-  /* ── Dual payout vouchers: one 8.5×11 page per copy ───────────────────
-     The card markup uses generous screen spacing (space-y-4, print:p-8)
-     which alone overflows the 10in live area. These overrides compact the
-     vertical rhythm so EVERY section — photos, table, certification and
-     both signature blocks — fits a single letter page per copy. */
+  /* Preserve the original voucher proportions; scale the entire copy to
+     fit letter paper instead of compressing photos, rows and signatures. */
   .printable-receipt-card {
     page: receipt-page;
     width: 7.5in !important;
     max-width: 7.5in !important;
-    min-height: 10in !important;
-    max-height: 10in !important;
+    min-height: 0 !important;
     margin: 0 auto !important;
-    padding: 0.18in 0.22in !important;
-    overflow: hidden !important;
+    padding: 0.26in 0.32in !important;
+    overflow: visible !important;
     background-color: #ffffff !important;
     color: #000000 !important;
     border: 1px solid #000000 !important;
@@ -118,37 +114,25 @@
     box-shadow: none !important;
     break-inside: avoid;
     page-break-inside: avoid;
-    line-height: 1.08 !important;
+    line-height: 1.3 !important;
     zoom: var(--receipt-print-scale, 1);
     print-color-adjust: exact;
     -webkit-print-color-adjust: exact;
   }
 
-  /* Compact the space-y-4 rhythm (1rem gaps) down to print density. */
   .printable-receipt-card > * + * {
-    margin-top: 0.16rem !important;
+    margin-top: 0.32rem !important;
   }
 
   .printable-receipt-card table td,
   .printable-receipt-card table th {
-    padding-top: 0 !important;
-    padding-bottom: 0 !important;
+    padding-top: 1px !important;
+    padding-bottom: 1px !important;
   }
 
-  /* Compliance photo gallery: keep thumbnails tall enough to verify, but
-     never tall enough to push signatures off the page. */
   .printable-receipt-card .aspect-square {
     aspect-ratio: 1 / 1 !important;
-    max-height: 0.72in !important;
-  }
-
-  .printable-receipt-card .h-12 {
-    height: 0.34in !important;
-  }
-
-  .printable-receipt-card .space-y-1 > * + *,
-  .printable-receipt-card .space-y-2 > * + * {
-    margin-top: 0.08rem !important;
+    max-height: 0.95in !important;
   }
 
   /* Signature rules print at exact ink density. */

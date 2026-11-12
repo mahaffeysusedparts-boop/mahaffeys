@@ -50,7 +50,7 @@ for (const failure of ['CREATE_RESPONSE_LOST', 'MANUAL_SAVE_REJECTED'] as const)
       expect(createBodies[1]).toBe(createBodies[0]);
       expect(customerWrites).toBe(1);
     } else {
-      await page.getByRole('button', { name: /Claim This Intake|Switch to This Intake|Continue This Intake/ }).click();
+      await page.getByRole('button', { name: /Open This Intake|Continue This Intake/ }).click();
       const input = page.getByPlaceholder('e.g. 8750');
       await input.fill('8750');
       await page.getByRole('button', { name: 'Log IN Manually', exact: true }).click();

@@ -157,7 +157,7 @@ for (const size of sizes.filter(size => size.name === 'small phone' || size.name
     await mockApi(page, true, ticket);
     await page.goto('/intake');
     await page.getByText('Open scale queue', { exact: true }).click();
-    await page.getByRole('button', { name: /Claim This Intake|Switch to This Intake|Continue This Intake/ }).click();
+    await page.getByRole('button', { name: /Open This Intake|Continue This Intake/ }).click();
     const manual = page.getByPlaceholder('e.g. 85');
     await expect(manual).toBeEnabled();
     const box = await manual.boundingBox();

@@ -3,7 +3,6 @@ import { createError, type H3Event } from 'nitro/h3';
 import { z } from 'zod';
 import { requireUser, type PublicUser } from './auth';
 import { query, withTransaction } from './db';
-import { ensureIntakeOwnership, lockIntakeOwnership } from './intakeOwnership';
 import { lockFinancialState, putState, stateValue } from './financialState';
 import { serverScale } from './scale';
 import { normalizeWeight, validateScaleReading, validatedBreakdown, validatedItemBreakdown } from '../../src/utils/weighingContract';
@@ -316,22 +315,13 @@ async function pay(client: PoolClient, ticket: Ticket, command: z.infer<typeof b
 
 export async function executeBuyingCommand(command: z.infer<typeof buyingCommandSchema>, user: PublicUser) {
   if (!canRecordBuyingPayment(user)) fail('Buying action is not permitted for this account',403);
-  await ensureIntakeOwnership();
   const hash = createHash('sha256').update(canonical(command)).digest('hex');
   return withTransaction(async (client) => {
     await lockFinancialState(client);
     const retry = await client.query('SELECT request_hash,result FROM scrap_buying_events WHERE actor_id=$1 AND idempotency_key=$2',[user.id,command.idempotencyKey]);
     if (retry.rows[0]) { if (retry.rows[0].request_hash !== hash) fail('Idempotency key was reused for another request'); return retry.rows[0].result as Ticket; }
-    await lockIntakeOwnership(client, command.id);
     const result = await client.query('SELECT document FROM scrap_buying_tickets WHERE ticket_id=$1 FOR UPDATE',[command.id]);
     const previous: Ticket | undefined = result.rows[0]?.document;
-    const replayedPayment = ['PAY','FINALIZE_AND_PAY'].includes(command.action) && previous?.buying?.stage === 'PAID';
-    if (!['CREATE', 'ADOPT'].includes(command.action) && !replayedPayment) {
-      const owner = (await client.query('SELECT user_id,client_id,operator_name FROM intake_ownership WHERE ticket_id=$1 AND expires_at>clock_timestamp()', [command.id])).rows[0];
-      const needsLease = previous?.buying?.stage === 'DRAFT' && ['SAVE','UPDATE_SELLER','FINALIZE','FINALIZE_AND_PAY'].includes(command.action);
-      if (needsLease && !owner) fail('Ownership expired or is missing. Claim this intake before editing.');
-      if (owner && (owner.user_id !== user.id || owner.client_id !== command.clientId)) fail(`${owner.operator_name} is handling this intake on another workstation. Claim it from the scale queue before editing.`);
-    }
     let next: Ticket;
     if (command.action === 'CREATE' || command.action === 'ADOPT') {
       if (previous) { if (command.action === 'ADOPT') return previous; fail('Ticket already exists'); }

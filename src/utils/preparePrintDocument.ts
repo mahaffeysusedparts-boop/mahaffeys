@@ -1,8 +1,20 @@
 const RECEIPT_CARD_SELECTOR = '.printable-receipt-card';
 const RECEIPT_PRINT_HEIGHT_PX = 10 * 96;
-const MIN_RECEIPT_PRINT_SCALE = 0.62;
 const PRINT_IMAGE_MAX_DIMENSION = 560;
 const PRINT_IMAGE_QUALITY = 0.76;
+
+export function collectPrintStyles(): string {
+  const styles: string[] = [];
+  for (const sheet of Array.from(document.styleSheets)) {
+    try {
+      // Base rules and CSS variables are required to preserve receipt styling.
+      styles.push(Array.from(sheet.cssRules, rule => rule.cssText).join('\n'));
+    } catch {
+      // Cross-origin stylesheets cannot be read by the browser.
+    }
+  }
+  return styles.join('\n');
+}
 
 async function embedImage(source: string): Promise<string> {
   const url = new URL(source, window.location.href);
@@ -41,29 +53,43 @@ async function waitForImages(root: HTMLElement) {
 
 async function measureReceiptScales(root: HTMLElement): Promise<number[]> {
   if (!root.querySelector(RECEIPT_CARD_SELECTOR)) return [];
-  const sandbox = document.createElement('div');
-  sandbox.style.cssText = [
-    'position:fixed',
-    'left:-10000px',
-    'top:0',
-    'width:7.5in',
-    'visibility:hidden',
-    'pointer-events:none',
-    'background:#fff',
-    'z-index:-1',
-  ].join(';');
-  const measured = root.cloneNode(true) as HTMLElement;
-  sandbox.appendChild(measured);
+  const sandbox = document.createElement('iframe');
+  sandbox.setAttribute('aria-hidden', 'true');
+  sandbox.tabIndex = -1;
+  sandbox.style.cssText = 'position:fixed;left:-10000px;top:0;width:7.5in;height:10in;visibility:hidden;pointer-events:none;border:0';
   document.body.appendChild(sandbox);
   try {
+    const frameDocument = sandbox.contentDocument!;
+    // Match the standards-mode document used by both printer renderers.
+    frameDocument.open();
+    frameDocument.write('<!doctype html><html><head></head><body></body></html>');
+    frameDocument.close();
+    const style = frameDocument.createElement('style');
+    // Measure with the actual print rules, not the screen dialog layout.
+    style.textContent = collectPrintStyles().replace(/@media print/g, '@media all');
+    frameDocument.head.appendChild(style);
+    const measured = frameDocument.importNode(root, true) as HTMLElement;
+    frameDocument.body.appendChild(measured);
+    const cards = Array.from(measured.querySelectorAll<HTMLElement>(RECEIPT_CARD_SELECTOR));
+    cards.forEach(card => {
+      card.style.setProperty('zoom', '1', 'important');
+      card.style.setProperty('min-height', '0', 'important');
+      card.style.setProperty('max-height', 'none', 'important');
+    });
     await waitForImages(measured);
-    return Array.from(measured.querySelectorAll<HTMLElement>(RECEIPT_CARD_SELECTOR)).map(card => {
-      card.style.width = '7.5in';
-      card.style.maxWidth = '7.5in';
-      card.style.padding = '0.18in 0.22in';
-      card.style.lineHeight = '1.08';
-      const height = Math.max(card.scrollHeight, card.getBoundingClientRect().height, 1);
-      return Math.max(MIN_RECEIPT_PRINT_SCALE, Math.min(1, RECEIPT_PRINT_HEIGHT_PX / height));
+    await frameDocument.fonts.ready;
+    return cards.map(card => {
+      const targetHeight = RECEIPT_PRINT_HEIGHT_PX - 4;
+      let scale = 1;
+      // Zoom can change text wrapping through fractional-pixel rounding.
+      // Recheck the scaled layout rather than assuming linear height alone.
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const height = Math.max(card.getBoundingClientRect().height, 1);
+        if (height <= targetHeight) break;
+        scale = Math.floor(scale * targetHeight / height * 1000) / 1000;
+        card.style.setProperty('zoom', String(scale), 'important');
+      }
+      return scale;
     });
   } finally {
     sandbox.remove();

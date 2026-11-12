@@ -79,7 +79,7 @@ function syntheticServer() {
 async function openDesk(page: Page) {
   await page.goto('/intake');
   await page.getByText('Open scale queue',{exact:true}).click();
-  await page.getByRole('button',{name:/Claim This Intake|Switch to This Intake|Continue This Intake/}).click();
+  await page.getByRole('button',{name:/Open This Intake|Continue This Intake/}).click();
 }
 
 test('Employee retry and correction sync live without stale weighing conflicts; late review replaces missing acknowledgment', async ({browser}) => {
