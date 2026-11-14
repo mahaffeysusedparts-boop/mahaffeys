@@ -1,25 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
-import { Activity, Cpu, Database, HardDrive, RefreshCw, RotateCw, Server, Terminal, ShieldCheck, Download } from "lucide-react";
+import { Activity, Cpu, Database, HardDrive, RefreshCw, Server, Terminal, ShieldCheck, Download } from "lucide-react";
 import { Navbar } from "@/components/layout/Navbar";
 import { AlarmComManager } from "@/components/server/AlarmComManager";
 import { ScaleServerManager } from "@/components/server/ScaleServerManager";
 import { StoplightServerManager } from "@/components/server/StoplightServerManager";
 import { StorageBayManager } from "@/components/server/StorageBayManager";
 import { RestoreBackupButton } from '@/components/server/RestoreBackupButton';
+import { HostManagementPanel } from '@/components/server/HostManagementPanel';
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -106,7 +96,6 @@ const usagePercent = (used: number, total: number) => total > 0 ? Math.round((us
 export default function ServerAdminPage({ embedded = false }: { embedded?: boolean }) {
   const [snapshot, setSnapshot] = useState<ServerSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
-  const [restarting, setRestarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Backup state
@@ -144,31 +133,6 @@ export default function ServerAdminPage({ embedded = false }: { embedded?: boole
   useEffect(() => {
     void loadStatus();
   }, [loadStatus]);
-
-  const restartService = async () => {
-    setRestarting(true);
-    try {
-      const response = await fetch("/api/admin/server/restart", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-      });
-      if (!response.ok) {
-        const body = await response.json().catch(() => null) as { statusMessage?: string } | null;
-        throw new Error(body?.statusMessage || "Restart request failed");
-      }
-      toast.success("Restart requested", { description: "Mahaffeys should be available again in a few seconds." });
-      window.setTimeout(() => {
-        setRestarting(false);
-        void loadStatus();
-      }, 8000);
-    } catch (restartError) {
-      setRestarting(false);
-      toast.error("Could not restart service", {
-        description: restartError instanceof Error ? restartError.message : "Unknown server error",
-      });
-    }
-  };
 
   const loadBackups = useCallback(async () => {
     setLoadingBackups(true);
@@ -267,32 +231,14 @@ export default function ServerAdminPage({ embedded = false }: { embedded?: boole
               </div>
             </div>
             <div className="flex gap-2">
-              <Button onClick={() => void loadStatus()} disabled={loading || restarting} variant="outline" className="rounded-xl border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800 hover:text-white">
+              <Button onClick={() => void loadStatus()} disabled={loading} variant="outline" className="rounded-xl border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800 hover:text-white">
                 <RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} /> Refresh
               </Button>
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Button disabled={restarting} className="rounded-xl bg-amber-400 font-bold text-slate-950 hover:bg-amber-300">
-                    <RotateCw className={`mr-2 h-4 w-4 ${restarting ? "animate-spin" : ""}`} />
-                    {restarting ? "Restarting" : "Restart service"}
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent className="rounded-3xl border-slate-700 bg-slate-900 text-slate-100">
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Restart Mahaffeys?</AlertDialogTitle>
-                    <AlertDialogDescription className="text-slate-400">
-                      Active requests may pause briefly while PM2 or systemd brings the service back online.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel className="rounded-xl border-slate-700 bg-slate-800 text-white hover:bg-slate-700 hover:text-white">Cancel</AlertDialogCancel>
-                    <AlertDialogAction onClick={() => void restartService()} className="rounded-xl bg-amber-400 font-bold text-slate-950 hover:bg-amber-300">Restart now</AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
             </div>
           </div>
         </section>
+
+        <HostManagementPanel />
 
         {error ? (
           <div className="rounded-2xl border border-red-500/30 bg-red-500/10 px-5 py-4 text-sm font-semibold text-red-200">{error}</div>

@@ -129,9 +129,10 @@ describe('read-only SSH diagnostics', () => {
     try {
       await client.connect(transport);
       const result = await client.listTools();
-      expect(result.tools).toHaveLength(7);
+      expect(result.tools).toHaveLength(8);
       expect(result.tools.every(tool => tool.annotations?.readOnlyHint === true)).toBe(true);
       expect(result.tools.some(tool => /deploy|restart|exec|shell/.test(tool.name))).toBe(false);
+      expect(result.tools.find(tool => tool.name === 'mahaffeys_network_diagnostics')?.inputSchema.additionalProperties).toBe(false);
       expect(result.tools.find(tool => tool.name === 'mahaffeys_storage_diagnostics')?.inputSchema.additionalProperties).toBe(false);
       const invalidStorage = await client.callTool({ name: 'mahaffeys_storage_diagnostics', arguments: { path: '/private', command: 'reboot' } });
       expect(invalidStorage.isError).toBe(true);

@@ -8,7 +8,7 @@ export LC_ALL=C
 
 request=${SSH_ORIGINAL_COMMAND:-}
 case "$request" in
-    connection|containers|version|cups|printer|storage) ;;
+    connection|containers|version|cups|printer|storage|network) ;;
     logs:*)
         fields=${request#logs:}
         service=${fields%%:*}
@@ -37,6 +37,9 @@ fi
 
 cd /var/www/mahaffeys
 case "$request" in
+    network)
+        exec /usr/bin/timeout 18 /usr/bin/node /usr/local/lib/mahaffeys/network-report.mjs
+        ;;
     storage)
         exec /usr/bin/timeout 18 /usr/bin/node /usr/local/lib/mahaffeys/storage-report.mjs
         ;;

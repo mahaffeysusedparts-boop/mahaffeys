@@ -5,7 +5,7 @@ import { mkdir, open, readFile, rename, unlink, realpath } from 'node:fs/promise
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import { INSTALL, loadPolicy, parseCommand } from './policy.mjs';
-import { prepare, deploy, redact } from './operations.mjs';
+import { prepare, deploy, restartApp, redact } from './operations.mjs';
 
 const executable = fileURLToPath(import.meta.url);
 const save = async (path, value) => {
@@ -37,6 +37,7 @@ try {
       job.status = 'running';
       progress('Restricted management operation started.');
       if (job.action === 'prepare') await prepare(policy, job, directory, progress);
+      else if (job.action === 'restart') await restartApp(policy, progress);
       else await deploy(policy, job, directory, progress, job.action === 'rollback');
       job.status = 'succeeded';
     } catch (error) {
@@ -56,7 +57,7 @@ try {
       let parent;
       let recovery;
       let revision;
-      if (request.action !== 'prepare') {
+      if (request.action !== 'prepare' && request.action !== 'restart') {
         const previous = await load(report(policy, request.target));
         if (request.action === 'deploy') {
           if (previous.action !== 'prepare' || previous.status !== 'succeeded' || Date.now() - Date.parse(previous.finishedAt) > 60 * 60_000) throw new Error('Use a successfully verified preparation less than one hour old.');
@@ -70,13 +71,13 @@ try {
           revision = previous.revision;
         }
       } else {
-        revision = request.target;
+        revision = request.action === 'prepare' ? request.target : undefined;
         let last;
         try { last = await load(join(policy.stateDirectory, 'last-deployment.json')); }
         catch (error) { if (error.code !== 'ENOENT') throw error; }
         if (last) {
           const previous = await load(report(policy, last.jobId));
-          if (previous.status === 'failed') throw new Error('The failed deployment must be recovered/reviewed before preparing another revision.');
+          if (previous.status === 'failed') throw new Error('The failed deployment must be recovered/reviewed before preparing or restarting the app.');
         }
       }
       const id = randomBytes(16).toString('hex');

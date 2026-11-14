@@ -36,10 +36,11 @@ const tools = [
   { name: 'mahaffeys_cups_diagnostics', description: 'Read active CUPS listener/hostname directives, scheduler availability from CUPS and the app, and at most 80 lines of CUPS error logs. Never modifies printing configuration or queues.', inputSchema: emptySchema, annotations },
   { name: 'mahaffeys_printer_connectivity', description: 'Check TCP reachability of the Brother printer at 192.168.1.251:631 from the app container. This is not an IPP compatibility check and sends no print job.', inputSchema: emptySchema, annotations },
   { name: 'mahaffeys_storage_diagnostics', description: 'Read bounded host block-device inventory, Docker data location, app container mounts, and filesystem capacity. No formatting, mounting, data migration, environment dump, or storage changes. Paths and filesystem UUIDs are sensitive.', inputSchema: emptySchema, annotations },
+  { name: 'mahaffeys_network_diagnostics', description: 'Read bounded Ubuntu host interface addresses, IPv4 routes, DNS servers and listening TCP/UDP sockets. No changes, arbitrary probes, firewall edits or process metadata. Network addresses are sensitive.', inputSchema: emptySchema, annotations },
 ];
 const emptyArgs = z.object({}).strict();
 const logArgs = z.object({ service: z.enum(SERVICES), lines: z.number().int().min(10).max(200).default(60) }).strict();
-const server = new Server({ name: 'mahaffeys-server-connection', version: '2.1.0' }, { capabilities: { tools: {} } });
+const server = new Server({ name: 'mahaffeys-server-connection', version: '2.2.0' }, { capabilities: { tools: {} } });
 server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: [...tools, ...(values['enable-management'] ? managementTools : [])] }));
 server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
   try {
@@ -60,6 +61,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
         case 'mahaffeys_cups_diagnostics': diagnostic = { operation: 'cups' }; break;
         case 'mahaffeys_printer_connectivity': diagnostic = { operation: 'printer' }; break;
         case 'mahaffeys_storage_diagnostics': diagnostic = { operation: 'storage' }; break;
+        case 'mahaffeys_network_diagnostics': diagnostic = { operation: 'network' }; break;
         default: throw new Error('Unknown tool.');
       }
     }

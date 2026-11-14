@@ -7,10 +7,12 @@ export const managementRequestSchema = z.discriminatedUnion('action', [
   z.object({ operation: z.literal('management'), action: z.literal('status'), jobId }).strict(),
   z.object({ operation: z.literal('management'), action: z.literal('deploy'), jobId, confirmation: z.literal('DEPLOY APPROVED PLAN') }).strict(),
   z.object({ operation: z.literal('management'), action: z.literal('rollback'), jobId, confirmation: z.literal('ROLLBACK DEPLOYMENT') }).strict(),
+  z.object({ operation: z.literal('management'), action: z.literal('restart'), confirmation: z.literal('RESTART APP') }).strict(),
 ]);
 export type ManagementRequest = z.infer<typeof managementRequestSchema>;
 
 export function managementToken(input: ManagementRequest): string {
   const request = managementRequestSchema.parse(input);
+  if (request.action === 'restart') return 'mgmt:restart:mahaffeys';
   return `mgmt:${request.action}:${request.action === 'prepare' ? request.revision : request.jobId}`;
 }

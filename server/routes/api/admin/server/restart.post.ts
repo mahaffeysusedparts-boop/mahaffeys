@@ -1,26 +1,19 @@
-import { defineHandler } from "nitro";
-import { requireAdmin } from "../../../../utils/auth";
-import { auditFor, recordAudit } from "../../../../utils/audit";
-import { exec } from "node:child_process";
+import { defineHandler } from 'nitro';
+import { assertBodySize, createError, getRequestHeaders, getRequestURL, readBody } from 'nitro/h3';
+import { requireAdmin } from '../../../../utils/auth';
+import { auditFor, recordAudit } from '../../../../utils/audit';
+import { callHostControl, limitHostControl } from '../../../../utils/hostControl';
 
-export default defineHandler(async (event) => {
+export default defineHandler(async event => {
   const user = await requireAdmin(event);
-  // Record audit entry before attempting restart
-  await recordAudit(auditFor(user, {
-    action: "server.restart",
-    entity: "server",
-    detail: { reason: "manual restart requested from server admin" },
-  }));
-  // Attempt to restart the service via PM2
-  return new Promise((resolve) => {
-    exec("pm2 restart mahaffeys", (error, stdout, stderr) => {
-      if (error) {
-        console.error(`[restart] PM2 restart error:`, error, stderr);
-        resolve({ ok: false, message: "PM2 restart failed: " + (stderr || error.message) });
-      } else {
-        console.log(`[restart] PM2 restart initiated:`, stdout);
-        resolve({ ok: true, message: "Restart request sent to PM2" });
-      }
-    });
-  });
+  try {
+    const origin = getRequestHeaders(event).origin;
+    if (!origin || new URL(origin).host !== getRequestURL(event).host) throw new Error();
+  } catch { throw createError({ statusCode: 403, statusMessage: 'Same-origin request required' }); }
+  await assertBodySize(event, 4096);
+  const body = await readBody<{ confirmation?: string }>(event);
+  if (!body || body.confirmation !== 'RESTART APP' || Object.keys(body).some(key => key !== 'confirmation')) throw createError({ statusCode: 400, statusMessage: 'Confirm RESTART APP' });
+  limitHostControl(user.id, true);
+  await recordAudit(auditFor(user, { action: 'server.restart', entity: 'server', detail: { requested: true, scope: 'existing Docker app container only' } }));
+  return callHostControl({ action: 'restart', confirmation: 'RESTART APP' });
 });

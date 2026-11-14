@@ -81,6 +81,18 @@ async function health(id) {
   }
   throw new Error('Managed service did not become healthy. Printing success has not been inferred.');
 }
+export async function restartApp(policy, progress) {
+  await baselineManifest(policy);
+  const before = await current(policy);
+  progress('Restarting only the existing Mahaffeys app container. Images, configuration, volumes and other services remain unchanged.');
+  await docker(['restart', '--time', '30', before.mahaffeys.id], 60_000);
+  await health(before.mahaffeys.id);
+  const after = await current(policy);
+  for (const service of SERVICES) {
+    if (before[service].id !== after[service].id || before[service].image !== after[service].image) throw new Error('Unexpected container/image change during restart; administrator review required.');
+  }
+  progress('App container is healthy after restart. No deployment or print job was performed.');
+}
 async function test(policy, directory, images, candidate, liveConfig, progress) {
   const ids = [];
   const label = directory.split('/').pop();

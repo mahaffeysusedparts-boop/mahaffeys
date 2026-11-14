@@ -6,6 +6,7 @@ export const SERVICES = ['cups', 'mahaffeys'];
 export const INSTALL = '/usr/local/lib/mahaffeys/management';
 export const POLICY = '/etc/mahaffeys-management.json';
 export function parseCommand(token) {
+  if (token === 'mgmt:restart:mahaffeys') return { action: 'restart', target: 'mahaffeys' };
   const match = /^mgmt:(prepare|status|deploy|rollback):([a-f0-9]+)$/.exec(token);
   if (!match || match[0] !== token || match[2].length !== (match[1] === 'prepare' ? 40 : 32)) throw new Error('Unknown management request.');
   return { action: match[1], target: match[2] };

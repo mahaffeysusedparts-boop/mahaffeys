@@ -2,7 +2,7 @@
 import { execFileSync } from 'node:child_process';
 import { constants } from 'node:fs';
 import { lstat, readFile, mkdir, mkdtemp, open, rename, unlink } from 'node:fs/promises';
-import { dirname, resolve, join } from 'node:path';
+import { basename, dirname, resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createInterface } from 'node:readline/promises';
 
@@ -59,6 +59,7 @@ try {
   for (const path of ['/usr', '/usr/local', '/usr/local/lib']) await rootDirectory(path);
   const files = [
     { source: join(sourceRoot, 'server/tools/storageDiagnostics.mjs'), destination: helper, mode: 0o644 },
+    { source: join(sourceRoot, 'server/tools/networkDiagnostics.mjs'), destination: `${installation}/network-report.mjs`, mode: 0o644 },
     { source: join(sourceRoot, 'scripts/mahaffeys-diagnostics.sh'), destination: dispatcher, mode: 0o755 },
   ];
   for (const file of files) {
@@ -67,7 +68,8 @@ try {
     file.content = await readFile(file.source);
   }
   execFileSync('/usr/bin/node', ['--check', files[0].source], checks);
-  execFileSync('/bin/sh', ['-n', files[1].source], checks);
+  execFileSync('/usr/bin/node', ['--check', files[1].source], checks);
+  execFileSync('/bin/sh', ['-n', files[2].source], checks);
   execFileSync('/usr/bin/timeout', ['--version'], checks);
   execFileSync('/usr/bin/lsblk', ['--version'], checks);
   execFileSync('/usr/bin/node', ['--version'], checks);
@@ -83,8 +85,8 @@ try {
   execFileSync('/usr/sbin/runuser', ['-u', 'jhilliard', '--', '/usr/bin/docker', '--host', 'unix:///var/run/docker.sock', 'info', '--format', '{{.ServerVersion}}'], checks);
   await rootDirectory(installation);
   for (const file of files) file.previous = await existingFile(file.destination);
-  if (!files[1].previous) throw new Error('The existing root-owned diagnostics dispatcher must already be installed. This is an upgrade, not a new SSH connection installer.');
-  console.log('Review the repository helper and dispatcher. This upgrade installs read-only drive/Docker storage reporting only. It does not alter SSH keys, account permissions, services, volumes, mounts or app data. Reports contain paths and filesystem UUIDs. Previous installed files will be backed up privately.');
+  if (!files[2].previous) throw new Error('The existing root-owned diagnostics dispatcher must already be installed. This is an upgrade, not a new SSH connection installer.');
+  console.log('Review the repository helpers and dispatcher. This upgrade installs read-only storage and network reporting only. It does not alter SSH keys, account permissions, services, volumes, mounts or app data. Reports contain network addresses, paths and filesystem UUIDs. Previous installed files will be backed up privately.');
   const input = createInterface({ input: process.stdin, output: process.stdout });
   let answer;
   try { answer = await input.question('Type ENABLE STORAGE DIAGNOSTICS to install: '); }
@@ -94,9 +96,9 @@ try {
   const installed = [];
   try {
     for (const file of files) {
-      if (file.previous) await atomicWrite(join(backup, file.destination === helper ? 'storage-report.mjs' : 'mahaffeys-diagnostics.sh'), file.previous.content, 0o600);
+      if (file.previous) await atomicWrite(join(backup, basename(file.destination)), file.previous.content, 0o600);
     }
-    // Install the helper before the dispatcher can expose the new operation.
+    // Install the helpers before the dispatcher can expose their operations.
     for (const file of files) {
       await atomicWrite(file.destination, file.content, file.mode);
       installed.push(file);

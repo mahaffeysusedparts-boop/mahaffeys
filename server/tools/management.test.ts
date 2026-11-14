@@ -65,8 +65,11 @@ describe('guarded management protocol', () => {
     try {
       await client.connect(transport);
       const result = await client.listTools();
-      expect(result.tools).toHaveLength(11);
+      expect(result.tools).toHaveLength(13);
       expect(result.tools.find(tool => tool.name === 'mahaffeys_deploy_prepared')?.annotations?.readOnlyHint).toBe(false);
+      expect(result.tools.find(tool => tool.name === 'mahaffeys_restart_app')?.annotations?.readOnlyHint).toBe(false);
+      const invalidRestart = await client.callTool({ name: 'mahaffeys_restart_app', arguments: { confirmation: 'yes', service: 'postgres' } });
+      expect(invalidRestart.isError).toBe(true);
       const invalid = await client.callTool({ name: 'mahaffeys_deploy_prepared', arguments: { jobId, confirmation: 'yes' } });
       expect(invalid.isError).toBe(true);
     } finally { await client.close(); }

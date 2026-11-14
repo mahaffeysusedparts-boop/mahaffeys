@@ -13,7 +13,7 @@ export const SERVER_USER = 'jhilliard';
 export const SERVICES = ['mahaffeys', 'cups', 'nginx', 'postgres', 'storage-agent', 'vision-worker'] as const;
 export type Service = typeof SERVICES[number];
 export type DiagnosticRequest =
-  | { operation: 'connection' | 'containers' | 'version' | 'cups' | 'printer' | 'storage' }
+  | { operation: 'connection' | 'containers' | 'version' | 'cups' | 'printer' | 'storage' | 'network' }
   | { operation: 'logs'; service: Service; lines: number }
   | ManagementRequest;
 
@@ -37,7 +37,7 @@ export function requestToken(request: DiagnosticRequest): string {
     }
     return `logs:${request.service}:${request.lines}`;
   }
-  if (!['connection', 'containers', 'version', 'cups', 'printer', 'storage'].includes(request.operation)) {
+  if (!['connection', 'containers', 'version', 'cups', 'printer', 'storage', 'network'].includes(request.operation)) {
     throw new Error('Only read-only diagnostic operations are allowed.');
   }
   return request.operation;

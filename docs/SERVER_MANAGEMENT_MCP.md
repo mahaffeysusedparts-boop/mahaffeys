@@ -2,7 +2,7 @@
 
 ## Scope and activation status
 
-The local MCP bridge supports optional guarded management in addition to the original six read-only diagnostics. **Adding these files does not activate server write access.** The server administrator must review/install the separate dispatcher and authorize a separate management public key. The old diagnostics key stays read-only.
+The local MCP bridge supports optional guarded management in addition to eight read-only diagnostics. **Adding these files does not activate server write access.** The server administrator must review/install the separate dispatcher and authorize a separate management public key. The diagnostics key stays read-only. App-only restart and optional admin-page host controls require updated installed modules; see [HOST_CONTROL_SETUP.md](HOST_CONTROL_SETUP.md). This extension does not provide generic OS/network/file editing.
 
 Supported operations:
 
@@ -10,6 +10,7 @@ Supported operations:
 2. **Read job status**. Long operations run in a detached worker; calls return a server-generated job ID promptly. Poll status until `succeeded` or `failed`. Cancelling the SSH/MCP request does not cancel an already accepted background job.
 3. **Deploy a verified plan**, less than one hour after verification, using pinned image IDs and recorded Compose configuration. The runner checks for baseline drift, stops only app/CUPS, backs up configuration/cache/spool, recreates only those two services without building/pulling at deployment time, restores queued-document spool before CUPS starts, and waits for both health checks.
 4. **Roll back the most recent finished deployment attempt**, preserving current named volumes and current queued documents. If a failed replacement never restored its spool, recovery uses that attempt's preserved pre-replacement spool archive. Stale rollback requests are refused.
+5. **Restart only the existing app container**, with explicit `RESTART APP` confirmation and the shared operation lock. The runner checks the baseline, restarts the captured app container ID, verifies health and preserves container/image identities. It never restarts CUPS/PostgreSQL or changes images/configuration/volumes. Update the installed management modules before use.
 
 There is no arbitrary shell, uploaded script, path editing, environment dump, database/proxy deployment, firewall/SSH configuration, unrestricted restart, Docker pruning, or Docker volume deletion. Test containers are removed only by recorded ID and matching job label; private artifacts and backups are retained for administrator-controlled cleanup. The server checkout is not reset: immutable Git worktrees hold reviewed revisions, and management records the active deployment manifest separately.
 
@@ -61,7 +62,7 @@ Keep the existing stdio Command (`node`) and bridge path. Append these two argum
 
 Do not provide public-key contents, passwords or private-key contents as arguments. The existing `--identity-file` still selects the separate read-only diagnostics key. Known-hosts verification is shared and remains strict.
 
-After administrator provisioning and argument updates, disable/re-enable the custom plugin to reload its process, then start a new Agent turn. The bridge lists seven diagnostics plus four management tools only when management was explicitly enabled with a separate absolute key path. The storage diagnostic requires its separate host helper/dispatcher upgrade; management installation does not install it. Tool discovery never contacts SSH or starts a job.
+After administrator provisioning and argument updates, disable/re-enable the custom plugin to reload its process, then start a new Agent turn. The bridge lists eight diagnostics plus five management tools only when management was explicitly enabled with a separate absolute key path. Storage/network diagnostics require the host helper/dispatcher upgrade; app-only restart requires updated installed runner/operations/policy modules. The optional app host gateway is a separately approved installation; see [HOST_CONTROL_SETUP.md](HOST_CONTROL_SETUP.md). Tool discovery never contacts SSH or starts a job.
 
 ## Operation workflow
 

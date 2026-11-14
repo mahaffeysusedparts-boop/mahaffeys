@@ -2,7 +2,7 @@
 
 ## What this enables — and what it does not
 
-This adds a seventh read-only operation to the existing Mahaffeys SSH connection. It reports:
+This adds read-only storage reporting to the existing Mahaffeys SSH connection. The current diagnostics installer also installs the network-report helper; the bridge now has eight read-only diagnostics. See [HOST_CONTROL_SETUP.md](HOST_CONTROL_SETUP.md) for network reporting and separately approved app management. The storage report contains:
 
 - Host block devices and partitions: sizes, filesystem types, UUIDs and mount points.
 - Capacity/free/available bytes for mounted block-device paths, Ubuntu's root filesystem, Docker's data directory, and the app's mounted storage paths.
@@ -27,10 +27,11 @@ Do not add the account to the Docker group or grant unrestricted sudo to solve a
 | Repository source | Purpose | Installed host destination |
 | --- | --- | --- |
 | `server/tools/storageDiagnostics.mjs` | Fixed, bounded read-only report | `/usr/local/lib/mahaffeys/storage-report.mjs` |
-| `scripts/mahaffeys-diagnostics.sh` | Existing forced-command dispatcher, now accepts the fixed `storage` token | `/usr/local/lib/mahaffeys/mahaffeys-diagnostics.sh` |
+| `server/tools/networkDiagnostics.mjs` | Fixed, bounded read-only network report | `/usr/local/lib/mahaffeys/network-report.mjs` |
+| `scripts/mahaffeys-diagnostics.sh` | Existing forced-command dispatcher, accepts fixed `storage` and `network` tokens | `/usr/local/lib/mahaffeys/mahaffeys-diagnostics.sh` |
 | `scripts/install-mahaffeys-storage-diagnostics.mjs` | Guarded interactive administrator installer | Remains in the reviewed repository |
 | `server/tools/sshDiagnostics.ts` | Validates and sends the fixed request token | Local Dyad project |
-| `server/tools/mahaffeys-mcp.ts` | Registers the new read-only report | Local Dyad project |
+| `server/tools/mahaffeys-mcp.ts` | Registers the new read-only reports | Local Dyad project |
 
 The existing `server/tools/mahaffeys-mcp.mjs` launcher remains unchanged. The report and installer use built-in Node modules; no additional npm dependency is needed.
 
