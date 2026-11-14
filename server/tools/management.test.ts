@@ -65,7 +65,7 @@ describe('guarded management protocol', () => {
     try {
       await client.connect(transport);
       const result = await client.listTools();
-      expect(result.tools).toHaveLength(10);
+      expect(result.tools).toHaveLength(11);
       expect(result.tools.find(tool => tool.name === 'mahaffeys_deploy_prepared')?.annotations?.readOnlyHint).toBe(false);
       const invalid = await client.callTool({ name: 'mahaffeys_deploy_prepared', arguments: { jobId, confirmation: 'yes' } });
       expect(invalid.isError).toBe(true);

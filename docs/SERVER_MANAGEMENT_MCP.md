@@ -61,7 +61,7 @@ Keep the existing stdio Command (`node`) and bridge path. Append these two argum
 
 Do not provide public-key contents, passwords or private-key contents as arguments. The existing `--identity-file` still selects the separate read-only diagnostics key. Known-hosts verification is shared and remains strict.
 
-After administrator provisioning and argument updates, disable/re-enable the custom plugin to reload its process, then start a new Agent turn. The bridge lists six diagnostics plus four management tools only when management was explicitly enabled with a separate absolute key path. Tool discovery never contacts SSH or starts a job.
+After administrator provisioning and argument updates, disable/re-enable the custom plugin to reload its process, then start a new Agent turn. The bridge lists seven diagnostics plus four management tools only when management was explicitly enabled with a separate absolute key path. The storage diagnostic requires its separate host helper/dispatcher upgrade; management installation does not install it. Tool discovery never contacts SSH or starts a job.
 
 ## Operation workflow
 

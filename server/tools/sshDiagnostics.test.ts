@@ -39,6 +39,7 @@ describe('read-only SSH diagnostics', () => {
   it('accepts only approved diagnostic tokens and bounded logs', () => {
     expect(requestToken({ operation: 'logs', service: 'cups', lines: 60 })).toBe('logs:cups:60');
     expect(requestToken({ operation: 'cups' })).toBe('cups');
+    expect(requestToken({ operation: 'storage' })).toBe('storage');
     expect(() => requestToken({ operation: 'restart' } as unknown as DiagnosticRequest)).toThrow();
     expect(() => requestToken({ operation: 'logs', service: 'cups; reboot', lines: 60 } as unknown as DiagnosticRequest)).toThrow();
     for (const lines of [0, 9, 201, 1.5, NaN]) expect(() => requestToken({ operation: 'logs', service: 'cups', lines })).toThrow();
@@ -128,9 +129,12 @@ describe('read-only SSH diagnostics', () => {
     try {
       await client.connect(transport);
       const result = await client.listTools();
-      expect(result.tools).toHaveLength(6);
+      expect(result.tools).toHaveLength(7);
       expect(result.tools.every(tool => tool.annotations?.readOnlyHint === true)).toBe(true);
       expect(result.tools.some(tool => /deploy|restart|exec|shell/.test(tool.name))).toBe(false);
+      expect(result.tools.find(tool => tool.name === 'mahaffeys_storage_diagnostics')?.inputSchema.additionalProperties).toBe(false);
+      const invalidStorage = await client.callTool({ name: 'mahaffeys_storage_diagnostics', arguments: { path: '/private', command: 'reboot' } });
+      expect(invalidStorage.isError).toBe(true);
       const invalid = await client.callTool({ name: 'mahaffeys_container_logs', arguments: { service: 'cups;reboot' } });
       expect(invalid.isError).toBe(true);
     } finally {
